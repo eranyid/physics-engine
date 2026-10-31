@@ -21,5 +21,6 @@ pe-blast = { workspace = true }
 pe-ballistics = { workspace = true }
 pe-soft = { workspace = true }
 pe-fluid = { workspace = true }
+pe-scene = { workspace = true }
 numpy = { workspace = true }
 pyo3 = { workspace = true }

@@ -20,11 +20,13 @@ pub mod types;
 pub use convert::force_to_box;
 
 pub use document::{
-    canonical_scene_roundtrip_hash, round_trip_continue_hashes, SceneDocument,
-    CANONICAL_SCENE_ROUNDTRIP_HASH,
+    canonical_scene_convex_roundtrip_hash, canonical_scene_roundtrip_hash,
+    convex_round_trip_continue_hashes, godot_drop_box_result, round_trip_continue_hashes,
+    SceneDocument, CANONICAL_SCENE_CONVEX_ROUNDTRIP_HASH, CANONICAL_SCENE_ROUNDTRIP_HASH,
 };
 pub use error::SceneError;
 pub use types::{
     BodyDesc, ForceDesc, JointDesc, JointKindDesc, MaterialDesc, RuntimeSnapshot, ShapeDesc,
-    SolverSettings, StateSnapshot, StaticDesc, SCENE_BINARY_MAGIC, SCENE_SCHEMA_VERSION,
+    SolverSettings, StateSnapshot, StaticDesc, SCENE_BINARY_MAGIC, SCENE_SCHEMA_V1,
+    SCENE_SCHEMA_VERSION,
 };
