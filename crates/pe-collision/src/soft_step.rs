@@ -227,8 +227,8 @@ fn solve_rows(
         // static contact prevents CFM creep without affecting multi-body stacks.
         let single_static = n == 1 && (r.a >= n || r.b >= n);
 
-        let hard_within_slop = (high_ratio || heavy_static || single_static)
-            && r.separation + linear_slop >= 0.0;
+        let hard_within_slop =
+            (high_ratio || heavy_static || single_static) && r.separation + linear_slop >= 0.0;
         let (soft, bias) = if !use_separation_bias || hard_within_slop {
             // Relax, or shallow high-ratio / heavy-static / single-body static hold.
             (Softness::HARD, 0.0)
