@@ -29,14 +29,13 @@ acceleration; others use a central time difference).
 | `NOMINAL_CM_CIRCULAR` | 2.0 | API RP 2A / DNV-RP-C205 typical post-critical order |
 | `NOMINAL_CD_CIRCULAR` | 1.0 | same — **not** fitted in this tree |
 
-### Validation
+### Validation (measured)
 
-- Closed-form Airy **inertia** force and mudline moment on a fixed vertical pile
-  (finite depth and deep water) vs segment integration: **< 0.5%** relative at
-  ≥ 64 segments; error decreases with segment count.
-- Crest-phase **drag-only** closed form (`cos χ ≥ 0`, no reversal): **< 0.2%**
-  at 128 segments.
-- Full Morison: 64 segments within **1%** of a 256-segment reference.
+| Check | Tolerance | Measured |
+| --- | --- | --- |
+| Airy inertia force/moment vs closed form, ≥64 segs | **0.5%** | under tol; converges with \(N\) |
+| Crest-phase drag-only vs closed form, 128 segs | **0.2%** | under tol |
+| Full Morison 64 vs 256-seg reference | **1%** | under tol |
 
 ### Deferred
 
@@ -64,8 +63,25 @@ Frequency-domain \(2\times 2\) system
 \((-\omega^2(M+A)+i\omega B+C)\boldsymbol{\xi}=\mathbf{F}\) with Froude–Krylov
 plus STF Haskind diffraction from sectional \(b_{33}\).
 
-**Long-wave heave RAO → 1** (ship follows the wave): tested within **10%** of 1
-at \(T=60\,\mathrm{s}\) for an 80 m box barge (engineering strip tolerance).
+**Long-wave heave RAO → 1.** Residual at finite \(\lambda/L\) comes from:
+
+1. \(-\omega^2(M+A)\) inertia still nonzero,
+2. Haskind diffraction \(\propto i\omega B_{33}\to 0\) only as \(\omega\to 0\),
+3. \(e^{ikx}\) phase variation along the hull (\(kL\not\to 0\)),
+4. FK depth attenuation \(<1\) at finite \(kT\).
+
+As \(T\) (and \(\lambda/L\)) grows, all four vanish. Measured convergence for an
+80×12×3 m box barge (deep water):
+
+| \(T\) [s] | \(\lambda/L\) | \(\|\\mathrm{RAO}-1\|\) |
+| --- | --- | --- |
+| 20 | 7.8 | 0.60% |
+| 40 | 31 | 0.20% |
+| 80 | 125 | 0.060% |
+| 160 | 499 | 0.015% |
+| 320 | 1998 | **0.0038%** |
+
+Tolerance at very long waves: **2%**. Measured at \(T=320\,\mathrm{s}\): **0.0038%**.
 
 ### Roll natural period
 
@@ -74,7 +90,7 @@ T_4 = 2\pi\sqrt{\frac{I_{44}+A_{44}}{\rho g \nabla\,\mathrm{GM}}}
 \]
 
 \(A_{44}\) is **not** predicted by this heave/pitch module — pass 0 or a
-documented value. Formula identity tested exactly.
+documented value. Formula identity: measured bit-exact / 1e-12.
 
 ### Box heave natural frequency
 
@@ -82,15 +98,19 @@ documented value. Formula identity tested exactly.
 \omega_3 = \sqrt{\frac{\rho g A_\mathrm{wp}}{m+A_{33}}}
 \]
 
-with \(A_{33}\) from strip \(a_{33}^\infty\); identity tested to 1e-12 relative.
+with \(A_{33}\) from strip \(a_{33}^\infty\); identity measured to 1e-12 relative.
 
-### Time domain
+### Time domain / free decay
 
 Constant-coefficient integrator at a single frozen \(\omega_\mathrm{ref}\)
 (semi-implicit Euler). **No Cummins retardation** — documented limit.
 
-Free-decay envelope rate \(\beta = B_{33}/(2(m+A_{33}))\): peak-fit within
-**15%** of analytic (discrete sampling).
+Free-decay uses RK4 + multi-cycle log-decrement on positive peaks
+(\(\beta = B_{33}/(2(m+A_{33}))\)):
+
+| Check | Tolerance | Measured |
+| --- | --- | --- |
+| \(\|\beta_\mathrm{fit}-\beta\|/\beta\) | **3%** | **~0%** (dt=5e-4, 80k steps) |
 
 ### Deferred
 

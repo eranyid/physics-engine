@@ -30,9 +30,9 @@ pub use atmosphere::{
     IsaAltitudeError, GAMMA_AIR, H_STRATO_TOP, H_TROPOPAUSE, LAPSE, P0, RHO0, R_AIR, T0,
 };
 pub use bem::{
-    figure_of_merit, hover_induced_velocity, ideal_hover_power, induced_velocity_momentum,
-    nominal_rotor_polar, prandtl_tip_loss, rho_sl, BemResult, BemRotor, BemRotorForce,
-    BladeStation, RotorGeometry,
+    figure_of_merit, hover_induced_velocity, ideal_hover_power, ideal_rotor_polar,
+    induced_velocity_momentum, nominal_rotor_polar, prandtl_tip_loss, rho_sl, BemResult, BemRotor,
+    BemRotorForce, BladeStation, RotorGeometry,
 };
 pub use check_cases::{
     angular_momentum_about_origin, build_check_case, dragless_ballistic, mechanical_energy,

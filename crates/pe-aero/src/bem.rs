@@ -133,6 +133,44 @@ impl RotorGeometry {
         }
     }
 
+    /// Ideal-twist + Betz chord for uniform disk loading under inflow `v_i`.
+    ///
+    /// `θ(r) = atan2(v_i, Ω r) + α_design`, `c(r) = c_tip · (R/r)` (Glauert/Betz).
+    /// Callers should keep `R/hub ≲ 3` so root chord stays moderate.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ideal_hover_twist(
+        n_blades: usize,
+        radius: f64,
+        hub: f64,
+        chord_tip: f64,
+        omega: f64,
+        v_i: f64,
+        alpha_design: f64,
+        n_stations: usize,
+    ) -> Self {
+        assert!(
+            n_blades >= 1 && radius > hub && n_stations >= 2 && chord_tip > 0.0 && omega > 0.0
+        );
+        let mut stations = Vec::with_capacity(n_stations);
+        for i in 0..n_stations {
+            let t = i as f64 / (n_stations - 1) as f64;
+            let r = hub + t * (radius - hub);
+            let phi = libm_ops::atan2(v_i, omega * r);
+            let chord = chord_tip * (radius / r.max(1e-9));
+            stations.push(BladeStation {
+                r,
+                chord,
+                twist: phi + alpha_design,
+            });
+        }
+        Self {
+            n_blades,
+            radius,
+            hub,
+            stations,
+        }
+    }
+
     /// Disk area `π R²` [m²].
     pub fn disk_area(&self) -> f64 {
         core::f64::consts::PI * self.radius * self.radius
@@ -148,12 +186,19 @@ pub struct BemResult {
     pub torque: f64,
     /// Shaft power `Q · Ω` [W].
     pub power: f64,
-    /// Mean induced velocity [m/s] (area-weighted).
+    /// Annulus-area-weighted mean induced velocity [m/s].
     pub induced_velocity: f64,
+    /// Thrust-weighted mean induced velocity `Σ v_i dT / T` [m/s].
+    ///
+    /// For `C_D = 0`, blade-element power satisfies `P = T · v_i^{tw}` to
+    /// discretization accuracy (local identity `dP = v_i dT`).
+    pub induced_velocity_thrust_wt: f64,
     /// Iterations used.
     pub iterations: usize,
     /// True if the induced-velocity residual met the tolerance.
     pub converged: bool,
+    /// Final max relative `v_i` residual (last iteration).
+    pub residual: f64,
 }
 
 /// Blade-element / momentum solver.
@@ -169,10 +214,14 @@ pub struct BemRotor {
     pub tol: f64,
     /// Under-relaxation for `v_i` updates ∈ (0, 1].
     pub relax: f64,
+    /// If false, force Prandtl tip-loss factor `F = 1` (ideal-disk oracle).
+    pub tip_loss: bool,
+    /// If true, force sectional `C_D = 0` (ideal inviscid sections).
+    pub zero_drag: bool,
 }
 
 impl BemRotor {
-    /// Build a BEM rotor. Defaults: 40 iters, tol 1e-6, relax 0.5.
+    /// Build a BEM rotor. Defaults: 80 iters, tol 1e-5, relax 0.35, tip loss on.
     pub fn new(geom: RotorGeometry, polar: WingPolar) -> Self {
         Self {
             geom,
@@ -180,7 +229,19 @@ impl BemRotor {
             max_iter: 80,
             tol: 1e-5,
             relax: 0.35,
+            tip_loss: true,
+            zero_drag: false,
         }
+    }
+
+    /// Ideal oracle mode: no tip loss, zero profile drag.
+    pub fn ideal(mut self) -> Self {
+        self.tip_loss = false;
+        self.zero_drag = true;
+        self.tol = 1e-8;
+        self.max_iter = 200;
+        self.relax = 0.5;
+        self
     }
 
     /// Evaluate at tip speed `Ω` [rad/s], axial freestream `V_∞` [m/s]
@@ -189,14 +250,33 @@ impl BemRotor {
     pub fn evaluate(&self, omega: f64, v_inf: f64, rho: f64) -> BemResult {
         assert!(omega > 0.0 && rho > 0.0);
         let n = self.geom.stations.len();
-        // Mild positive seed (hover / climb).
-        let v_seed = libm_ops::fabs(v_inf).max(1.0) * 0.05;
+        // Seed near freestream / mild hover guess (caller twist often assumes a design vi).
+        let v_seed = if libm_ops::fabs(v_inf) > 1e-6 {
+            libm_ops::fabs(v_inf) * 0.1
+        } else {
+            1.0
+        };
         let mut vi = vec![v_seed; n];
+        let mut drs = vec![0.0; n];
+        for i in 0..n {
+            let r = self.geom.stations[i].r;
+            drs[i] = if i == 0 {
+                let r_next = self.geom.stations[1].r;
+                0.5 * (r_next - r) + (r - self.geom.hub)
+            } else if i + 1 == n {
+                let r_prev = self.geom.stations[n - 2].r;
+                (self.geom.radius - r) + 0.5 * (r - r_prev)
+            } else {
+                0.5 * (self.geom.stations[i + 1].r - self.geom.stations[i - 1].r)
+            };
+        }
 
         let mut thrust = 0.0;
         let mut torque = 0.0;
         let mut iters = 0;
         let mut converged = false;
+        let mut residual: f64 = f64::INFINITY;
+        let mut d_thrust = vec![0.0; n];
 
         for it in 0..self.max_iter {
             iters = it + 1;
@@ -207,15 +287,7 @@ impl BemRotor {
 
             for (i, st) in self.geom.stations.iter().enumerate() {
                 let r = st.r;
-                let dr = if i == 0 {
-                    let r_next = self.geom.stations[1].r;
-                    0.5 * (r_next - r) + (r - self.geom.hub)
-                } else if i + 1 == n {
-                    let r_prev = self.geom.stations[n - 2].r;
-                    (self.geom.radius - r) + 0.5 * (r - r_prev)
-                } else {
-                    0.5 * (self.geom.stations[i + 1].r - self.geom.stations[i - 1].r)
-                };
+                let dr = drs[i];
 
                 let v_ax = v_inf + vi[i];
                 let v_t = omega * r;
@@ -223,14 +295,23 @@ impl BemRotor {
                 let alpha = st.twist - phi;
                 let w = libm_ops::hypot(v_ax, v_t);
                 let cl = self.polar.cl(alpha);
-                let cd = self.polar.cd(cl);
+                let cd = if self.zero_drag {
+                    0.0
+                } else {
+                    self.polar.cd(cl)
+                };
                 let qbar = 0.5 * rho * w * w;
                 let dl = qbar * st.chord * cl * dr;
                 let dd = qbar * st.chord * cd * dr;
-                let f_tip = prandtl_tip_loss(self.geom.n_blades, self.geom.radius, r, phi);
+                let f_tip = if self.tip_loss {
+                    prandtl_tip_loss(self.geom.n_blades, self.geom.radius, r, phi)
+                } else {
+                    1.0
+                };
                 let nb = self.geom.n_blades as f64;
                 let dt = nb * (dl * libm_ops::cos(phi) - dd * libm_ops::sin(phi)) * f_tip;
                 let dq = nb * (dl * libm_ops::sin(phi) + dd * libm_ops::cos(phi)) * r * f_tip;
+                d_thrust[i] = dt;
                 t_sum += dt;
                 q_sum += dq;
 
@@ -253,21 +334,32 @@ impl BemRotor {
             vi = vi_new;
             thrust = t_sum;
             torque = q_sum;
+            residual = max_rel;
             if max_rel < self.tol {
                 converged = true;
                 break;
             }
         }
 
+        // Annulus area weight ∝ r dr (disk-average induced velocity).
         let mut vi_mean = 0.0;
         let mut wsum = 0.0;
+        let mut vi_tw = 0.0;
+        let mut tsum_pos = 0.0;
         for (i, st) in self.geom.stations.iter().enumerate() {
-            let w = st.r; // mild radius weight
+            let w = st.r * drs[i];
             vi_mean += vi[i] * w;
             wsum += w;
+            if d_thrust[i] > 0.0 {
+                vi_tw += vi[i] * d_thrust[i];
+                tsum_pos += d_thrust[i];
+            }
         }
         if wsum > 0.0 {
             vi_mean /= wsum;
+        }
+        if tsum_pos > 0.0 {
+            vi_tw /= tsum_pos;
         }
 
         BemResult {
@@ -275,8 +367,10 @@ impl BemRotor {
             torque,
             power: torque * omega,
             induced_velocity: vi_mean,
+            induced_velocity_thrust_wt: vi_tw,
             iterations: iters,
             converged,
+            residual,
         }
     }
 }
@@ -370,6 +464,11 @@ pub fn nominal_rotor_polar(chord: f64, cd0: f64) -> WingPolar {
         0.0,
     )
     .expect("polar")
+}
+
+/// Inviscid thin-airfoil polar (`C_D0 = 0`); pair with [`BemRotor::ideal`] / `zero_drag`.
+pub fn ideal_rotor_polar(chord: f64) -> WingPolar {
+    nominal_rotor_polar(chord, 0.0)
 }
 
 /// Sea-level density convenience.

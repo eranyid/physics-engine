@@ -494,10 +494,13 @@ fn solve2_real(a: [[f64; 2]; 2], b: [f64; 2]) -> [f64; 2] {
     ]
 }
 
-/// Free-decay heave with constant damping: returns amplitude envelope decay rate
-/// estimate `β` from `|ξ|(t) ~ e^{−β t}` fitted over samples (least-squares on log).
+/// Free-decay heave with constant damping: returns samples, analytic `β`, and
+/// a log-decrement fit from successive **positive** peaks.
 ///
-/// Analytic underdamped: `β = B₃₃ / (2 (m+A₃₃))`.
+/// Analytic underdamped: `β = B₃₃ / (2 (m+A₃₃))`. Integration uses RK4 on the
+/// linear oscillator (portable `libm` only). Peak times use parabolic
+/// interpolation; `β_fit` averages log-decrements over available cycles:
+/// `β = ln(A_i/A_{i+1}) / (t_{i+1}−t_i)`.
 pub fn free_decay_heave(
     mass: f64,
     a33: f64,
@@ -508,32 +511,68 @@ pub fn free_decay_heave(
     n_steps: usize,
 ) -> (Vec<f64>, f64, f64) {
     let m = mass + a33;
+    let beta_analytic = b33 / (2.0 * m);
     let mut z = z0;
     let mut v = 0.0;
     let mut samples = Vec::with_capacity(n_steps + 1);
     samples.push(z);
+    let accel = |z: f64, v: f64| (-b33 * v - c33 * z) / m;
     for _ in 0..n_steps {
-        let a = (-b33 * v - c33 * z) / m;
-        v += dt * a;
-        z += dt * v;
+        // Classical RK4 for ż=v, v̇=a(z,v).
+        let k1z = v;
+        let k1v = accel(z, v);
+        let k2z = v + 0.5 * dt * k1v;
+        let k2v = accel(z + 0.5 * dt * k1z, v + 0.5 * dt * k1v);
+        let k3z = v + 0.5 * dt * k2v;
+        let k3v = accel(z + 0.5 * dt * k2z, v + 0.5 * dt * k2v);
+        let k4z = v + dt * k3v;
+        let k4v = accel(z + dt * k3z, v + dt * k3v);
+        z += (dt / 6.0) * (k1z + 2.0 * k2z + 2.0 * k3z + k4z);
+        v += (dt / 6.0) * (k1v + 2.0 * k2v + 2.0 * k3v + k4v);
         samples.push(z);
     }
-    let beta_analytic = b33 / (2.0 * m);
-    // Fit β from peak envelope every half-period roughly via |z| peaks.
+    // Positive peaks only (full-period log-decrement).
     let mut peaks: Vec<(f64, f64)> = Vec::new();
     for i in 1..samples.len() - 1 {
-        let a0 = libm_ops::fabs(samples[i - 1]);
-        let a1 = libm_ops::fabs(samples[i]);
-        let a2 = libm_ops::fabs(samples[i + 1]);
-        if a1 >= a0 && a1 >= a2 && a1 > 1e-9 {
-            peaks.push((i as f64 * dt, a1));
+        if samples[i] > samples[i - 1] && samples[i] > samples[i + 1] && samples[i] > 1e-12 {
+            // Parabolic peak time/amplitude about samples[i-1],i,i+1.
+            let y0 = samples[i - 1];
+            let y1 = samples[i];
+            let y2 = samples[i + 1];
+            let denom = y0 - 2.0 * y1 + y2;
+            let (t_pk, a_pk) = if libm_ops::fabs(denom) > 1e-30 {
+                let delta = 0.5 * (y0 - y2) / denom; // in [-0.5,0.5] typically
+                let d = delta.clamp(-0.5, 0.5);
+                let t = (i as f64 + d) * dt;
+                let a = y1 - 0.25 * (y0 - y2) * d;
+                (t, a)
+            } else {
+                (i as f64 * dt, y1)
+            };
+            peaks.push((t_pk, a_pk));
         }
     }
-    let beta_fit = if peaks.len() >= 2 {
-        // ln A = ln A0 − β t  ⇒ β = −(ln A_n − ln A_0)/(t_n − t_0)
+    let beta_fit = if peaks.len() >= 3 {
+        // Average log-decrement over consecutive positive peaks.
+        let mut sum = 0.0;
+        let mut n = 0usize;
+        for i in 0..peaks.len() - 1 {
+            let (t0, a0) = peaks[i];
+            let (t1, a1) = peaks[i + 1];
+            if a0 > 0.0 && a1 > 0.0 && t1 > t0 {
+                sum += libm_ops::log(a0 / a1) / (t1 - t0);
+                n += 1;
+            }
+        }
+        if n > 0 {
+            sum / n as f64
+        } else {
+            beta_analytic
+        }
+    } else if peaks.len() == 2 {
         let (t0, a0) = peaks[0];
-        let (tn, an) = peaks[peaks.len() - 1];
-        -(libm_ops::log(an / a0)) / (tn - t0)
+        let (t1, a1) = peaks[1];
+        libm_ops::log(a0 / a1) / (t1 - t0)
     } else {
         beta_analytic
     };
