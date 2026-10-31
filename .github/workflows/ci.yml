@@ -168,6 +168,19 @@ jobs:
             exit 1
           fi
 
+      - name: Compute canonical M6 convex hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-collision --bin convex_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical convex hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=4ca980096c036ade
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::Convex determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+
       - name: Compute canonical stage-3 aero+hydro hash
         shell: bash
         run: |

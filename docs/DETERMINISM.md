@@ -29,6 +29,8 @@ Cross-check helpers:
   `physics_engine_rs.canonical_soft_step_collision_hash()`
 - M5b joints: `cargo run -p pe-collision --bin joints_hash --release` /
   `physics_engine_rs.canonical_joints_hash()`
+- M6 convex: `cargo run -p pe-collision --bin convex_hash --release` /
+  `physics_engine_rs.canonical_convex_hash()`
 - M7 space: `cargo run -p pe-space --bin space_hash --release` /
   `physics_engine_rs.canonical_space_hash()`
 - Blast: `cargo run -p pe-blast --bin blast_hash --release` /
@@ -98,6 +100,25 @@ Scenario (must stay in sync in `pe_collision::canonical_joints_hash`, the
 | Linux x86_64 (CI + local) | `62156ada3fa770ad` | locked |
 | macOS (CI) | same expected | CI asserts equality |
 | Windows (CI) | same expected | CI asserts equality |
+
+### Canonical M6 convex hash (locked)
+
+Scenario (must stay in sync in `pe_collision::canonical_convex_hash`, the
+`convex_hash` binary, and `physics_engine_rs.canonical_convex_hash()`):
+
+- Dynamic: convex box-hull (half 0.25), capsule (r=0.1, hh=0.2), rounded box
+  (half 0.2 ⊕ r=0.05); materials μ=0.4, e=0; sleep off; 20 PGS iterations.
+- Static: box half-extents (2,2,0.1) at z=−0.1, μ=0.8.
+- Uniform gravity; 600 steps @ `dt = 1/240`.
+- Hash: FNV-1a 64 over packed dynamic state.
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `4ca980096c036ade` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+Legacy stage-2 / M5a / M5b hashes are **unchanged** when M6 shapes are unused.
 
 ### Canonical stage-3 aero+hydro hash (locked)
 
