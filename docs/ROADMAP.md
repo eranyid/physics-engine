@@ -1,0 +1,297 @@
+# physics-engine — Roadmap
+
+**Goal.** A general-purpose, full-simulation physics engine for studio, game, and
+research use: space, air, sea, solids, soft bodies, fluids, explosions, materials.
+**Decision.** Rust core + Python bindings (PyO3 / maturin); Godot GDExtension later.
+The existing Python package remains the **reference oracle**: Rust results are
+cross-checked against it, and both are validated against analytic / published
+benchmarks. SI units; correctness before throughput.
+
+This document plans architecture, domains, milestones, reference-project survey,
+and risks. Implementation detail of stages 1–3 stays in [DESIGN.md](DESIGN.md).
+
+---
+
+## 1. Target architecture
+
+### Workspace layout (planned)
+
+```
+physics-engine/
+  src/physics_engine/          # Python reference oracle (stages 1–3, kept)
+  tests/                       # analytic + oracle tests (Python)
+  crates/
+    pe-math/                   # f64 vectors, quaternions, frames, units helpers
+    pe-core/                   # World, bodies, forces, integrators, diagnostics
+    pe-collision/              # shapes, broad/narrow phase, contacts, CCD
+    pe-constraints/            # joints, motors, soft constraints, islands
+    pe-aero/                   # ISA atmosphere, aero force models
+    pe-hydro/                  # buoyancy, waves, ship/fluid interaction hooks
+    pe-space/                  # n-body, orbital helpers, gravity fields
+    pe-materials/              # constitutive models (elastic/plastic/thermal)
+    pe-soft/                   # soft bodies / FEM / XPBD cloth-style (later)
+    pe-fluids/                 # particles / SPH / blast coupling (later)
+    pe-scene/                  # serialization, scene graph, sleeping metadata
+    pe-ffi/                    # stable C ABI for GDExtension and others
+  python/                      # PyO3 crate → maturin wheel (`physics_engine_rs`)
+  godot/                       # GDExtension (post-Python bindings)
+  docs/
+  THIRD_PARTY.md               # attribution when any third-party code is reused
+```
+
+Feature flags on `pe-core` gate optional domains so game builds stay lean.
+
+### Core data model
+
+- **SoA primary storage** (positions, quaternions `[w,x,y,z]`, linear velocity,
+  world-frame angular momentum **L**, mass / inertia / flags) matching the Python
+  `World` layout for oracle diffs.
+- Body handles are stable indices with generational IDs; force generators and
+  constraints reference handles, not raw pointers.
+- Shape / material tables are separate; colliders attach to bodies (or statics).
+- Step pipeline (contact worlds): integrate forces → broad → narrow → solve →
+  integrate positions → positional correction / CCD TOI substeps as enabled.
+
+### Determinism and units
+
+- **SI only** (m, kg, s, N, rad). No silent unit conversion in the core.
+- **f64 first** everywhere in the deterministic path. Optional `f32` feature later
+  for games; never the validation default.
+- Deterministic mode: fixed body/constraint iteration order, no unordered
+  hash maps in the step, no nondeterministic parallelism, bit-stable across
+  identical inputs on the same ISA (document platform caveats: FMA, libm).
+- Randomness (fracture seeds, turbulence) is opt-in and seeded.
+
+### SIMD / parallelism
+
+1. Scalar f64 correctness.
+2. Explicit SIMD (e.g. `wide` / hand-written) on narrow loops and batch force eval.
+3. Parallelism only on **independent islands** or embarrassingly parallel phases
+   (broad phase pairs, particle neighborhoods), behind a feature flag; default
+   CI remains single-threaded deterministic.
+
+### Collision: broad / narrow / CCD
+
+| Stage | Default choice | Notes |
+| --- | --- | --- |
+| Broad | Sweep-and-prune (as in Python) → dynamic BVH / tree | Brute force kept as test oracle |
+| Narrow | Dedicated primitives first; GJK/EPA for convex | Port existing sphere/box/capsule/plane |
+| Contacts | Clipped manifolds, warm start | Match Python contact layout for diffs |
+| CCD | Speculative contacts + TOI sweep for fast bodies | Required before thin-feature trust |
+
+### Solver strategy
+
+Phased, not exclusive:
+
+1. **Sequential impulses / PGS** — port of current `ContactWorld` (ship first;
+   oracle parity).
+2. **Constraint graph + islands + sleeping** — Box2D/Rapier-style; needed for
+   large scenes and joints.
+3. **XPBD** — soft bodies, cloth, some joints; complementary module, not a
+   wholesale replacement of rigid SI.
+4. Direct / MLCP alternatives only if PGS proves insufficient for stiff stacks.
+
+Joints: ball, hinge, slider, fixed, distance, motors/limits; breakable limits
+later. Same impulse/XPBD machinery as contacts where possible.
+
+### Scene / serialization
+
+Versioned binary + JSON/RON scene format: bodies, shapes, materials, constraints,
+force generators, domain parameters (atmosphere, waterplane). Round-trip tests
+required before editor/Godot workflows.
+
+### Bindings
+
+| Binding | When | Role |
+| --- | --- | --- |
+| Rust API | M0+ | Native consumers, benchmarks |
+| Python (PyO3/maturin) | M1–M2 | Oracle harness, studio tooling, notebooks |
+| C ABI (`pe-ffi`) | M3+ | Stable surface for engines |
+| Godot GDExtension | After C ABI | Game integration |
+
+Python keeps importing `physics_engine` (oracle). Rust wheel is a separate
+package (e.g. `physics_engine_rs`) until APIs converge; a thin facade may later
+prefer Rust when installed.
+
+---
+
+## 2. Physics domains (priority order)
+
+Effort: **S** ≈ small module / few person-weeks of focused work; **M** ≈ solid
+subsystem; **L** ≈ large multi-milestone; **XL** ≈ research-grade ongoing program.
+Sizes are relative engineering scope, not calendar schedules.
+
+### D1 — Rigid body dynamics & integrators (exists in Python)
+
+- **Models:** Newtonian translation; rotational L storage; gravity, drag, springs;
+  Euler / semi-implicit / Verlet / RK4; diagnostics (E, P, L).
+- **Validation:** free fall, drag closed forms, Kepler, HO convergence orders,
+  torque-free tops, N-body momentum, determinism (existing suite).
+- **Effort:** S to port; ongoing oracle maintenance.
+
+### D2 — Collision & contact (exists in Python)
+
+- **Models:** primitives, SAP, SAT manifolds, sequential impulses, friction,
+  restitution, positional correction.
+- **Validation:** mass properties, SAP≡brute, bounce \(e^2 h\), cradle, incline
+  stick/slide, rolling \(5/7\), stack drift bounds (existing + slow markers).
+- **Effort:** M to port + CCD + missing pairs (capsule–box, convex/GJK).
+
+### D3 — Constraints / joints / islands / sleep
+
+- **Models:** bilateral joints, motors, limits; island graph; sleep/wake.
+- **Validation:** pendulum period \(2\pi\sqrt{L/g}\); motor tracking error;
+  sleeping conserves resting stacks; no energy pump on locked pairs.
+- **Effort:** M–L.
+
+### D4 — Atmosphere & aerodynamics (exists in Python)
+
+- **Models:** ISA; wing polar + stall; thrust; pitch derivatives.
+- **Validation:** ISA tables; trim L=W, T=D; \((L/D)_{\max}\); dive terminal V;
+  published polars as optional fixtures.
+- **Effort:** S port; M for 6-DOF aero / compressibility later.
+
+### D5 — Hydrostatics & ships (exists in Python)
+
+- **Models:** submerged volume, buoyancy, GM/GZ, heave/roll, hull drag, added mass.
+- **Validation:** Archimedes draft; GM analytic; GZ vs small-angle; periods;
+  ITTC/published GZ curves when available.
+- **Effort:** S port; L for seakeeping/waves coupling.
+
+### D6 — Space / gravity / orbits
+
+- **Models:** point-mass n-body; optional central + J2; patched conics helpers;
+  non-inertial frames later.
+- **Validation:** Kepler two-body; three-body restricted Lagrange points
+  numerically; energy/L conservation; SPICE or textbook ephemeris spot checks.
+- **Effort:** M.
+
+### D7 — Hydrodynamics & waves
+
+- **Models:** linear Airy waves → spectrum (Pierson–Moskowitz/JONSWAP); Morison
+  forces; strip-theory or panel hooks later.
+- **Validation:** Airy elevation/kinematics; Morison cylinder force vs analytic
+  oscillatory flow; RAO comparisons where published.
+- **Effort:** L.
+
+### D8 — Materials (elasticity, plasticity, friction, thermal)
+
+- **Models:** Hookean / neo-Hookean continuum hooks; Mohr–Coulomb / von Mises
+  yield; frictional contact already in D2; heat capacity + conduction later.
+- **Validation:** uniaxial stress–strain; elastic wave speed \(\sqrt{E/\rho}\);
+  plastic limit loads on simple geometries; Stefan / 1-D heat solutions.
+- **Effort:** L (start M for rigid material params only).
+
+### D9 — Soft bodies
+
+- **Models:** XPBD or FEM tet/shell; cloth; fracture coupling to D10.
+- **Validation:** cantilever deflection; hanging cable catenary; stretching modes
+  vs analytic strings; energy dissipation bounds.
+- **Effort:** L–XL.
+
+### D10 — Fluids, particles, explosions / blast
+
+- **Models:** SPH or hybrid particles; blast: Friedlander / Hopkinson–Cranz
+  scaling as engineering loads before full CFD; debris as rigid/soft bodies.
+- **Validation:** hydrostatic SPH rest; dam-break vs literature; Sod shock (if
+  compressible); blast peak overpressure vs scaled distance charts.
+- **Effort:** XL.
+
+Domain priority for shipping: **D1→D2→D3→D4→D5→D6→D7→D8→D9→D10**, with D4/D5
+ported early because the Python oracle already exists.
+
+---
+
+## 3. Phased milestones (each shippable & testable)
+
+| ID | Milestone | Exit criteria |
+| --- | --- | --- |
+| **M0** | Docs & policy | This roadmap + DESIGN dual-track; `THIRD_PARTY.md` policy; CI still green on Python |
+| **M1** | Rust skeleton | Workspace builds; `pe-math` + empty `World`; maturin hello-world; CI: `cargo test` + pytest |
+| **M2** | Port stage 1 | Rust matches Python oracle on stage-1 analytic tests (tolerances documented); bit-stable deterministic mode |
+| **M3** | Port stage 2 | Contacts/friction/stacks cross-validated; missing narrow pairs tracked; SAP≡brute in Rust |
+| **M4** | Port stage 3 | ISA/aero/hydro parity with Python suite |
+| **M5** | Joints + islands + sleep | Pendulum/motor tests; large resting scene sleeps; Python may gain thin joint oracle or shared fixtures |
+| **M6** | CCD + convex | TOI tests (no tunnel at configured speeds); GJK/EPA convex; capsule–box |
+| **M7** | Space module | Kepler + n-body conservation suite in Rust (+ Python helpers as needed) |
+| **M8** | Scene I/O + C ABI | Round-trip serialization; `pe-ffi` headers; smoke GDExtension optional |
+| **M9** | Waves / hydrodynamics v1 | Airy + Morison validated |
+| **M10** | Materials + soft v1 | Elastic validation; one soft demo with analytic check |
+| **M11** | Fluids / blast v1 | Particle hydrostatic + one blast engineering model vs scaling law |
+
+**Rule.** No milestone merges without: (1) analytic or published benchmark tests,
+(2) oracle or cross-impl diff where a Python reference exists, (3) CI green.
+
+---
+
+## 4. Reference project survey
+
+**Reuse rule.** Prefer learning algorithms and structure over copying code. Any
+copied or derived source must keep copyright/license notices and be listed in
+[`THIRD_PARTY.md`](../THIRD_PARTY.md) (created when the first reuse lands; until
+then the file may state “none yet”). This project is MIT; Apache-2.0
+dependencies are compatible with attribution; do not take code under licenses
+incompatible with MIT distribution without an explicit owner decision.
+
+| Repository | License (verified in-repo) | Learn / reuse | Relevance |
+| --- | --- | --- | --- |
+| [erincatto/box2d](https://github.com/erincatto/box2d) | **MIT** (`LICENSE`) | Islands, sleeping, contact caching, sequential impulses, determinism discipline, CCD ideas | **Primary** 2D rigid reference (lift ideas to 3D) |
+| [dimforge/rapier](https://github.com/dimforge/rapier) | **Apache-2.0** (`LICENSE`, `Cargo.toml`) | Rust crate layout, f64 feature split, broadphase, joints, SIMD/parallelism patterns, Python binding precedent | **Primary** Rust architecture reference |
+| [google/liquidfun](https://github.com/google/liquidfun) | **zlib** (Box2D `License.txt` / `NOTICE`; `MODULE_LICENSE_BSD_LIKE`) | Particle / liquid particle coupling to rigid body engine | **Relevant** for D10 particle fluids |
+| [idmillington/cyclone-physics](https://github.com/idmillington/cyclone-physics) | **MIT** | Educational rigid-body & contact structure; force generators; clear math presentation | **Relevant** pedagogy / API clarity |
+| [liabru/matter-js](https://github.com/liabru/matter-js) | **MIT** | 2D engine ergonomics, constraint demos, broadphase practicalities | **Secondary** (JS, 2D only) |
+| [galacean/engine](https://github.com/galacean/engine) | **MIT** | How a full engine embeds physics; component/scene patterns — not the solver itself | **Secondary** integration patterns only |
+
+### Not relevant (do not treat as physics-engine references)
+
+| Repository | License | Why excluded |
+| --- | --- | --- |
+| [pmndrs/react-spring](https://github.com/pmndrs/react-spring) | **MIT** | UI / React animation springs — not mechanical simulation |
+| [melonjs/melonJS](https://github.com/melonjs/melonJS) | **MIT** (`LICENSE.md`) | HTML5 game framework; physics is not the product |
+| [TheAlgorithms/C-Plus-Plus](https://github.com/TheAlgorithms/C-Plus-Plus) | **MIT** | Teaching algorithm collection; not a simulation architecture |
+
+---
+
+## 5. Risks and open questions
+
+### Risks
+
+- **Scope creep.** “Full simulation of everything” is larger than a game physics
+  engine. Mitigation: milestones M1–M6 before soft/fluids; cut lines explicit.
+- **Oracle drift.** Python and Rust diverging silently. Mitigation: shared
+  fixture files (JSON states) and CI job diffing trajectories.
+- **Determinism vs speed.** Parallelism and FMA break bit-stability. Mitigation:
+  deterministic feature as default in tests; fast mode documented separately.
+- **License hygiene.** Accidental copy without attribution. Mitigation:
+  `THIRD_PARTY.md` gate in review checklist.
+- **Aero/hydro fidelity expectations.** Studio use may need CFD-class results;
+  engineering models will disagree with RANS/LES. Mitigation: document model
+  class and validation envelope per module.
+- **Single maintainer bandwidth.** Honest total scope for D1–D10 at production
+  quality is on the order of **many person-months to multiple person-years** of
+  focused work (M1–M6 alone is a substantial program; D9–D10 are open-ended).
+  Ship vertical slices, not a big-bang engine.
+
+### Open questions
+
+1. **Solver of record for rigid 3D:** stay on sequential impulses long-term, or
+   migrate islands to a Rapier-like pipeline after oracle parity?
+2. **Soft body method:** XPBD vs FEM first?
+3. **Fluid method:** SPH in-process vs coupling to an external solver?
+4. **Godot timing:** after M8 only, or prototype FFI earlier?
+5. **Public API name / versioning:** keep `physics_engine` for Python oracle
+   forever, or eventually unify under one package with a `reference=` backend?
+6. **f32 games mode:** required for Godot targets, or f64 acceptable?
+
+### Effort snapshot (honest)
+
+| Band | Contents | Relative effort |
+| --- | --- | --- |
+| Near-term | M0–M4 (docs, skeleton, port stages 1–3 + oracle CI) | M–L |
+| Mid-term | M5–M8 (joints, CCD, space, scene, FFI) | L |
+| Long-term | M9–M11 + production hardening of soft/fluids/blast | XL, ongoing |
+
+Success for the redefined goal is not “feature-complete universe physics,” but
+a **credible, validated, extensible core** that grows domain modules behind
+tests — with Python as the correctness conscience for as long as it remains
+valuable.

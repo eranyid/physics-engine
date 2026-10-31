@@ -1,9 +1,32 @@
 # physics-engine — Design
 
-Rigorous, reusable real-world physics simulation in Python (NumPy/SciPy, CPU only).
-Correctness first: every model ships with tests against closed-form results.
+Rigorous, reusable real-world physics simulation. Correctness first: every model
+ships with tests against closed-form results (and, where noted, published tables).
+
+**Strategic direction (owner decision).** The long-term product is a
+**Rust core** with **Python bindings** (PyO3 / maturin), later usable from Godot
+via GDExtension. The Python package in `src/physics_engine/` remains the
+**reference oracle**: stages 1–3 stay maintained for analytic validation and for
+cross-checking Rust ports. Roadmap, domain priorities, milestones, reference
+survey, and risks: [ROADMAP.md](ROADMAP.md).
+
+This document describes the **as-built Python reference** (stages 1–3) and the
+invariants that the Rust port must preserve (units, frames, numerics, test bar).
 
 ## Architecture / module layout
+
+### Dual-track (planned)
+
+| Track | Role |
+| --- | --- |
+| `src/physics_engine/` (Python) | Reference oracle; analytic tests; slow/energy runs |
+| `crates/*` (Rust, see ROADMAP) | Production core; same SI models; oracle + analytic CI |
+| `python/` maturin wheel | Bindings for studio/tools; not a second physics truth |
+| Godot GDExtension | Later consumer of a stable C/Rust ABI |
+
+Until Rust crates land, the live architecture is the Python layout below.
+
+### Python reference (as built)
 
 ```
 src/physics_engine/
@@ -61,7 +84,11 @@ SI only (m, kg, s, N, rad). No unit conversion inside the engine. Enforcement:
   physically chosen for orbital tests). Adaptive stepping (scipy `solve_ivp`) may be added
   as a reference integrator, never in the deterministic core loop.
 * Determinism: float64, fixed body/generator order, no threading, no randomness in the step;
-  identical inputs give bit-identical outputs (tested).
+  identical inputs give bit-identical outputs (tested). The Rust core inherits this policy
+  for its deterministic feature (see ROADMAP § Determinism and units); optional parallelism
+  must not be the validation default.
+* Precision: **f64 first** in both tracks. An f32 games mode, if added, is a separate
+  feature and is never the oracle.
 
 ## Test plan
 
@@ -187,3 +214,15 @@ markers cover trimmed level flight (5 s) and roll oscillation.
 * Added mass is a mass-property helper only (no radiation damping, no frequency dependence).
 * No coupling of aero/hydro to the contact solver; vehicles do not yet “land” or “dock”
   through `ContactWorld`. No visuals, control systems, or combat logic.
+
+## Beyond stage 3
+
+Stages 1–3 close the original Python validation arc. Further work (Rust port,
+joints/islands/CCD, space, waves, materials, soft bodies, fluids/blast, bindings)
+is planned in [ROADMAP.md](ROADMAP.md). Design invariants above (SI, frames,
+L-based rotation, f64 determinism, analytic test bar) remain binding unless this
+document is explicitly revised.
+
+**Third-party code.** Algorithms may be learned from surveyed engines; any reused
+source must retain license notices and be recorded in `THIRD_PARTY.md` (see ROADMAP
+§ Reference project survey).
