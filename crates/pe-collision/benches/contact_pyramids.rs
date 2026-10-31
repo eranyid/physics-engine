@@ -4,9 +4,12 @@
 //! Record medians in `docs/BENCHMARKS.md` after numerical changes.
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use pe_collision::ccd::sphere_plane_toi;
+use pe_collision::shapes::Plane;
 use pe_collision::{
     brute_force_pairs, dynamic_tree_pairs, sweep_and_prune, Aabb, BoxShape, BroadPhaseKind,
-    ContactWorld, Material, Shape, SoftStepParams, SolverMode, StaticCollider,
+    ContactWorld, Joint, JointSoftParams, Material, Shape, SoftStepParams, SolverMode, Sphere,
+    StaticCollider, WORLD_BODY,
 };
 use pe_core::forces::UniformGravity;
 use pe_core::{RigidBody, World};
@@ -145,10 +148,44 @@ fn bench_pyramid_broad_kind(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_joints_and_ccd(c: &mut Criterion) {
+    let mut group = c.benchmark_group("m5b_joints_ccd");
+    group.sample_size(20);
+    group.bench_function("joints_double_pendulum_600", |b| {
+        b.iter(|| {
+            std::hint::black_box(pe_collision::canonical_joints_hash());
+        });
+    });
+    group.bench_function("ccd_bullet_toi_sphere_plane", |b| {
+        b.iter(|| {
+            let t = sphere_plane_toi(
+                Vec3::new(0.0, 0.0, 1.0),
+                Vec3::new(0.0, 0.0, -1000.0),
+                0.05,
+                Vec3::unit_z(),
+                0.0,
+                1.0 / 60.0,
+            );
+            std::hint::black_box(t)
+        });
+    });
+    // Keep unused imports honest if criterion elides — touch Joint builder once.
+    group.bench_function("joint_distance_build", |b| {
+        b.iter(|| {
+            let j = Joint::distance(0, WORLD_BODY, Vec3::zero(), Vec3::zero(), 1.0)
+                .with_soft(JointSoftParams::default());
+            std::hint::black_box(j)
+        });
+    });
+    let _ = (Sphere::new(0.1), Plane::new(Vec3::unit_z(), 0.0));
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_pyramid,
     bench_broadphase,
-    bench_pyramid_broad_kind
+    bench_pyramid_broad_kind,
+    bench_joints_and_ccd
 );
 criterion_main!(benches);

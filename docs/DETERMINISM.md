@@ -29,6 +29,8 @@ Cross-check helpers:
   `physics_engine_rs.canonical_aero_hydro_hash()`
 - M5a soft-step: `cargo run -p pe-collision --bin soft_step_hash --release` /
   `physics_engine_rs.canonical_soft_step_collision_hash()`
+- M5b joints: `cargo run -p pe-collision --bin joints_hash --release` /
+  `physics_engine_rs.canonical_joints_hash()`
 - M7 space: `cargo run -p pe-space --bin space_hash --release` /
   `physics_engine_rs.canonical_space_hash()`
 - Blast: `cargo run -p pe-blast --bin blast_hash --release` /
@@ -81,6 +83,23 @@ sleep disabled, 600 steps @ `dt = 1/240`.
 | Platform | Hash (hex) | Status |
 | --- | --- | --- |
 | Linux x86_64 (CI + local) | `676d67a223120e34` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+### Canonical M5b joints hash (locked)
+
+Scenario (must stay in sync in `pe_collision::canonical_joints_hash`, the
+`joints_hash` binary, and `physics_engine_rs.canonical_joints_hash()`):
+
+- Double pendulum: two unit spheres, lengths 0.5 m, soft distance joints
+  (Hertz 90, ζ 0.8) body0↔world and body1↔body0; soft-step (8 substeps);
+  sleep off; uniform gravity.
+- 600 steps @ `dt = 1/240`.
+- Hash: FNV-1a 64 over packed dynamic state.
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `62156ada3fa770ad` | locked |
 | macOS (CI) | same expected | CI asserts equality |
 | Windows (CI) | same expected | CI asserts equality |
 
