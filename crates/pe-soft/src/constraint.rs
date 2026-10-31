@@ -569,10 +569,7 @@ fn project_tetra_fem_snh(
         None => return,
     };
     // P = μ F + (λ ln J − μ) F⁻ᵀ
-    let p = mat_add(
-        &scale_mat(f, mu),
-        &scale_mat(&f_inv_t, lambda * ln_j - mu),
-    );
+    let p = mat_add(&scale_mat(f, mu), &scale_mat(&f_inv_t, lambda * ln_j - mu));
     project_energy_density(
         particles,
         &c.indices,
@@ -606,37 +603,17 @@ fn project_energy_density(
     let inv_c = 1.0 / c_val;
     let mut grads = fem_piola_grads(dm_inv, piola);
     for g in &mut grads {
-        *g = *g * inv_c;
+        *g *= inv_c;
     }
-    solve_equality(
-        particles,
-        indices,
-        &grads,
-        c_val,
-        alpha,
-        lambda,
-        dt,
-    );
+    solve_equality(particles, indices, &grads, c_val, alpha, lambda, dt);
 }
 
 fn green_strain(f: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
     let c = mul3(&transpose3(f), f);
     [
-        [
-            0.5 * (c[0][0] - 1.0),
-            0.5 * c[0][1],
-            0.5 * c[0][2],
-        ],
-        [
-            0.5 * c[1][0],
-            0.5 * (c[1][1] - 1.0),
-            0.5 * c[1][2],
-        ],
-        [
-            0.5 * c[2][0],
-            0.5 * c[2][1],
-            0.5 * (c[2][2] - 1.0),
-        ],
+        [0.5 * (c[0][0] - 1.0), 0.5 * c[0][1], 0.5 * c[0][2]],
+        [0.5 * c[1][0], 0.5 * (c[1][1] - 1.0), 0.5 * c[1][2]],
+        [0.5 * c[2][0], 0.5 * c[2][1], 0.5 * (c[2][2] - 1.0)],
     ]
 }
 

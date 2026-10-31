@@ -68,7 +68,7 @@ Yield / thermal fields are stored for later plasticity / heat modules and are
 | Axial bar `δL = F L/(E A)` (**spring-chain**) | **~0.21%** rel, mesh-independent (n=1…16); CI **&lt; 0.5%** | Persistent `ext_force` on free end; quasistatic settle `\|v\|→0` |
 | Axial bar tet FEM vs `FL/(EA)` | **ν=0: ~0.2–0.8%** (4×1×1→12×3×3); **ν=0.3: ~1.0–1.4%** | StVK energy XPBD `C=√(2Ψ)`, `α=1/V₀`; λ-constraint skipped when `ν=0` (never rigid `J=1`). CI **&lt; 5%** on each mesh; coarse→mid refinement improves. |
 | Near-incompressible tet volume (`ν=0.495`) | **~0.9%** Σ\|ΔV\|/Σ\|V₀\|; CI **&lt; 3%** | Soft cube drop onto plane |
-| Cantilever tip vs EB `mg L³/(8EI)` | **ratio ≈ 1.006** (tip_drop≈0.296 m, δ_EB≈0.294 m) | Timoshenko shear add-on `δ_s≈mg L/(2 k_s G A)` with `k_s=5/6` gives δ_Timo≈0.297 m, ratio≈0.996. Linear tets can shear-lock on thick beams; this slender mesh shows ~1% shear correction, no severe locking. CI **\|ratio−1\| &lt; 5%** vs EB. |
+| Cantilever tip vs EB `mg L³/(8EI)` | **8×2×2 ≈ 0.36; 16×2×2 ≈ 0.62** (ρ=20, small deflection); **32×4×4 ≈ 0.88** | Linear tets **shear-lock**. Prior ~1.0 EB match was the under-stiff FEM bug cancelling lock. CI: refinement increases tip ratio; 16×2×2 band **0.5–0.85** (not a &lt;5% continuum claim). |
 | Cloth pinned corners | hangs; damped energy does not grow | — |
 | Conservative spring energy (long run) | **no growth** (`E_max=E₀`); decay **≈12.7% at t≈21 s**, **≈23.8% at t≈42 s** (`α=0.01`, 64 substeps, `dt=1/240`) | XPBD numerical dissipation — not symplectic. CI locks decay bands. |
 | Substep residual study | more substeps do not worsen loaded distance residual | — |

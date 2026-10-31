@@ -314,7 +314,8 @@ fn axial_bar_tet_fem_fl_over_ea_converges() {
             w.step(1.0 / 120.0);
         }
         let x_end: f64 = end.iter().map(|&i| w.particles[i].x.x).sum::<f64>() / end.len() as f64;
-        let v_end: f64 = end.iter().map(|&i| w.particles[i].v.norm()).sum::<f64>() / end.len() as f64;
+        let v_end: f64 =
+            end.iter().map(|&i| w.particles[i].v.norm()).sum::<f64>() / end.len() as f64;
         assert!(
             v_end < 1e-4,
             "ν=0 tet FEM not settled |v|={v_end} at {nx}x{ny}x{nz}"
@@ -411,17 +412,19 @@ fn tet_volume_conservation_near_incompressible() {
 #[test]
 fn cantilever_deflection_vs_euler_bernoulli() {
     // Distributed self-weight: δ_EB = mg L³ / (8 E I).
-    // Timoshenko shear add-on (uniform load tip): δ_s ≈ mg L / (2 k_s G A),
-    // k_s = 5/6 for rectangle. Linear tets can shear-lock; this mesh is slender
-    // enough that shear is a ~1% correction and measured tip tracks EB closely.
+    // With correct StVK energy, linear tets shear-lock on coarse meshes (tip too
+    // small). The old ~1.0 EB match was an artifact of the under-stiff FEM bug
+    // cancelling locking. Light load keeps the response near-linear; h-refinement
+    // increases tip drop toward EB (8→16 along length: ratio ~0.36→~0.62).
     let length = 1.0;
     let height = 0.1;
     let depth = 0.1;
     let e = 1.0e6;
     let nu = 0.3;
+    let density = 20.0;
     let mat = Material {
         name: "cantilever_test",
-        density: 200.0,
+        density,
         youngs_modulus: e,
         poisson_ratio: nu,
         friction: 0.0,
@@ -432,40 +435,43 @@ fn cantilever_deflection_vs_euler_bernoulli() {
         verified: false,
         source_note: "test",
     };
-    let mut w = make_cantilever(length, height, depth, 8, &mat);
-    w.params.gravity = Vec3::new(0.0, 0.0, -9.80665);
-    w.params.damping = 5.0;
-    w.params.substeps = 50;
-    for _ in 0..800 {
-        w.step(1.0 / 120.0);
-    }
-    let mut s = 0.0;
-    let mut c = 0usize;
-    for p in &w.particles {
-        if p.x.x > length * 0.95 {
-            s += p.x.z;
-            c += 1;
-        }
-    }
-    let tip_drop = depth * 0.5 - s / c.max(1) as f64;
-    let mass = mat.density * length * height * depth;
+    let mass = density * length * height * depth;
     let i_area = depth * height * height * height / 12.0;
     let delta_eb = mass * 9.80665 * length * length * length / (8.0 * e * i_area);
-    let g_shear = e / (2.0 * (1.0 + nu));
-    let k_s = 5.0 / 6.0;
-    let area = height * depth;
-    let delta_shear = mass * 9.80665 * length / (2.0 * k_s * g_shear * area);
-    let delta_timo = delta_eb + delta_shear;
-    let ratio_eb = tip_drop / delta_eb;
-    let ratio_timo = tip_drop / delta_timo;
-    // Measured ≈ 1.006 vs EB, ≈ 0.996 vs Timoshenko on this mesh.
+
+    let mut ratios = Vec::new();
+    for nx in [8usize, 16] {
+        let mut w = make_cantilever(length, height, depth, nx, &mat);
+        w.params.gravity = Vec3::new(0.0, 0.0, -9.80665);
+        w.params.damping = 15.0;
+        w.params.substeps = 40;
+        w.params.iterations = 6;
+        let end: Vec<usize> = w
+            .particles
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.x.x > length * 0.95)
+            .map(|(i, _)| i)
+            .collect();
+        let z0: f64 = end.iter().map(|&i| w.particles[i].x.z).sum::<f64>() / end.len() as f64;
+        for _ in 0..2000 {
+            w.step(1.0 / 120.0);
+        }
+        let z1: f64 = end.iter().map(|&i| w.particles[i].x.z).sum::<f64>() / end.len() as f64;
+        let tip_drop = z0 - z1;
+        let ratio = tip_drop / delta_eb;
+        assert!(tip_drop > 0.0, "nx={nx}: expected tip drop, EB={delta_eb}");
+        ratios.push((nx, tip_drop, ratio));
+    }
+    // Coarse locks harder; refining along the span must increase tip / EB ratio.
     assert!(
-        tip_drop > 0.0,
-        "expected tip drop; EB={delta_eb}, Timo={delta_timo}"
+        ratios[1].2 > ratios[0].2 + 0.1,
+        "expected h-refinement to unlock shear: {ratios:?}"
     );
+    // 16×2×2 band (~0.62 measured); not a <5% continuum claim on this mesh.
     assert!(
-        (ratio_eb - 1.0).abs() < 0.05,
-        "cantilever vs EB: tip_drop={tip_drop}, δ_EB={delta_eb}, ratio={ratio_eb}, δ_Timo={delta_timo}, ratio_T={ratio_timo}"
+        ratios[1].2 > 0.5 && ratios[1].2 < 0.85,
+        "refined cantilever ratio out of locking band: {ratios:?}, δ_EB={delta_eb}"
     );
 }
 

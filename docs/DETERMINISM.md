@@ -255,9 +255,12 @@ Scenario (`pe_soft::soft_canonical_hash`, `soft_hash` binary,
 
 | Platform | Hash (hex) | Status |
 | --- | --- | --- |
-| Linux x86_64 (CI + local) | `7e7d0d3af68735c6` | locked |
+| Linux x86_64 (CI + local) | `adfc0a4c1209e5dc` | locked |
 | macOS (CI) | same expected | CI asserts equality |
 | Windows (CI) | same expected | CI asserts equality |
+
+Updated from `7e7d0d3af68735c6` when tet FEM switched to StVK/SNH energy XPBD
+(`C=√(2Ψ)`, `α=1/V₀`; jelly cube in the canonical scene uses neo-Hookean tets).
 
 If a platform ever diverges, **do not silently loosen**: record the OS, toolchain,
 exact first differing packed index / float bits, and root cause (usually accidental

@@ -365,7 +365,11 @@ pub fn make_axial_bar_springs(
     w
 }
 
-/// Cantilever beam as a soft cube strip, pinned on the face at x=origin.
+/// Cantilever beam as a soft tet strip, pinned on the face at `x = 0`.
+///
+/// Uses StVK tet FEM (`neo_hookean = false`). Linear tets shear-lock on coarse
+/// through-thickness meshes; tip deflection approaches Euler–Bernoulli under
+/// isotropic refinement (see `SOFT.md`).
 pub fn make_cantilever(
     length: f64,
     height: f64,
@@ -429,7 +433,7 @@ pub fn make_cantilever(
                             rest_volume: vol,
                             lame_lambda: lambda,
                             lame_mu: mu,
-                            neo_hookean: true,
+                            neo_hookean: false,
                             lambda_dev: Multiplier::default(),
                             lambda_vol: Multiplier::default(),
                         });

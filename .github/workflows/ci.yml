@@ -307,7 +307,7 @@ jobs:
           set -euo pipefail
           HASH=$(cargo run -p pe-soft --bin soft_hash --release | tr -d '\r\n' | tail -n1)
           echo "Canonical soft-body hash on ${{ matrix.os }}: $HASH"
-          EXPECTED=7e7d0d3af68735c6
+          EXPECTED=adfc0a4c1209e5dc
           if [ "$HASH" != "$EXPECTED" ]; then
             echo "::error::Soft-body determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
             echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
