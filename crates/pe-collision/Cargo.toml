@@ -1,0 +1,20 @@
+[package]
+name = "pe-collision"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Shapes, broad/narrow phase, contact manifolds, sequential-impulse solver (stage 2)"
+
+[dependencies]
+pe-math = { workspace = true }
+pe-core = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
+proptest = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "contact_pyramids"
+harness = false

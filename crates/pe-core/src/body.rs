@@ -129,7 +129,7 @@ pub fn inertia_solid_cylinder(mass: f64, r: f64, h: f64) -> [[f64; 3]; 3] {
 }
 
 /// Invert a 3×3 matrix (for body inertia). Panics if singular.
-pub(crate) fn invert3(m: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
+pub fn invert3(m: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
     let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
         - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
         + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
@@ -156,7 +156,7 @@ pub(crate) fn invert3(m: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
 
 /// Matrix-vector product `M v` for 3×3 row-major.
 #[inline]
-pub(crate) fn mat_vec(m: &[[f64; 3]; 3], v: Vec3) -> Vec3 {
+pub fn mat_vec(m: &[[f64; 3]; 3], v: Vec3) -> Vec3 {
     Vec3::new(
         m[0][0] * v.x + m[0][1] * v.y + m[0][2] * v.z,
         m[1][0] * v.x + m[1][1] * v.y + m[1][2] * v.z,
@@ -166,7 +166,7 @@ pub(crate) fn mat_vec(m: &[[f64; 3]; 3], v: Vec3) -> Vec3 {
 
 /// `A @ B` for 3×3.
 #[inline]
-pub(crate) fn mat_mul(a: &[[f64; 3]; 3], b: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
+pub fn mat_mul(a: &[[f64; 3]; 3], b: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
     let mut out = [[0.0; 3]; 3];
     for i in 0..3 {
         for j in 0..3 {
@@ -178,7 +178,7 @@ pub(crate) fn mat_mul(a: &[[f64; 3]; 3], b: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
 
 /// Transpose of 3×3.
 #[inline]
-pub(crate) fn mat_transpose(m: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
+pub fn mat_transpose(m: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
     [
         [m[0][0], m[1][0], m[2][0]],
         [m[0][1], m[1][1], m[2][1]],

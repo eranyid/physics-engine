@@ -72,7 +72,14 @@ fn axpy(s: &State, d: &State, h: f64) -> State {
 ///
 /// Implicit midpoint (time-reversible) solved by fixed-point iteration (`iters` = 4),
 /// matching the Python oracle. Keeps torque-free kinetic energy bounded.
-fn drift_rotation(world: &World, q: &[pe_math::Quat], l: &[pe_math::Vec3], h: f64) -> Vec<Quat> {
+///
+/// Used by contact steps (semi-implicit Euler with impulses) as well as free integrators.
+pub fn drift_rotation(
+    world: &World,
+    q: &[pe_math::Quat],
+    l: &[pe_math::Vec3],
+    h: f64,
+) -> Vec<Quat> {
     const ITERS: usize = 4;
     let n = q.len();
     let mut out = Vec::with_capacity(n);

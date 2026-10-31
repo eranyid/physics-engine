@@ -116,15 +116,28 @@ jobs:
         with:
           toolchain: "1.99.1"
 
-      - name: Compute canonical hash
+      - name: Compute canonical stage-1 hash
         shell: bash
         run: |
           set -euo pipefail
           HASH=$(cargo run -p pe-core --bin canonical_hash --release | tr -d '\r\n' | tail -n1)
-          echo "Canonical hash on ${{ matrix.os }}: $HASH"
+          echo "Canonical stage-1 hash on ${{ matrix.os }}: $HASH"
           EXPECTED=ca172fe3e3e57c79
           if [ "$HASH" != "$EXPECTED" ]; then
             echo "::error::Determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+
+      - name: Compute canonical stage-2 collision hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-collision --bin collision_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical collision hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=50d52b2193aa528c
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::Collision determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
             echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
             exit 1
           fi

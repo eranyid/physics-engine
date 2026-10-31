@@ -3,11 +3,13 @@ resolver = "2"
 members = [
     "crates/pe-math",
     "crates/pe-core",
+    "crates/pe-collision",
     "python",
 ]
 default-members = [
     "crates/pe-math",
     "crates/pe-core",
+    "crates/pe-collision",
 ]
 
 [workspace.package]
@@ -20,6 +22,7 @@ rust-version = "1.85"
 [workspace.dependencies]
 pe-math = { path = "crates/pe-math" }
 pe-core = { path = "crates/pe-core" }
+pe-collision = { path = "crates/pe-collision" }
 libm = "0.2"
 approx = "0.5"
 proptest = "1.5"
