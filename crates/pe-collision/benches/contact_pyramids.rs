@@ -4,13 +4,13 @@
 //! Record medians in `docs/BENCHMARKS.md` after numerical changes.
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use pe_collision::ccd::sphere_plane_toi;
+use pe_collision::shapes::Plane;
 use pe_collision::{
     brute_force_pairs, dynamic_tree_pairs, sweep_and_prune, Aabb, BoxShape, BroadPhaseKind,
     ContactWorld, Joint, JointSoftParams, Material, Shape, SoftStepParams, SolverMode, Sphere,
     StaticCollider, WORLD_BODY,
 };
-use pe_collision::ccd::sphere_plane_toi;
-use pe_collision::shapes::Plane;
 use pe_core::forces::UniformGravity;
 use pe_core::{RigidBody, World};
 use pe_math::Vec3;
