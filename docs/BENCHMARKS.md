@@ -1,11 +1,13 @@
-# Integrator and contact hot-loop baselines (Criterion)
+# Integrator, contact, and aero/hydro hot-loop baselines (Criterion)
 
 Measured on the Cloud Agent host (Linux x86_64, release, Rust 1.99.1).
 Numbers are wall time for the named workload; re-run locally after numerical changes.
 
 Default CI does **not** run Criterion (`cargo test` omits harness benches). Use
-`cargo bench -p pe-core --bench integrators` and
-`cargo bench -p pe-collision --bench contact_pyramids`.
+`cargo bench -p pe-core --bench integrators`,
+`cargo bench -p pe-collision --bench contact_pyramids`,
+`cargo bench -p pe-aero --bench aero_forces`, and
+`cargo bench -p pe-hydro --bench hydrostatics`.
 
 ## Stage 1 — integrators (`pe-core`)
 
@@ -24,5 +26,16 @@ Default CI does **not** run Criterion (`cargo test` omits harness benches). Use
 | `pyramid_10_rows_60_steps` | 55 boxes (10 rows) + ground, 60× contact @ 1/240 | ~39.3 ms |
 | `pyramid_20_rows_60_steps` | 210 boxes (20 rows) + ground, 60× contact @ 1/240 | ~180 ms |
 
-These are foundation baselines for M2/M3 — not throughput targets. Re-record when
-changing `libm` usage, SoA layout, integrator math, or the contact solver.
+## Stage 3 — aero / hydro (`pe-aero`, `pe-hydro`)
+
+| Benchmark | Workload | Median time |
+| --- | --- | --- |
+| `forces_eval_1k` | aero+thrust+gravity force eval (iter) | ~77 ns |
+| `rk4_1k_steps` | trimmed aircraft, 1000× RK4 @ dt=1e-3 | ~1.09 ms |
+| `buoyancy_forces_1k` | floating barge force eval (iter) | ~821 ns |
+| `heave_rk4_500_steps` | floating barge, 500× RK4 @ dt=1e-3 | ~2.23 ms |
+| `gz_curve_60_angles` | box GZ curve, 60 heel samples | ~54 µs |
+
+These are foundation baselines for M2–M4 — not throughput targets. Re-record when
+changing `libm` usage, SoA layout, integrator math, the contact solver, or aero/hydro
+force models.

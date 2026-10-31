@@ -4,12 +4,16 @@ members = [
     "crates/pe-math",
     "crates/pe-core",
     "crates/pe-collision",
+    "crates/pe-aero",
+    "crates/pe-hydro",
     "python",
 ]
 default-members = [
     "crates/pe-math",
     "crates/pe-core",
     "crates/pe-collision",
+    "crates/pe-aero",
+    "crates/pe-hydro",
 ]
 
 [workspace.package]
@@ -23,6 +27,8 @@ rust-version = "1.85"
 pe-math = { path = "crates/pe-math" }
 pe-core = { path = "crates/pe-core" }
 pe-collision = { path = "crates/pe-collision" }
+pe-aero = { path = "crates/pe-aero" }
+pe-hydro = { path = "crates/pe-hydro" }
 libm = "0.2"
 approx = "0.5"
 proptest = "1.5"

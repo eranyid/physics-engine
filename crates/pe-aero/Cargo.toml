@@ -1,0 +1,19 @@
+[package]
+name = "pe-aero"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "ISA atmosphere, wing polar/stall, thrust, and aircraft aero force generators (stage 3)"
+
+[dependencies]
+pe-math = { workspace = true }
+pe-core = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "aero_forces"
+harness = false

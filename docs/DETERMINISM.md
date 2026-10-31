@@ -1,17 +1,18 @@
-# Determinism policy (stages 1–2 / M2–M3)
+# Determinism policy (stages 1–3 / M2–M4)
 
 ## Guarantees
 
 On the **Rust step path** (`pe-core` integrators + force apply + quaternion `exp_rotvec`,
-and `pe-collision` broad/narrow/contact):
+`pe-collision` broad/narrow/contact, and `pe-aero` / `pe-hydro` force apply):
 
 1. **f64 only**; no `target-cpu=native`, no explicit FMA (`mul_add` unused).
 2. Elementary functions go through the pure-Rust [`libm`](https://crates.io/crates/libm) crate
-   (`pe_math::libm_ops`: `sin`/`cos`/`sqrt`/`exp`/`log`/`tanh`/`fabs`/`hypot`/`atan2`/`copysign`).
+   (`pe_math::libm_ops`: `sin`/`cos`/`sqrt`/`exp`/`log`/`tanh`/`fabs`/`hypot`/`atan2`/`copysign`/`pow`/`asin`/`acos`).
 3. Fixed body and generator order (`Vec`, never `HashMap` iteration).
 4. Contact pairs sorted by `(min_id, max_id)` before narrow phase; warm-start cache is a
    `BTreeMap` keyed by `(a, b, feature)` (lookups only — never unordered iteration).
-5. Identical inputs → **bit-identical** packed state on the same ISA across OS when (1)–(4) hold.
+5. Hydro mesh waterplane points sorted by `atan2` about the centroid (`total_cmp`) — no hash maps.
+6. Identical inputs → **bit-identical** packed state on the same ISA across OS when (1)–(5) hold.
 
 Cross-check helpers:
 
@@ -19,6 +20,8 @@ Cross-check helpers:
   `physics_engine_rs.canonical_determinism_hash()`
 - Stage 2: `cargo run -p pe-collision --bin collision_hash --release` /
   `physics_engine_rs.canonical_collision_hash()`
+- Stage 3: `cargo run -p pe-hydro --bin aero_hydro_hash --release` /
+  `physics_engine_rs.canonical_aero_hydro_hash()`
 
 ### Canonical stage-1 scenario hash (locked)
 
@@ -52,6 +55,24 @@ Scenario:
 | macOS (CI) | same expected | CI asserts equality |
 | Windows (CI) | same expected | CI asserts equality |
 
+### Canonical stage-3 aero+hydro hash (locked)
+
+Scenario:
+
+- Body 0: GA-like aircraft (`WingPolar` S=16, CD0=0.025, e=0.8, …), mass 1000 kg at
+  `z=500` m, `v=(40,0,0)`, nose-up α≈0.05 rad; `AircraftAero` (constant ρ=ρ₀) +
+  `FixedThrust(800 N)` + uniform gravity.
+- Body 1: box barge 12×4×2 m, mass 24 000 kg at Archimedes draft, small heel 0.02 rad;
+  `Buoyancy` (freshwater) + shared gravity.
+- Integrate with **RK4**, `t_end=1`, `dt=1e-2`.
+- Hash: FNV-1a 64 over little-endian IEEE bits of `State::pack()`.
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `25ecc6e6a8911d8c` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
 If a platform ever diverges, **do not silently loosen**: record the OS, toolchain,
 exact first differing packed index / float bits, and root cause (usually accidental
 platform `libm` or FMA) in this table.
@@ -72,10 +93,19 @@ The Python package uses NumPy/SciPy (platform libm, vectorized reductions). Ther
 | Block on incline (slide / hold) | ~1e-15 | Contact PGS; libm `sqrt` in μ combine |
 | Rolling sphere → 5/7 v₀ | ~1e-15 | Same friction disk projection |
 | 3-box stack 0.5 s | ~1e-14 | Manifold clipping + warm start |
+| ISA T/p/ρ/a (0–20 km) | **0** / ≤1e-14 | Same constants + `pow`/`exp` via libm |
+| Wing polar CL/CD (incl. stall) | **0** | Pure algebra |
+| Level-flight trim dict | ≤1e-14 | `sqrt` in V |
+| Aero forces at α=0 | ≤1e-12 | Same force algebra |
+| Trim net force (world) | ≤1e-5 N abs | Matches Python atol |
+| Buoyancy equilibrium force | ≤1e-8 N abs | Archimedes upright closed form |
+| Box GZ curve (small φ) | ≤1e-9 rel | Mesh clip path vs NumPy |
+| Roll period formula | **0** / ≤1e-15 | Pure algebra |
 
-Aim for near bit-exact on contacts; residual ~1 ULP differences come from portable
-`libm` vs NumPy/`math` on a handful of `sqrt`/`sin`/`cos` calls in the shared
-quaternion / SAT path — not from algorithm or ordering drift.
+Aim for near bit-exact on contacts and aero/hydro algebra; residual ~1 ULP differences
+come from portable `libm` vs NumPy/`math` on a handful of `sqrt`/`sin`/`cos`/`pow`/`exp`
+calls — not from algorithm or ordering drift.
 
 Within Rust, `test_rust_determinism_repeat`, `determinism_bitwise_repeat`, and
 `collision_hash_is_bit_stable_on_repeat` require **bit-identical** packed state on repeat.
+The stage-3 hash is asserted equal on repeat via `canonical_aero_hydro_hash`.

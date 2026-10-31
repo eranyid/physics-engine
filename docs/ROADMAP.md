@@ -209,8 +209,8 @@ ported early because the Python oracle already exists.
 | **M0** | Docs & policy | This roadmap + DESIGN dual-track; `THIRD_PARTY.md` policy; CI still green on Python | **done** |
 | **M1** | Rust skeleton | Workspace builds; `pe-math` + `pe-core`; maturin abi3 wheel; CI: `cargo test`/`clippy`/`fmt` + pytest | **done** |
 | **M2** | Port stage 1 | Rust matches Python oracle on stage-1 analytic tests (tolerances documented); bit-stable deterministic mode | **done** |
-| **M3** | Port stage 2 | Contacts/friction/stacks cross-validated; missing narrow pairs tracked; SAP≡brute in Rust | **done** (this PR) |
-| **M4** | Port stage 3 | ISA/aero/hydro parity with Python suite | planned |
+| **M3** | Port stage 2 | Contacts/friction/stacks cross-validated; missing narrow pairs tracked; SAP≡brute in Rust | **done** |
+| **M4** | Port stage 3 | ISA/aero/hydro parity with Python suite | **done** (this PR) |
 | **M5** | Joints + islands + sleep | Pendulum/motor tests; large resting scene sleeps; Python may gain thin joint oracle or shared fixtures | planned |
 | **M6** | CCD + convex | TOI tests (no tunnel at configured speeds); GJK/EPA convex; capsule–box | planned |
 | **M7** | Space module | Kepler + n-body conservation suite in Rust (+ Python helpers as needed) | planned |
@@ -241,6 +241,20 @@ ported early because the Python oracle already exists.
 - Tests: Rust unit + proptest narrow-phase; analytic contact suite; Python oracle
   `tests/test_oracle_contacts_rust.py` (near bit-exact). Criterion pyramid benches in
   `docs/BENCHMARKS.md`. Default CI stays fast (no Criterion; slow pytest marker unchanged).
+
+### M4 as built (summary)
+
+- New crates `crates/pe-aero` (ISA through 20 km, `WingPolar` + stall, Fixed/Propeller/Jet
+  thrust, `AircraftAero` force generator, trim / terminal-V / Lanchester phugoid helpers) and
+  `crates/pe-hydro` (Box/Cylinder/Sphere/ConvexMesh hulls, buoyancy, GM/GZ, heave/roll periods,
+  hull drag, added-mass helpers, **IMO IS Code MSC.267(85)** intact-stability checker).
+- Exposed through `physics_engine_rs` (PyO3); generators register into `World` like stage 1–2.
+- Determinism: portable `libm` only; no `HashMap` in the step; cross-OS aero+hydro hash CI
+  (aircraft + floating barge, 1 s RK4) — `docs/DETERMINISM.md`.
+- Tests: Rust published-value + analytic suites; Python oracle
+  `tests/test_oracle_aero_hydro_rust.py`. Criterion benches in `docs/BENCHMARKS.md`.
+  Default CI stays fast (no Criterion; slow pytest marker unchanged).
+- **Out of scope (later):** waves, 6-DOF aero check-cases, blade element, compressibility.
 
 **Rule.** No milestone merges without: (1) analytic or published benchmark tests,
 (2) oracle or cross-impl diff where a Python reference exists, (3) CI green.
