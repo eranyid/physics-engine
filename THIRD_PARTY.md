@@ -34,12 +34,17 @@ other GPL/AGPL/LGPL projects):
 - Yoshida, H. (1990). Construction of higher order symplectic integrators.
   *Phys. Lett. A* **150**.
 - Fehlberg, E. (1968). Classical fifth-, sixth-, seventh-, and eighth-order
-  Runge–Kutta formulas with stepsize control. NASA TR R-287. (RKF78; DOP853-class
-  adaptive role.)
+  Runge–Kutta formulas with stepsize control. NASA TR R-287. (RKF78; DOP853
+  stand-in — Hairer tableau not reproduced.)
 - Izzo, D. (2015). Revisiting Lambert's problem. *Celest. Mech. Dyn. Astr.* **121**.
 - Battin / Danby / Vallado textbook identities for Stumpff functions and universal
   Kepler variables.
-- Rein & Spiegel (2015) IAS15 and Wisdom & Holman (1991) WHFast are **cited as
-  future work only** (stubs); no code from those papers' reference implementations
-  was used.
+- Rein & Spiegel (2015). IAS15. *MNRAS* **446**, 1424 (arXiv:1409.4779) — Gauss–Radau
+  nodes from `P_8+P_7=0`, predictor–corrector, `ε_b` step control, compensated
+  summation. **No** REBOUND source.
+- Rein & Tamayo (2015). WHFast. *MNRAS* **452**, 376 (arXiv:1506.01084) — Jacobi
+  transforms (§3.1), DKD Wisdom–Holman split; Duncan, Levison & Lee (1998)
+  democratic-heliocentric option. Universal Kepler drift via in-tree Stumpff
+  helpers. **No** REBOUND source.
+- Wisdom & Holman (1991). Symplectic maps for the N-body problem. *AJ* **102**.
 - Chenciner–Montgomery / Simó figure-eight initial conditions are published IC values.
