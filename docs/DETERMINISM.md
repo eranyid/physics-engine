@@ -255,7 +255,7 @@ Scenario (`pe_fluid::fluid_tank_hash`, `fluid_hash` binary,
 
 | Platform | Hash (hex) | Status |
 | --- | --- | --- |
-| Linux x86_64 (CI + local) | `8a407306422da6aa` | locked |
+| Linux x86_64 (CI + local) | `9d9e0da856fd43d4` | locked |
 | macOS (CI) | same expected | CI asserts equality |
 | Windows (CI) | same expected | CI asserts equality |
 

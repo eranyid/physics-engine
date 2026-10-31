@@ -30,6 +30,7 @@ pub mod oracles;
 pub mod particles;
 pub mod pbf;
 pub mod scenarios;
+pub mod validation;
 pub mod viscosity;
 pub mod wcsph;
 
@@ -60,5 +61,9 @@ pub use oracles::{
 pub use particles::{fill_box, fill_box_boundary, mass_from_spacing, ParticleKind, Particles};
 pub use pbf::{PbfParams, PbfWorld};
 pub use scenarios::{fluid_hash_world, fluid_tank_hash, FLUID_HASH_DT, FLUID_HASH_STEPS};
+pub use validation::{
+    dam_break_convergence, dam_break_front_at, fluid_front_x, fluid_front_x_toe, make_dam_break_2d,
+    ritter_front_rel_error, tait_hydrostatic_profile_error,
+};
 pub use viscosity::{max_speed, pi_ij, MonaghanViscosity, Xsph};
 pub use wcsph::{WcsphParams, WcsphWorld};
