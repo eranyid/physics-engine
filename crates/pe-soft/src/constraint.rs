@@ -448,180 +448,224 @@ fn deformation_gradient(
     mul3(&ds, dm_inv)
 }
 
-/// Project tetrahedral FEM: stable neo-Hookean or StVK-style (Macklin & Müller 2021).
+/// Project tetrahedral FEM via XPBD energy constraints (Macklin & Müller 2021).
+///
+/// Continuum energy `U = V₀ Ψ(F)`. XPBD match: `C = √(2Ψ)`, `α = 1/V₀` so
+/// `C²/(2α) = V₀ Ψ`. Split into μ (deviatoric) and λ (hydrostatic) constraints.
+///
+/// **Critical:** when `λ ≈ 0` the hydrostatic constraint is **skipped** (not
+/// `α = 0`). Treating `α = 0` as rigid `J = 1` was the axial under-stiffness bug:
+/// isochoric stretch makes `I_C − 3 = O(ε²)`, killing linear FL/(EA) response.
+///
+/// - StVK: `Ψ = μ ‖E‖²_F + (λ/2)(tr E)²`, `E = ½(FᵀF − I)`, `P = F(2μ E + λ tr(E) I)`
+/// - Stable NH: `Ψ = (μ/2)(I_C − 3) − μ ln J + (λ/2)(ln J)²`,
+///   `P = μ F + (λ ln J − μ) F⁻ᵀ` (log form; stress-free at `F = I`)
 pub fn project_tetra_fem(particles: &mut [Particle], c: &mut TetraFemConstraint, dt: f64) {
+    if c.rest_volume <= 1e-30 {
+        return;
+    }
     let f = deformation_gradient(particles, c.indices, &c.dm_inv);
     let j = det3(&f);
     if j.abs() < 1e-20 {
         return;
     }
 
-    // First Piola-ish directions via finite constraint forms.
-    // Stable neo-Hookean (Macklin & Müller 2021):
-    //   C_dev related to √(I_C) and C_vol = J − 1 − μ/λ (shifted).
-    let ft_f = mul3(&transpose3(&f), &f);
-    let i_c = ft_f[0][0] + ft_f[1][1] + ft_f[2][2];
-
     if c.neo_hookean {
-        // Deviatoric: C = √I_C − √3  (isotropic stretch rest)
-        let sqrt_ic = libm_ops::sqrt(i_c.max(0.0));
-        let c_dev = sqrt_ic - libm_ops::sqrt(3.0);
-        // Compliance from μ and rest volume: α = 1/(μ V₀) for energy ½ μ V C² order.
-        let alpha_dev = if c.lame_mu > 0.0 && c.rest_volume > 0.0 {
-            1.0 / (c.lame_mu * c.rest_volume)
-        } else {
-            0.0
-        };
-        // Gradients: ∂√I_C / ∂x ≈ (1/√I_C) F : ∂F/∂x
-        let inv_s = if sqrt_ic > 1e-12 { 1.0 / sqrt_ic } else { 0.0 };
-        let grads = fem_dev_grads(particles, c.indices, &c.dm_inv, &f, inv_s);
-        solve_equality(
-            particles,
-            &c.indices,
-            &grads,
-            c_dev,
-            alpha_dev,
-            &mut c.lambda_dev,
-            dt,
-        );
-
-        // Volumetric: C = J − γ with γ = 1 + μ/λ for stable NH rest (approx γ=1 if λ large)
-        let gamma = if c.lame_lambda.abs() > 1e-30 {
-            1.0 + c.lame_mu / c.lame_lambda
-        } else {
-            1.0
-        };
-        let f2 = deformation_gradient(particles, c.indices, &c.dm_inv);
-        let j2 = det3(&f2);
-        let c_vol = j2 - gamma;
-        let alpha_vol = if c.lame_lambda > 0.0 && c.rest_volume > 0.0 {
-            1.0 / (c.lame_lambda * c.rest_volume)
-        } else {
-            0.0
-        };
-        let grads_v = fem_vol_grads(particles, c.indices, &c.dm_inv, &f2);
-        solve_equality(
-            particles,
-            &c.indices,
-            &grads_v,
-            c_vol,
-            alpha_vol,
-            &mut c.lambda_vol,
-            dt,
-        );
+        project_tetra_fem_snh(particles, c, &f, j, dt);
     } else {
-        // StVK-like small-strain match:
-        // C = ½(I_C − 3) ≈ ε_axial for uniaxial stretch; ∇C = ½ ∇I_C.
-        // Energy U = C²/(2α). For ν=0, μ=E/2 and continuum U=½ E V ε² ⇒ α = 1/(E V) = 1/(2μ V).
-        let c_dev = 0.5 * (i_c - 3.0);
-        let alpha_dev = if c.lame_mu > 0.0 && c.rest_volume > 0.0 {
-            1.0 / (2.0 * c.lame_mu * c.rest_volume)
-        } else {
-            0.0
-        };
-        // scale=0.5 ⇒ fem_dev_grads returns ∂I_C/∂x * 0.5 = ∇C
-        let grads = fem_dev_grads(particles, c.indices, &c.dm_inv, &f, 0.5);
-        solve_equality(
-            particles,
-            &c.indices,
-            &grads,
-            c_dev,
-            alpha_dev,
-            &mut c.lambda_dev,
-            dt,
-        );
+        project_tetra_fem_stvk(particles, c, &f, dt);
+    }
+}
+
+/// StVK split: μ-energy then λ-energy (skip λ when `lame_lambda ≈ 0`).
+fn project_tetra_fem_stvk(
+    particles: &mut [Particle],
+    c: &mut TetraFemConstraint,
+    f: &[[f64; 3]; 3],
+    dt: f64,
+) {
+    let e = green_strain(f);
+    let mut e_frob2 = 0.0;
+    for row in &e {
+        for &v in row {
+            e_frob2 += v * v;
+        }
+    }
+
+    // --- μ constraint: Ψ_μ = μ ‖E‖²_F, C = √(2 Ψ_μ), α = 1/V₀ ---
+    if c.lame_mu > 0.0 {
+        let psi_mu = c.lame_mu * e_frob2;
+        if psi_mu > 1e-30 {
+            // S_μ = 2μ E, P_μ = F S_μ
+            let s = scale_mat(&e, 2.0 * c.lame_mu);
+            let p = mul3(f, &s);
+            project_energy_density(
+                particles,
+                &c.indices,
+                &c.dm_inv,
+                c.rest_volume,
+                psi_mu,
+                &p,
+                &mut c.lambda_dev,
+                dt,
+            );
+        }
+    }
+
+    // --- λ constraint: Ψ_λ = (λ/2)(tr E)²; skip entirely when λ≈0 (ν=0) ---
+    if c.lame_lambda > 1e-30 {
         let f2 = deformation_gradient(particles, c.indices, &c.dm_inv);
-        let j2 = det3(&f2);
-        let c_vol = j2 - 1.0;
-        // Volumetric: U ≈ ½ K V (J−1)² with K = λ + 2μ/3 ≈ λ when λ ≫ μ;
-        // use α = 1/(λ V) as a first-order XPBD match (exact K deferred).
-        let alpha_vol = if c.lame_lambda > 0.0 && c.rest_volume > 0.0 {
-            1.0 / (c.lame_lambda * c.rest_volume)
-        } else {
-            0.0
-        };
-        let grads_v = fem_vol_grads(particles, c.indices, &c.dm_inv, &f2);
-        solve_equality(
-            particles,
-            &c.indices,
-            &grads_v,
-            c_vol,
-            alpha_vol,
-            &mut c.lambda_vol,
-            dt,
-        );
+        let e2 = green_strain(&f2);
+        let tr2 = e2[0][0] + e2[1][1] + e2[2][2];
+        let psi_lam = 0.5 * c.lame_lambda * tr2 * tr2;
+        if psi_lam > 1e-30 {
+            // S_λ = λ tr(E) I, P_λ = F S_λ
+            let s = [
+                [c.lame_lambda * tr2, 0.0, 0.0],
+                [0.0, c.lame_lambda * tr2, 0.0],
+                [0.0, 0.0, c.lame_lambda * tr2],
+            ];
+            let p = mul3(&f2, &s);
+            project_energy_density(
+                particles,
+                &c.indices,
+                &c.dm_inv,
+                c.rest_volume,
+                psi_lam,
+                &p,
+                &mut c.lambda_vol,
+                dt,
+            );
+        }
     }
 }
 
-fn fem_dev_grads(
-    _particles: &[Particle],
-    idx: [usize; 4],
-    dm_inv: &[[f64; 3]; 3],
+/// Stable neo-Hookean log form as one energy constraint (μ and λ together).
+///
+/// `Ψ = (μ/2)(I_C − 3) − μ ln J + (λ/2)(ln J)²`, `P = μ F + (λ ln J − μ) F⁻ᵀ`.
+/// Single constraint avoids splitting a μ-term that can be indefinite in isolation.
+/// When `λ ≈ 0` the `(ln J)²` term is omitted (not replaced by rigid `J = 1`).
+fn project_tetra_fem_snh(
+    particles: &mut [Particle],
+    c: &mut TetraFemConstraint,
     f: &[[f64; 3]; 3],
-    scale: f64,
-) -> [Vec3; 4] {
-    // ∂I_C/∂F = 2F → g for columns of Ds via dm_inv
-    // For vertex i>0: ∂/∂x_i contributes column (i-1) of ∂Ds
-    let ft = [
-        [f[0][0] * scale, f[0][1] * scale, f[0][2] * scale],
-        [f[1][0] * scale, f[1][1] * scale, f[1][2] * scale],
-        [f[2][0] * scale, f[2][1] * scale, f[2][2] * scale],
-    ];
-    // g_i = F * row_i(dm_inv)^T * 2 for I_C; for √I_C we already baked scale
-    let mut g = [Vec3::zero(); 4];
-    for a in 0..3 {
-        // column a of Ds ↔ particle a+1
-        let ca = Vec3::new(ft[0][a], ft[1][a], ft[2][a]);
-        // Multiply by dm_inv column contributions: ∂F/∂(Ds col a) = e_a ⊗ ...
-        // F = Ds Dm^{-1}; ∂I_C/∂x_{a+1} = 2 F Dm^{-T} e_a
-        let dmt = transpose3(dm_inv);
-        let dir = mat_vec(&dmt, {
-            let mut e = Vec3::zero();
-            match a {
-                0 => e.x = 1.0,
-                1 => e.y = 1.0,
-                _ => e.z = 1.0,
-            }
-            e
-        });
-        // Actually: ∂F/∂x_{a+1} maps so gradient w.r.t particle is F * Dm^{-T}[:,a] * 2
-        let col = Vec3::new(dmt[0][a], dmt[1][a], dmt[2][a]);
-        let gi = mat_vec(f, col) * (2.0 * scale);
-        let _ = (ca, dir);
-        g[a + 1] = gi;
+    j: f64,
+    dt: f64,
+) {
+    let ft_f = mul3(&transpose3(f), f);
+    let i_c = ft_f[0][0] + ft_f[1][1] + ft_f[2][2];
+    let ln_j = libm_ops::log(j.abs().max(1e-30));
+    let mu = c.lame_mu;
+    let lambda = c.lame_lambda.max(0.0);
+    if mu <= 0.0 && lambda <= 0.0 {
+        return;
     }
-    g[0] = (g[1] + g[2] + g[3]) * (-1.0);
-    let _ = idx;
-    g
-}
-
-fn fem_vol_grads(
-    _particles: &[Particle],
-    idx: [usize; 4],
-    dm_inv: &[[f64; 3]; 3],
-    f: &[[f64; 3]; 3],
-) -> [Vec3; 4] {
-    // ∂J/∂F = J F^{-T}
-    let f_inv = match invert3(f) {
-        Some(m) => m,
-        None => return [Vec3::zero(); 4],
+    let psi = 0.5 * mu * (i_c - 3.0) - mu * ln_j + 0.5 * lambda * ln_j * ln_j;
+    if psi <= 1e-30 {
+        return;
+    }
+    let f_inv_t = match invert3(f) {
+        Some(inv) => transpose3(&inv),
+        None => return,
     };
-    let j = det3(f);
-    let fit = transpose3(&f_inv);
-    let pj = [
-        [j * fit[0][0], j * fit[0][1], j * fit[0][2]],
-        [j * fit[1][0], j * fit[1][1], j * fit[1][2]],
-        [j * fit[2][0], j * fit[2][1], j * fit[2][2]],
-    ];
+    // P = μ F + (λ ln J − μ) F⁻ᵀ
+    let p = mat_add(
+        &scale_mat(f, mu),
+        &scale_mat(&f_inv_t, lambda * ln_j - mu),
+    );
+    project_energy_density(
+        particles,
+        &c.indices,
+        &c.dm_inv,
+        c.rest_volume,
+        psi,
+        &p,
+        &mut c.lambda_dev,
+        dt,
+    );
+}
+
+/// XPBD step for energy density `Ψ` with first Piola `P = ∂Ψ/∂F`.
+///
+/// `C = √(2Ψ)`, `α = 1/V₀`, `∇C = (1/C) ∇Ψ`, `∇ᵢΨ = P Dm⁻ᵀ eᵢ`.
+fn project_energy_density(
+    particles: &mut [Particle],
+    indices: &[usize; 4],
+    dm_inv: &[[f64; 3]; 3],
+    rest_volume: f64,
+    psi: f64,
+    piola: &[[f64; 3]; 3],
+    lambda: &mut Multiplier,
+    dt: f64,
+) {
+    let c_val = libm_ops::sqrt((2.0 * psi).max(0.0));
+    if c_val < 1e-14 || rest_volume <= 1e-30 {
+        return;
+    }
+    let alpha = 1.0 / rest_volume;
+    let inv_c = 1.0 / c_val;
+    let mut grads = fem_piola_grads(dm_inv, piola);
+    for g in &mut grads {
+        *g = *g * inv_c;
+    }
+    solve_equality(
+        particles,
+        indices,
+        &grads,
+        c_val,
+        alpha,
+        lambda,
+        dt,
+    );
+}
+
+fn green_strain(f: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
+    let c = mul3(&transpose3(f), f);
+    [
+        [
+            0.5 * (c[0][0] - 1.0),
+            0.5 * c[0][1],
+            0.5 * c[0][2],
+        ],
+        [
+            0.5 * c[1][0],
+            0.5 * (c[1][1] - 1.0),
+            0.5 * c[1][2],
+        ],
+        [
+            0.5 * c[2][0],
+            0.5 * c[2][1],
+            0.5 * (c[2][2] - 1.0),
+        ],
+    ]
+}
+
+fn scale_mat(m: &[[f64; 3]; 3], s: f64) -> [[f64; 3]; 3] {
+    [
+        [m[0][0] * s, m[0][1] * s, m[0][2] * s],
+        [m[1][0] * s, m[1][1] * s, m[1][2] * s],
+        [m[2][0] * s, m[2][1] * s, m[2][2] * s],
+    ]
+}
+
+fn mat_add(a: &[[f64; 3]; 3], b: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
+    [
+        [a[0][0] + b[0][0], a[0][1] + b[0][1], a[0][2] + b[0][2]],
+        [a[1][0] + b[1][0], a[1][1] + b[1][1], a[1][2] + b[1][2]],
+        [a[2][0] + b[2][0], a[2][1] + b[2][1], a[2][2] + b[2][2]],
+    ]
+}
+
+/// Particle gradients of a scalar that depends on F through first Piola `P`:
+/// `∇_{x_{a+1}} = P Dm⁻ᵀ[:, a]`, `∇_{x_0} = −∑_{a=1}^3 ∇_{x_a}`.
+fn fem_piola_grads(dm_inv: &[[f64; 3]; 3], piola: &[[f64; 3]; 3]) -> [Vec3; 4] {
     let dmt = transpose3(dm_inv);
     let mut g = [Vec3::zero(); 4];
     for a in 0..3 {
         let col = Vec3::new(dmt[0][a], dmt[1][a], dmt[2][a]);
-        // gradient = (∂J/∂F) Dm^{-T} e_a
-        g[a + 1] = mat_vec(&pj, col);
+        g[a + 1] = mat_vec(piola, col);
     }
     g[0] = (g[1] + g[2] + g[3]) * (-1.0);
-    let _ = idx;
     g
 }
 

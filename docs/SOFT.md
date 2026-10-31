@@ -66,7 +66,7 @@ Yield / thermal fields are stored for later plasticity / heat modules and are
 | Zero-compliance distance | `|L − L₀| &lt; 1e-8` | Rigid limit |
 | Hanging rope vs catenary | max `\|Δz\| &lt; 3 cm` on 1 m span | Fitted `a cosh(x/a)+c` |
 | Axial bar `δL = F L/(E A)` (**spring-chain**) | **~0.21%** rel, mesh-independent (n=1…16); CI **&lt; 0.5%** | Persistent `ext_force` on free end; quasistatic settle `\|v\|→0` |
-| Axial bar tet FEM vs `FL/(EA)` | **ν=0: ~5–9× too soft; ν=0.3 + fixed face: ~20–26× too soft** | Mesh refinement does **not** converge to continuum. Cause: XPBD tet compliance / gradient calibration under-stiff for this formulation (deferred). Fixed-face Poisson restraint alone cannot explain the gap. CI locks the documented under-stiff band (not a &lt;5% continuum claim). |
+| Axial bar tet FEM vs `FL/(EA)` | **ν=0: ~0.2–0.8%** (4×1×1→12×3×3); **ν=0.3: ~1.0–1.4%** | StVK energy XPBD `C=√(2Ψ)`, `α=1/V₀`; λ-constraint skipped when `ν=0` (never rigid `J=1`). CI **&lt; 5%** on each mesh; coarse→mid refinement improves. |
 | Near-incompressible tet volume (`ν=0.495`) | **~0.9%** Σ\|ΔV\|/Σ\|V₀\|; CI **&lt; 3%** | Soft cube drop onto plane |
 | Cantilever tip vs EB `mg L³/(8EI)` | **ratio ≈ 1.006** (tip_drop≈0.296 m, δ_EB≈0.294 m) | Timoshenko shear add-on `δ_s≈mg L/(2 k_s G A)` with `k_s=5/6` gives δ_Timo≈0.297 m, ratio≈0.996. Linear tets can shear-lock on thick beams; this slender mesh shows ~1% shear correction, no severe locking. CI **\|ratio−1\| &lt; 5%** vs EB. |
 | Cloth pinned corners | hangs; damped energy does not grow | — |
@@ -74,18 +74,28 @@ Yield / thermal fields are stored for later plasticity / heat modules and are
 | Substep residual study | more substeps do not worsen loaded distance residual | — |
 | Balloon overpressure | volume increases toward target | — |
 
-### Axial / FEM notes (why tet continuum &lt;5% was not claimed)
+### Axial / FEM notes
 
 1. **Spring-chain** is the rigorous XPBD map of uniaxial Hooke (`α = L/(EA)`). With
    prediction-step `ext_force` it settles to static equilibrium within ~0.2%.
-2. **Tet FEM** (StVK-style XPBD) remains under-stiff after removing the old
-   edge-spring double-count and after small-strain energy/gradient corrections.
-   Refining `n_x×n_y×n_z` does not drive error to zero — this is a **formulation
-   calibration** limit, not a coarse-mesh artifact. Poisson blocking at the pinned
-   face is a real Saint-Venant effect but is O((side/L)²) for aspect ratio 10, far
-   smaller than the observed 5–25× gap.
-3. When tet FEM continuum axial is fixed, replace the under-stiff band test with a
-   &lt;5% continuum oracle and record the mesh-convergence table here.
+2. **Tet FEM (StVK)** uses continuum Green energy
+   `Ψ = μ‖E‖²_F + (λ/2)(tr E)²` with XPBD `C = √(2Ψ)`, `α = 1/V₀` (split μ/λ).
+   When `λ ≈ 0` the hydrostatic constraint is **omitted** — the old `α = 0` rigid
+   `J = 1` path made isochoric stretch `I_C−3 = O(ε²)` and destroyed linear
+   `FL/(EA)` stiffness (5–25× too soft). Gradients come from the first Piola
+   `P = F(2μ E + λ tr(E) I)` (not separately normalized).
+3. **Stable NH** (log form) is a single energy constraint
+   `Ψ = (μ/2)(I_C−3) − μ ln J + (λ/2)(ln J)²`. Mesh-refinement table (release,
+   40 substeps / 6 iters, settle `|v|→0`):
+
+   | ν | mesh | rel vs `FL/(EA)` |
+   | --- | --- | --- |
+   | 0 | 4×1×1 | ~0.82% |
+   | 0 | 8×2×2 | ~0.16% |
+   | 0 | 12×3×3 | ~0.29% |
+   | 0.3 | 4×1×1 | ~1.42% |
+   | 0.3 | 8×2×2 | ~1.04% |
+   | 0.3 | 12×3×3 | ~1.16% |
 
 ## Determinism
 
@@ -105,7 +115,6 @@ print(w.x().shape)  # (n, 3) NumPy
 
 ## Deferred (not in v1)
 
-- Corotational FEM / calibrated continuum tet moduli matching `FL/(EA)` under mesh refinement
 - Plasticity, fracture, tearing
 - Thermal conduction / thermo-mechanical coupling
 - Two-way coupling to rigid `ContactWorld` / joints

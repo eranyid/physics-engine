@@ -270,12 +270,9 @@ fn axial_bar_spring_chain_fl_over_ea() {
 }
 
 #[test]
-fn axial_bar_tet_fem_understiff_documented() {
-    // Tet XPBD FEM (StVK-style) is currently under-stiff vs continuum FL/(EA):
-    // measured ~5–9× too soft at ν=0 and ~20× at ν=0.3 with fixed-face lateral
-    // restraint. Mesh refinement does **not** converge to FL/(EA) — formulation /
-    // compliance calibration issue (deferred). This test locks the observed band
-    // so regressions (getting worse) fail, without pretending <5% continuum match.
+fn axial_bar_tet_fem_fl_over_ea_converges() {
+    // StVK XPBD: C = √(2Ψ), α = 1/V₀; λ-constraint skipped when ν=0 (never α=0/rigid J).
+    // Continuum FL/(EA) within a few percent; isotropic refinement improves coarse → mid.
     let length = 1.0;
     let side = 0.1;
     let area = side * side;
@@ -283,9 +280,8 @@ fn axial_bar_tet_fem_understiff_documented() {
     let f_total = 50.0;
     let dl_analytic = f_total * length / (e * area);
 
-    // Two ν=0 grids (coarse + refined); band-check under-stiffness.
     let mut rels_nu0 = Vec::new();
-    for &(nx, ny, nz) in &[(4usize, 1, 1), (8, 2, 2)] {
+    for &(nx, ny, nz) in &[(4usize, 1, 1), (8, 2, 2), (12, 3, 3)] {
         let mat = Material {
             name: "bar",
             density: 1000.0,
@@ -300,9 +296,9 @@ fn axial_bar_tet_fem_understiff_documented() {
             source_note: "test",
         };
         let mut w = make_axial_bar_grid(length, side, side, nx, ny, nz, &mat);
-        w.params.damping = 20.0;
-        w.params.substeps = 30;
-        w.params.iterations = 2;
+        w.params.damping = 30.0;
+        w.params.substeps = 40;
+        w.params.iterations = 6;
         let end: Vec<usize> = w
             .particles
             .iter()
@@ -314,25 +310,30 @@ fn axial_bar_tet_fem_understiff_documented() {
         for &i in &end {
             w.particles[i].ext_force = Vec3::new(f_each, 0.0, 0.0);
         }
-        for _ in 0..1200 {
+        for _ in 0..2000 {
             w.step(1.0 / 120.0);
         }
         let x_end: f64 = end.iter().map(|&i| w.particles[i].x.x).sum::<f64>() / end.len() as f64;
+        let v_end: f64 = end.iter().map(|&i| w.particles[i].v.norm()).sum::<f64>() / end.len() as f64;
+        assert!(
+            v_end < 1e-4,
+            "ν=0 tet FEM not settled |v|={v_end} at {nx}x{ny}x{nz}"
+        );
         let dl = x_end - length;
         let rel = (dl - dl_analytic).abs() / dl_analytic;
-        assert!(dl > dl_analytic, "expected under-stiff FEM, got dl={dl}");
+        rels_nu0.push((nx, ny, nz, dl, rel));
         assert!(
-            rel > 3.0 && rel < 12.0,
-            "ν=0 tet FEM rel err out of documented band: {rel} at {nx}x{ny}x{nz}"
+            rel < 0.05,
+            "ν=0 tet FEM rel err {rel} ≥ 5% at {nx}x{ny}x{nz}: {rels_nu0:?}"
         );
-        rels_nu0.push(rel);
     }
+    // Coarse → mid isotropic refinement should not worsen the axial error.
     assert!(
-        rels_nu0.iter().copied().fold(0.0_f64, f64::max) > 4.0,
-        "unexpected continuum match; update SOFT.md if FEM is fixed: {rels_nu0:?}"
+        rels_nu0[1].4 <= rels_nu0[0].4 + 1e-6,
+        "ν=0 refinement 4x1x1→8x2x2 should improve: {rels_nu0:?}"
     );
 
-    // ν=0.3 + fixed face: still much too soft (Poisson end effect alone is small).
+    // ν=0.3 + fixed root face (Saint-Venant); free-lateral FL/(EA) still <5% refined.
     let mat = Material {
         name: "bar",
         density: 1000.0,
@@ -346,31 +347,35 @@ fn axial_bar_tet_fem_understiff_documented() {
         verified: false,
         source_note: "test",
     };
-    let mut w = make_axial_bar_grid(length, side, side, 8, 2, 2, &mat);
-    w.params.damping = 20.0;
-    w.params.substeps = 30;
-    w.params.iterations = 2;
-    let end: Vec<usize> = w
-        .particles
-        .iter()
-        .enumerate()
-        .filter(|(_, p)| p.inv_mass != 0.0 && p.x.x > length * 0.98)
-        .map(|(i, _)| i)
-        .collect();
-    let f_each = f_total / end.len() as f64;
-    for &i in &end {
-        w.particles[i].ext_force = Vec3::new(f_each, 0.0, 0.0);
+    let mut rels_nu3 = Vec::new();
+    for &(nx, ny, nz) in &[(4usize, 1, 1), (8, 2, 2), (12, 3, 3)] {
+        let mut w = make_axial_bar_grid(length, side, side, nx, ny, nz, &mat);
+        w.params.damping = 30.0;
+        w.params.substeps = 40;
+        w.params.iterations = 6;
+        let end: Vec<usize> = w
+            .particles
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.inv_mass != 0.0 && p.x.x > length * 0.98)
+            .map(|(i, _)| i)
+            .collect();
+        let f_each = f_total / end.len() as f64;
+        for &i in &end {
+            w.particles[i].ext_force = Vec3::new(f_each, 0.0, 0.0);
+        }
+        for _ in 0..2000 {
+            w.step(1.0 / 120.0);
+        }
+        let x_end: f64 = end.iter().map(|&i| w.particles[i].x.x).sum::<f64>() / end.len() as f64;
+        let dl = x_end - length;
+        let rel = (dl - dl_analytic).abs() / dl_analytic;
+        rels_nu3.push((nx, ny, nz, dl, rel));
+        assert!(
+            rel < 0.05,
+            "ν=0.3 tet FEM rel err {rel} ≥ 5% at {nx}x{ny}x{nz}: {rels_nu3:?}"
+        );
     }
-    for _ in 0..1200 {
-        w.step(1.0 / 120.0);
-    }
-    let x_end: f64 = end.iter().map(|&i| w.particles[i].x.x).sum::<f64>() / end.len() as f64;
-    let dl = x_end - length;
-    let rel = (dl - dl_analytic).abs() / dl_analytic;
-    assert!(
-        rel > 15.0 && rel < 40.0,
-        "ν=0.3 tet FEM rel err out of documented band: {rel}"
-    );
 }
 
 #[test]
