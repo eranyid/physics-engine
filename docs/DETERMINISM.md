@@ -39,6 +39,8 @@ Cross-check helpers:
   `physics_engine_rs.canonical_blast_hash()`
 - Ballistics: `cargo run -p pe-ballistics --bin ballistics_hash --release` /
   `physics_engine_rs.canonical_ballistics_hash()`
+- Fluids: `cargo run -p pe-fluid --bin fluid_hash --release` /
+  `physics_engine_rs.canonical_fluid_hash()`
 - M9 wave-body: `cargo run -p pe-hydro --bin wave_body_hash --release` /
   `physics_engine_rs.canonical_wave_body_hash()`
 - M8 soft bodies: `cargo run -p pe-soft --bin soft_hash --release` /
@@ -261,6 +263,25 @@ Scenario (`pe_soft::soft_canonical_hash`, `soft_hash` binary,
 
 Updated from `7e7d0d3af68735c6` when tet FEM switched to StVK/SNH energy XPBD
 (`C=√(2Ψ)`, `α=1/V₀`; jelly cube in the canonical scene uses neo-Hookean tets).
+
+### Canonical fluid-tank hash (locked)
+
+Scenario (`pe_fluid::fluid_tank_hash`, `fluid_hash` binary,
+`physics_engine_rs.canonical_fluid_hash()`):
+
+- PBF 3-D tank: 4×4×4 fluid lattice (`dx=0.05`, `h=2dx`, `ρ₀=1000`) in an Akinci
+  boundary shell; gravity −z; 4 constraint iterations; artificial pressure off.
+- 40 steps @ `dt = 1/120`.
+- Hash: FNV-1a 64 over fluid particle `(x, v)` IEEE bits in index order.
+- Neighbour search: sorted uniform-grid cell lists (no `HashMap` iteration).
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `9d9e0da856fd43d4` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+Helper: `cargo run -p pe-fluid --bin fluid_hash --release`.
 
 If a platform ever diverges, **do not silently loosen**: record the OS, toolchain,
 exact first differing packed index / float bits, and root cause (usually accidental

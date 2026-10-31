@@ -313,3 +313,16 @@ jobs:
             echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
             exit 1
           fi
+
+      - name: Compute canonical fluid-tank hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-fluid --bin fluid_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical fluid hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=9d9e0da856fd43d4
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::Fluid determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi

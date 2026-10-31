@@ -32,7 +32,7 @@ physics-engine/
     pe-ballistics/             # point-mass ballistics, ammo profiles, projectile SoA
     pe-materials/              # constitutive models (elastic/plastic/thermal)
     pe-soft/                   # soft bodies / FEM / XPBD cloth-style (later)
-    pe-fluids/                 # particles / SPH / blast coupling (later)
+    pe-fluid/                  # particles / SPH / PBF (M11 partial; DFSPH later)
     pe-scene/                  # serialization, scene graph, sleeping metadata
     pe-ffi/                    # stable C ABI for GDExtension and others
   python/                      # PyO3 crate → maturin wheel (`physics_engine_rs`)
@@ -220,7 +220,7 @@ ported early because the Python oracle already exists.
 | **M8** | Scene I/O + C ABI | Round-trip serialization; `pe-ffi` headers; smoke GDExtension optional | **done** (pe-scene + pe-ffi + godot/; soft-body track also shipped as **M8 soft** / `pe-soft`) |
 | **M9** | Waves / hydrodynamics v1 | Airy + Stokes/Gerstner/spectra + buoyancy coupling (Morison later) | **done** (Morison deferred) |
 | **M10** | Materials + soft v1 | Elastic validation; one soft demo with analytic check | **done** (shipped as M8 soft / `pe-soft`) |
-| **M11** | Fluids / blast v1 | Particle hydrostatic + one blast engineering model vs scaling law | planned (blast engineering track shipped early — see below) |
+| **M11** | Fluids / blast v1 | Particle hydrostatic + one blast engineering model vs scaling law | **partial** (blast track earlier; **`pe-fluid` SPH/PBF shipped** — DFSPH / rigid coupling deferred) |
 
 ### M1–M2 as built (summary)
 

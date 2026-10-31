@@ -711,6 +711,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pe-fluid"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "criterion",
+ "pe-math",
+ "proptest",
+]
+
+[[package]]
 name = "pe-godot"
 version = "0.1.0"
 dependencies = [
@@ -786,6 +796,7 @@ dependencies = [
  "pe-blast",
  "pe-collision",
  "pe-core",
+ "pe-fluid",
  "pe-hydro",
  "pe-math",
  "pe-soft",
