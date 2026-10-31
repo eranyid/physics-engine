@@ -162,6 +162,24 @@ impl World {
         &self.generators
     }
 
+    /// Apply a linear impulse [N·s = kg m/s] at world point `point` [m] to body `i`.
+    ///
+    /// Updates `v ← v + J/m` and `L ← L + (point − x) × J` (world-frame angular
+    /// momentum). Used by blast/ballistics contact loads; not a continuous force.
+    pub fn apply_impulse(&mut self, i: usize, impulse: Vec3, point: Vec3) {
+        debug_assert!(i < self.n);
+        let inv_m = 1.0 / self.mass[i];
+        self.state.v[i] += impulse * inv_m;
+        let r = point - self.state.x[i];
+        self.state.l[i] += r.cross(impulse);
+    }
+
+    /// Apply a pure linear impulse [N·s] through the COM of body `i` (no torque).
+    pub fn apply_linear_impulse(&mut self, i: usize, impulse: Vec3) {
+        debug_assert!(i < self.n);
+        self.state.v[i] += impulse * (1.0 / self.mass[i]);
+    }
+
     /// Advance one fixed step [s] with the given integrator; renormalize quaternions.
     pub fn step(&mut self, dt: f64, integrator: Integrator) {
         self.state = integrator(self, &self.state, self.t, dt);

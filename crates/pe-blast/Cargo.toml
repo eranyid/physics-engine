@@ -1,0 +1,24 @@
+[package]
+name = "pe-blast"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Engineering blast / shock models: Hopkinson–Cranz, Kinney–Graham, Friedlander, Sedov–Taylor, 1-D Euler, Gurney/Mott"
+
+[dependencies]
+pe-math = { workspace = true }
+pe-core = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
+proptest = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "blast"
+harness = false
+
+[[bin]]
+name = "blast_hash"
+path = "src/bin/blast_hash.rs"

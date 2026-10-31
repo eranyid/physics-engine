@@ -8,7 +8,9 @@ Default CI does **not** run Criterion (`cargo test` omits harness benches). Use
 `cargo bench -p pe-collision --bench contact_pyramids`,
 `cargo bench -p pe-aero --bench aero_forces`,
 `cargo bench -p pe-hydro --bench hydrostatics`, and
-`cargo bench -p pe-space --bench space`.
+`cargo bench -p pe-space --bench space`,
+`cargo bench -p pe-blast --bench blast`, and
+`cargo bench -p pe-ballistics --bench ballistics`.
 
 ## Stage 1 — integrators (`pe-core`)
 
@@ -52,6 +54,19 @@ Default CI does **not** run Criterion (`cargo test` omits harness benches). Use
 | `leo_rk4_2k_steps` | same, RK4 | ~1.68 ms |
 | `figure8_leapfrog_2k_steps` | figure-eight, 2000× leapfrog | ~162 µs |
 
-These are foundation baselines for M2–M7 — not throughput targets. Re-record when
-changing `libm` usage, SoA layout, integrator math, the contact solver, aero/hydro
-force models, or space integrators.
+## Blast / ballistics (`pe-blast`, `pe-ballistics`)
+
+| Benchmark | Workload | Median time |
+| --- | --- | --- |
+| `kinney_1k` | 1000 Kinney–Graham evaluations | ~6.3 µs |
+| `friedlander_10k` | 10k Friedlander samples | ~28 µs |
+| `sod_n200_to_0.2` | Sod tube n=200 to t=0.2 (CFL 0.4) | ~3.9 ms |
+| `sedov_radius_1k` | 1000 Sedov radius evaluations | ~45 µs |
+| `blast_pyramid_hash` | canonical blast hash scenario | ~469 µs |
+| `analytic_cd_100k` | 100k analytic C_D(M) samples | ~602 µs |
+| `step_10k_bullets` | one ProjectileSystem step, 10k bullets | ~15.1 ms |
+| `volley_hash` | canonical 100-bullet hash scenario | ~14.5 ms |
+
+These are foundation baselines for M2–M7 + blast/ballistics — not throughput
+targets. Re-record when changing `libm` usage, SoA layout, integrator math, the
+contact solver, aero/hydro force models, space integrators, or blast/ballistics.

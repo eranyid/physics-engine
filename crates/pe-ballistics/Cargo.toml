@@ -1,0 +1,29 @@
+[package]
+name = "pe-ballistics"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Point-mass external ballistics, ammo profiles, projectile SoA system, terminal impact, hit-scan"
+
+[dependencies]
+pe-math = { workspace = true }
+pe-core = { workspace = true }
+pe-aero = { workspace = true }
+pe-collision = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
+proptest = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "ballistics"
+harness = false
+
+[[bin]]
+name = "ballistics_hash"
+path = "src/bin/ballistics_hash.rs"
