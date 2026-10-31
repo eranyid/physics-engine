@@ -114,7 +114,7 @@ def test_block_slides_with_coulomb_acceleration(theta, mu):
     T = 1.0
     s, tdown = incline(theta, mu, T)
     a = g * (np.sin(theta) - mu * np.cos(theta))
-    assert s.v[0] @ tdown == pytest.approx(a * T, rel=2e-3)
+    assert s.v[0] @ tdown == pytest.approx(a * T, rel=1e-9)
     assert s.x[0] @ tdown == pytest.approx(0.5 * a * T * T, rel=1e-2)
 
 
