@@ -18,3 +18,5 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = ["slow: long-running tests (deselect with -m \"not slow\")"]
+addopts = "-m \"not slow\""

@@ -33,6 +33,7 @@ def test_convergence_order(name, expected, dts):
     assert p == pytest.approx(expected, abs=0.1)
 
 
+@pytest.mark.slow
 def test_oscillator_energy_behaviour():
     """Euler gains energy; symplectic schemes keep it bounded over 100 periods."""
     def run(integ, dt=0.01, periods=100):

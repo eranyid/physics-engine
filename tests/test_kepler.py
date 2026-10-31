@@ -41,6 +41,7 @@ def test_orbit_period_energy_angular_momentum(e):
         assert np.linalg.norm(w2.state.x[1] - w2.state.x[0]) == pytest.approx(AU * (1 + e), rel=1e-9)
 
 
+@pytest.mark.slow
 def test_symplectic_vs_rk4_long_run_energy():
     """Coarse dt, 200 orbits, e=0.5: Verlet energy error stays bounded and does not grow;
     RK4 drifts secularly (monotonic loss)."""
