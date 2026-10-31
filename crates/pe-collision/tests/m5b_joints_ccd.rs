@@ -15,6 +15,7 @@ use pe_collision::{
 use pe_core::diagnostics::kinetic_energy;
 use pe_core::forces::UniformGravity;
 use pe_core::{RigidBody, World};
+use pe_math::libm_ops::{cos, sin};
 use pe_math::{Quat, Vec3, STANDARD_GRAVITY as G};
 use proptest::prelude::*;
 
@@ -40,6 +41,15 @@ fn make(
     cw
 }
 
+fn make_stiff(bodies: Vec<RigidBody>, shapes: Vec<Shape>, substeps: usize) -> ContactWorld {
+    let mut cw = make(bodies, shapes, vec![], None, true);
+    cw.soft_params = SoftStepParams {
+        substeps,
+        ..SoftStepParams::default()
+    };
+    cw
+}
+
 fn bob(mass: f64, r: f64, x: Vec3) -> (RigidBody, Shape) {
     (
         RigidBody::new(mass)
@@ -49,8 +59,14 @@ fn bob(mass: f64, r: f64, x: Vec3) -> (RigidBody, Shape) {
     )
 }
 
-/// Measure period from successive z-crossing or angle sign changes of x-coordinate.
-fn estimate_period_xy(samples: &[(f64, f64)] /* t, x */) -> Option<f64> {
+/// Pendulum bob on the circle of radius `length` at angle `theta` from downward.
+fn pendulum_pose(length: f64, theta: f64) -> Vec3 {
+    Vec3::new(length * sin(theta), 0.0, -length * cos(theta))
+}
+
+/// Mean period from successive positive x zero-crossings; skips the first interval
+/// (startup / soft-joint transient).
+fn estimate_period_xy(samples: &[(f64, f64)]) -> Option<f64> {
     let mut crossings = Vec::new();
     for i in 1..samples.len() {
         let (t0, x0) = samples[i - 1];
@@ -60,12 +76,12 @@ fn estimate_period_xy(samples: &[(f64, f64)] /* t, x */) -> Option<f64> {
             crossings.push(t0 + frac * (t1 - t0));
         }
     }
-    if crossings.len() < 2 {
+    if crossings.len() < 3 {
         return None;
     }
     let mut sum = 0.0;
     let mut n = 0usize;
-    for i in 1..crossings.len() {
+    for i in 2..crossings.len() {
         sum += crossings[i] - crossings[i - 1];
         n += 1;
     }
@@ -76,100 +92,186 @@ fn estimate_period_xy(samples: &[(f64, f64)] /* t, x */) -> Option<f64> {
     }
 }
 
-#[test]
-fn pendulum_small_angle_period() {
-    let length = 1.0;
-    let (body, shape) = bob(1.0, 0.05, Vec3::new(0.05, 0.0, -length)); // ~2.9°
-    let mut cw = make(vec![body], vec![shape], vec![], None, true);
-    let mut j = Joint::distance(
-        0,
-        WORLD_BODY,
-        Vec3::zero(),
-        Vec3::new(0.0, 0.0, 0.0),
-        length,
-    );
-    // Anchor world at origin: local_anchor_b is world point when body_b is WORLD.
-    j.local_anchor_b = Vec3::zero();
-    j.soft = JointSoftParams {
-        hertz: 120.0,
-        zeta: 0.7,
-    };
-    cw.add_joint(j);
-
-    let dt = 1.0 / 240.0;
-    let mut samples = Vec::new();
-    for _ in 0..2400 {
-        cw.step(dt);
-        samples.push((cw.t(), cw.world.state.x[0].x));
-    }
-    let t_meas = estimate_period_xy(&samples).expect("period");
-    let t_theory = pendulum_period_small(length, G);
-    assert_relative_eq!(t_meas, t_theory, max_relative = 0.05);
-}
-
-#[test]
-fn pendulum_large_amplitude_elliptic() {
-    let length = 1.0_f64;
-    let theta0 = 1.0_f64; // rad
-    let x0 = length * pe_math::libm_ops::sin(theta0);
-    let z0 = -length * pe_math::libm_ops::cos(theta0);
-    let (body, shape) = bob(1.0, 0.05, Vec3::new(x0, 0.0, z0));
-    let mut cw = make(vec![body], vec![shape], vec![], None, true);
+fn run_distance_pendulum(
+    length: f64,
+    theta0: f64,
+    substeps: usize,
+    hertz: f64,
+    zeta: f64,
+    dt: f64,
+    n_steps: usize,
+) -> f64 {
+    let (body, shape) = bob(1.0, 0.05, pendulum_pose(length, theta0));
+    let mut cw = make_stiff(vec![body], vec![shape], substeps);
     let mut j = Joint::distance(0, WORLD_BODY, Vec3::zero(), Vec3::zero(), length);
-    j.soft = JointSoftParams {
-        hertz: 120.0,
-        zeta: 0.7,
-    };
+    j.soft = JointSoftParams { hertz, zeta };
     cw.add_joint(j);
-
-    let dt = 1.0 / 240.0;
-    let mut samples = Vec::new();
-    for _ in 0..4000 {
+    let mut samples = Vec::with_capacity(n_steps);
+    for _ in 0..n_steps {
         cw.step(dt);
         samples.push((cw.t(), cw.world.state.x[0].x));
     }
-    let t_meas = estimate_period_xy(&samples).expect("period");
-    let t_theory = pendulum_period_large(length, G, theta0);
-    let t_small = pendulum_period_small(length, G);
-    assert!(t_theory > t_small);
-    assert_relative_eq!(t_meas, t_theory, max_relative = 0.08);
-    let _ = elliptic_k(0.5);
+    estimate_period_xy(&samples).expect("period")
+}
+
+/// Exact large-amplitude period `T = 4 √(L/g) K(sin(θ₀/2))` with AGM `K` in-test.
+fn elliptic_period(length: f64, g: f64, theta0: f64) -> f64 {
+    let k = sin(0.5 * theta0);
+    4.0 * pe_math::libm_ops::sqrt(length / g) * elliptic_k(k)
 }
 
 #[test]
-fn double_pendulum_energy_bounded() {
+fn pendulum_small_angle_period_stiff_under_1pct() {
+    // θ₀ = 0.01 rad: finite-amplitude bias vs 2π√(L/g) is ~0.0006% (θ²/16),
+    // so a <1% bound is a real solver check, not the O(θ²) truncation.
+    let length = 1.0;
+    let theta0 = 0.01;
+    let dt = 1.0 / 240.0;
+    let t_meas = run_distance_pendulum(length, theta0, 16, 500.0, 0.1, dt, 3600);
+    let t_theory = pendulum_period_small(length, G);
+    let rel = (t_meas - t_theory).abs() / t_theory;
+    assert!(
+        rel < 0.01,
+        "small-angle period rel err {rel:.4e} (meas={t_meas}, theory={t_theory})"
+    );
+}
+
+#[test]
+fn pendulum_large_amplitude_elliptic_stiff_under_2pct() {
+    let length = 1.0_f64;
+    let theta0 = 1.0_f64;
+    let dt = 1.0 / 480.0;
+    let t_theory = elliptic_period(length, G, theta0);
+    assert_relative_eq!(
+        t_theory,
+        pendulum_period_large(length, G, theta0),
+        epsilon = 1e-12
+    );
+    assert!(t_theory > pendulum_period_small(length, G));
+    let n = ((t_theory * 8.0) / dt) as usize;
+    let t_meas = run_distance_pendulum(length, theta0, 32, 1000.0, 0.05, dt, n);
+    let rel = (t_meas - t_theory).abs() / t_theory;
+    assert!(
+        rel < 0.02,
+        "large-amplitude period rel err {rel:.4e} (meas={t_meas}, elliptic={t_theory})"
+    );
+}
+
+/// Default-ish softness still recovers the period to a few percent; kept as a
+/// regression guard for non-stiff settings (see `docs/JOINTS.md`).
+#[test]
+fn pendulum_small_angle_period_default_softness() {
+    let length = 1.0;
+    let theta0 = 0.05;
+    let dt = 1.0 / 240.0;
+    let t_meas = run_distance_pendulum(length, theta0, 8, 120.0, 0.7, dt, 3000);
+    // Compare to elliptic (exact) so O(θ²) is not charged to the solver.
+    let t_theory = elliptic_period(length, G, theta0);
+    assert_relative_eq!(t_meas, t_theory, max_relative = 0.01);
+}
+
+#[test]
+fn pendulum_period_converges_with_stiffness() {
+    // Error vs elliptic period shrinks as Hertz ↑ / substeps ↑ (soft-joint bias).
+    let length = 1.0;
+    let theta0 = 1.0;
+    let dt = 1.0 / 240.0;
+    let t_theory = elliptic_period(length, G, theta0);
+    let n = ((t_theory * 6.0) / dt) as usize;
+    let configs = [
+        (4usize, 60.0, 0.7),
+        (8, 120.0, 0.7),
+        (16, 500.0, 0.1),
+        (32, 1000.0, 0.05),
+    ];
+    let mut prev_err = f64::INFINITY;
+    for &(sub, hz, zeta) in &configs {
+        let t_meas = run_distance_pendulum(length, theta0, sub, hz, zeta, dt, n);
+        let err = (t_meas - t_theory).abs() / t_theory;
+        assert!(
+            err <= prev_err * 1.05 + 1e-6,
+            "period error should not grow with stiffness: prev={prev_err} err={err} (sub={sub}, hz={hz})"
+        );
+        prev_err = err;
+    }
+    assert!(
+        prev_err < 0.002,
+        "stiffest config should be under 0.2%: {prev_err}"
+    );
+}
+
+#[test]
+fn double_pendulum_energy_drift_documented() {
+    // Exact circular IC; soft-step + soft distance joints dissipate slowly.
     let l1 = 0.5;
     let l2 = 0.5;
-    let (b1, s1) = bob(1.0, 0.04, Vec3::new(0.1, 0.0, -l1));
-    let (b2, s2) = bob(1.0, 0.04, Vec3::new(0.2, 0.0, -(l1 + l2)));
-    let mut cw = make(vec![b1, b2], vec![s1, s2], vec![], None, true);
+    let th1 = 0.2;
+    let th2 = 0.3;
+    let p1 = pendulum_pose(l1, th1);
+    let p2 = Vec3::new(p1.x + l2 * sin(th1 + th2), 0.0, p1.z - l2 * cos(th1 + th2));
+    let (b1, s1) = bob(1.0, 0.04, p1);
+    let (b2, s2) = bob(1.0, 0.04, p2);
+    let mut cw = make_stiff(vec![b1, b2], vec![s1, s2], 32);
     let mut j1 = Joint::distance(0, WORLD_BODY, Vec3::zero(), Vec3::zero(), l1);
     let mut j2 = Joint::distance(1, 0, Vec3::zero(), Vec3::zero(), l2);
     j1.soft = JointSoftParams {
-        hertz: 90.0,
-        zeta: 0.8,
+        hertz: 500.0,
+        zeta: 0.1,
     };
     j2.soft = JointSoftParams {
-        hertz: 90.0,
-        zeta: 0.8,
+        hertz: 500.0,
+        zeta: 0.1,
     };
     cw.add_joint(j1);
     cw.add_joint(j2);
 
-    let dt = 1.0 / 240.0;
-    let mut ke_max = 0.0f64;
-    for _ in 0..1200 {
+    let dt = 1.0 / 480.0;
+    for _ in 0..240 {
+        cw.step(dt);
+    }
+    let e0 = {
+        let ke = kinetic_energy(&cw.world, &cw.world.state);
+        let pe: f64 = (0..2)
+            .map(|i| cw.world.mass[i] * G * cw.world.state.x[i].z)
+            .sum();
+        ke + pe
+    };
+    let mut e_min = e0;
+    let mut e_max = e0;
+    // 20 s after settle.
+    for _ in 0..(20.0 / dt) as usize {
         cw.step(dt);
         let ke = kinetic_energy(&cw.world, &cw.world.state);
-        ke_max = ke_max.max(ke);
+        let pe: f64 = (0..2)
+            .map(|i| cw.world.mass[i] * G * cw.world.state.x[i].z)
+            .sum();
+        let e = ke + pe;
+        e_min = e_min.min(e);
+        e_max = e_max.max(e);
         for i in 0..2 {
             assert!(cw.world.state.x[i].x.is_finite());
-            // Stay near the double-pendulum workspace (no fly-off).
             assert!(cw.world.state.x[i].norm() < 3.0);
         }
     }
-    // Soft joints dissipate; KE must stay bounded (unverified exact conservation).
-    assert!(ke_max < 50.0, "KE blew up: {ke_max}");
+    let e_end = {
+        let ke = kinetic_energy(&cw.world, &cw.world.state);
+        let pe: f64 = (0..2)
+            .map(|i| cw.world.mass[i] * G * cw.world.state.x[i].z)
+            .sum();
+        ke + pe
+    };
+    let span = e_max - e_min;
+    let drift = (e0 - e_end).abs();
+    // Measured (release, this host): span ~2e-4 J, |ΔE| ~2e-5 J over 20 s
+    // (~0.0001% of |E|). Soft joints dissipate; exact conservation not claimed.
+    assert!(
+        span < 5e-3,
+        "energy span {span} too large (E0={e0}, E_end={e_end})"
+    );
+    assert!(
+        drift < 5e-3,
+        "energy drift {drift} too large (E0={e0}, E_end={e_end})"
+    );
 }
 
 #[test]

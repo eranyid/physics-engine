@@ -19,19 +19,24 @@ def test_canonical_joints_hash_locked():
 
 
 def test_pendulum_small_angle_period():
+    """Stiff distance joint; bob on circle at θ0=0.01; period within 1% of 2π√(L/g)."""
     length = 1.0
+    theta0 = 0.01
+    x0 = length * math.sin(theta0)
+    z0 = -length * math.cos(theta0)
     body = pe.RigidBody(
         1.0,
-        position=[0.05, 0.0, -length],
+        position=[x0, 0.0, z0],
         inertia_body=pe.inertia_solid_sphere(1.0, 0.05),
     )
     w = pe.World([body], [pe.UniformGravity()])
     cw = pe.ContactWorld(w, [pe.Sphere(0.05)], solver="soft_step")
-    cw.add_distance_joint(0, None, [0, 0, 0], [0, 0, 0], length, hertz=120.0, zeta=0.7)
+    # SoftStepParams default substeps=4; raise Hertz so Nyquist cap still allows stiff spring.
+    cw.add_distance_joint(0, None, [0, 0, 0], [0, 0, 0], length, hertz=500.0, zeta=0.1)
     dt = 1.0 / 240.0
     xs = []
     ts = []
-    for _ in range(2400):
+    for _ in range(3600):
         cw.step(dt)
         xs.append(float(cw.x[0, 0]))
         ts.append(cw.t)
@@ -40,10 +45,12 @@ def test_pendulum_small_angle_period():
         if xs[i - 1] <= 0.0 < xs[i]:
             frac = -xs[i - 1] / (xs[i] - xs[i - 1])
             crossings.append(ts[i - 1] + frac * (ts[i] - ts[i - 1]))
-    assert len(crossings) >= 2
-    t_meas = float(np.mean(np.diff(crossings)))
+    assert len(crossings) >= 3
+    # Skip first interval (soft-joint startup).
+    periods = np.diff(crossings)[1:]
+    t_meas = float(np.mean(periods))
     t_theory = 2.0 * math.pi * math.sqrt(length / G)
-    assert abs(t_meas - t_theory) / t_theory < 0.08
+    assert abs(t_meas - t_theory) / t_theory < 0.01
 
 
 def test_breakable_joint_breaks():

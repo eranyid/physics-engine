@@ -44,6 +44,59 @@ sub-step. Breakable joints zero out when `|F|` or `|τ|` exceeds thresholds
 Islands: active joints contribute sorted `(min,max)` pairs so connected bodies
 share an island; sleeping respects the merged graph.
 
+## Pendulum period validation (error budget)
+
+A planar distance-joint pendulum is the joint oracle. Period is measured from
+successive positive-\(x\) zero-crossings (first interval skipped).
+
+**Dominant error sources (diagnosed, release host):**
+
+1. **Incorrect initial placement** (off the circle of radius \(L\)) injects a
+   soft-joint stretch transient and was the main reason early tests needed 5–8%
+   bands. Oracles now place the bob at
+   \((L\sin\theta_0,\,0,\,-L\cos\theta_0)\).
+2. **Comparing small-angle formula at finite \(\theta_0\)**: the exact period is
+   \(T = 4\sqrt{L/g}\,K(\sin(\theta_0/2))\). Relative to \(2\pi\sqrt{L/g}\),
+   \(T/T_0 - 1 \approx \theta_0^2/16\). At \(\theta_0 = 0.05\) that alone is
+   ~0.016%; tests that claim “small-angle” use \(\theta_0 = 0.01\) (~0.0006%
+   bias) or compare to the elliptic formula.
+3. **Joint softness / Hertz**: soft distance bias + CFM shifts the effective
+   length and damps. Raising Hertz (and substeps so the Nyquist cap allows it)
+   shrinks period error monotonically (see
+   `pendulum_period_converges_with_stiffness`).
+4. **Sub-step size / semi-implicit soft-step**: once Hertz is high enough that
+   length error is \(\lesssim 10^{-6}\,L\), further substeps change period at
+   the \(10^{-5}\) relative level — phase error is **not** the leading term for
+   these oracles.
+5. **Relax pass**: hard relax after soft solve does not dominate period error
+   once (1)–(3) are fixed.
+
+**Tight oracles (stiff joints):**
+
+| Case | Settings | Theory | Measured rel. err (release) | Bound |
+| --- | --- | --- | --- | --- |
+| Small angle \(\theta_0=0.01\) | 16 substeps, 500 Hz, \(\zeta=0.1\), \(dt=1/240\) | \(2\pi\sqrt{L/g}\) | \(\ll 1\%\) (~0.02% class) | **&lt; 1%** |
+| Large amplitude \(\theta_0=1\) | 32 substeps, 1000 Hz, \(\zeta=0.05\), \(dt=1/480\) | \(4\sqrt{L/g}\,K(\sin(\theta_0/2))\) (AGM \(K\)) | \(\ll 1\%\) (~0.001% class) | **&lt; 2%** |
+
+Default softness (8 substeps, 120 Hz, \(\zeta=0.7\)) still matches the elliptic
+period to about 1% when ICs are on-circle.
+
+## Double-pendulum energy drift
+
+Soft distance joints + soft-step **dissipate**; exact conservation is not
+claimed. With circular ICs (\(\theta_1=0.2\), \(\theta_2=0.3\)), two unit masses,
+\(L=0.5\), stiff settings (32 substeps, 500 Hz, \(\zeta=0.1\), \(dt=1/480\)):
+
+| Window | \(\lvert\Delta E\rvert\) | Energy span | Notes |
+| --- | --- | --- | --- |
+| 20 s after 0.5 s settle | ~\(2\times 10^{-5}\) J | ~\(2\times 10^{-4}\) J | ~0.0001% of \(\lvert E\rvert\) |
+| 60 s (same settings) | ~\(9\times 10^{-5}\) J | ~\(2\times 10^{-4}\) J | slow secular drain |
+
+Looser joints (8 substeps, 90 Hz, \(\zeta=0.8\), \(dt=1/240\)) over 20 s:
+\(\lvert\Delta E\rvert\sim 3.5\times 10^{-4}\) J, span \(\sim 1.7\times 10^{-3}\) J.
+Earlier “span ~14 J” figures came from off-circle ICs (stretch → PE dump), not
+from the integrator alone.
+
 ## Limits of the approach
 
 - Soft PGS / soft-step is **not** a hard XPBD or reduced-coordinate solver.
@@ -51,8 +104,6 @@ share an island; sleeping respects the merged graph.
 - Prismatic spring–mass period vs Hertz is only approximately `T ≈ 1/f` under
   light damping in soft-step (see tests; **partially unverified** as an exact
   oscillator identity).
-- Double-pendulum energy is **bounded** but not conserved (soft dissipation) —
-  exact conservation is **unverified** / not claimed.
 - Revolute angular limit uses a soft unilateral row; large impacts can overshoot
   the band by a few tenths of a radian at default stiffness.
 - Motor target speed is matched about the hinge axis with a force-limited hard
@@ -74,8 +125,14 @@ Full convex–convex GJK CCD is **deferred** (tracked with M6 GJK/EPA).
 
 ## Analytic oracles (tests)
 
-- Small-angle pendulum: `T = 2π √(L/g)` (within ~5 %).
-- Large amplitude: `T = 4 √(L/g) K(sin(θ₀/2))` via AGM elliptic `K` (~8 %).
+- Small-angle pendulum (stiff): \(T = 2\pi\sqrt{L/g}\) within **1%**
+  (`pendulum_small_angle_period_stiff_under_1pct`).
+- Large amplitude (stiff): \(T = 4\sqrt{L/g}\,K(\sin(\theta_0/2))\) with AGM
+  \(K\) within **2%** (`pendulum_large_amplitude_elliptic_stiff_under_2pct`).
+- Stiffness convergence of period error
+  (`pendulum_period_converges_with_stiffness`).
+- Double-pendulum energy span/drift bounds over 20 s
+  (`double_pendulum_energy_drift_documented`).
 - Chain of 50 distance links hangs stably.
 - Breakable distance joint breaks under weight when `F_break < mg`.
 - Locked cross-OS joints hash: see [`DETERMINISM.md`](DETERMINISM.md).
