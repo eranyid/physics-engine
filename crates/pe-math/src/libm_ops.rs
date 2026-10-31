@@ -111,3 +111,15 @@ pub fn floor(x: f64) -> f64 {
 pub fn trunc(x: f64) -> f64 {
     libm::trunc(x)
 }
+
+/// sinh(x).
+#[inline]
+pub fn sinh(x: f64) -> f64 {
+    libm::sinh(x)
+}
+
+/// cosh(x).
+#[inline]
+pub fn cosh(x: f64) -> f64 {
+    libm::cosh(x)
+}

@@ -3,8 +3,9 @@
 use numpy::PyArray1;
 use pe_aero::atmosphere::{self, DensityModel, RHO0};
 use pe_aero::{
-    lanchester_phugoid_period, level_flight_trim_earth, terminal_velocity_vertical, AircraftAero,
-    FixedThrust, JetThrust, PropellerThrust, WingPolar,
+    ackeret_cl, isentropic, karman_tsien, lanchester_phugoid_period, level_flight_trim_earth,
+    normal_shock, prandtl_glauert, terminal_velocity_vertical, AircraftAero, FixedThrust,
+    JetThrust, PropellerThrust, WingPolar,
 };
 use pe_core::diagnostics::state_hash64;
 use pe_core::forces::{ForceGenerator, UniformGravity};
@@ -13,10 +14,13 @@ use pe_core::{inertia_solid_box, RigidBody, World};
 use pe_hydro::hull::{
     BoxHull, ConvexMeshHull, CylinderHull, Hull, SphereHull, RHO_FRESHWATER, RHO_SEAWATER,
 };
+use pe_hydro::waves::{AiryWave, SpectralOcean, Wave, WaveField};
 use pe_hydro::{
     angle_of_vanishing_stability, box_added_mass_heave, box_added_mass_surge,
-    box_righting_arm_curve, check_imo_is_code, heave_period_earth, metacentric_height,
-    righting_arm, righting_moment, roll_period_earth, Buoyancy, HullDrag, WaveDrag,
+    box_righting_arm_curve, canonical_wave_body_hash as wave_body_hash_rs, check_imo_is_code,
+    deep_water_wavelength, group_speed, heave_period_earth, heave_period_with_added_mass,
+    metacentric_height, phase_speed, pierson_moskowitz_hs_approx, righting_arm, righting_moment,
+    roll_period_earth, solve_wave_number, Buoyancy, HullDrag, WaveDrag,
 };
 use pe_math::{Quat, Vec3, STANDARD_GRAVITY};
 use pyo3::exceptions::PyValueError;
@@ -460,7 +464,7 @@ fn hull_from_py(obj: &Bound<'_, PyAny>) -> PyResult<Hull> {
     ))
 }
 
-/// Buoyancy force generator.
+/// Buoyancy force generator (optional Airy wave surface + Froude–Krylov).
 #[pyclass(name = "Buoyancy", module = "physics_engine_rs")]
 #[derive(Clone)]
 pub struct PyBuoyancy {
@@ -470,7 +474,12 @@ pub struct PyBuoyancy {
 #[pymethods]
 impl PyBuoyancy {
     #[new]
-    #[pyo3(signature = (body, hull, rho=None, g=None, water_level=0.0, com_body=None))]
+    #[pyo3(signature = (
+        body, hull, rho=None, g=None, water_level=0.0, com_body=None,
+        wave_amplitude=None, wave_period=None, wave_depth=None, wave_theta=0.0,
+        froude_krylov=false
+    ))]
+    #[allow(clippy::too_many_arguments)]
     fn new(
         body: usize,
         hull: &Bound<'_, PyAny>,
@@ -478,21 +487,32 @@ impl PyBuoyancy {
         g: Option<f64>,
         water_level: f64,
         com_body: Option<&Bound<'_, PyAny>>,
+        wave_amplitude: Option<f64>,
+        wave_period: Option<f64>,
+        wave_depth: Option<f64>,
+        wave_theta: f64,
+        froude_krylov: bool,
     ) -> PyResult<Self> {
         let com = match com_body {
             Some(c) => vec3_from_seq(c)?,
             None => Vec3::zero(),
         };
-        Ok(Self {
-            inner: Buoyancy::new(
-                body,
-                hull_from_py(hull)?,
-                rho.unwrap_or(RHO_FRESHWATER),
-                g.unwrap_or(STANDARD_GRAVITY),
-                water_level,
-                com,
-            ),
-        })
+        let g_val = g.unwrap_or(STANDARD_GRAVITY);
+        let mut b = Buoyancy::new(
+            body,
+            hull_from_py(hull)?,
+            rho.unwrap_or(RHO_FRESHWATER),
+            g_val,
+            water_level,
+            com,
+        );
+        if let (Some(a), Some(t), Some(h)) = (wave_amplitude, wave_period, wave_depth) {
+            let wave = AiryWave::from_period(a, t, h, wave_theta, 0.0, g_val, water_level);
+            b = b
+                .with_wave(WaveField::Airy(wave))
+                .with_froude_krylov(froude_krylov);
+        }
+        Ok(Self { inner: b })
     }
 }
 
@@ -740,6 +760,119 @@ fn check_imo_is_code_py<'py>(
     Ok(d)
 }
 
+/// Deep-water wavelength `λ = g T²/(2π)` [m].
+#[pyfunction]
+#[pyo3(signature = (period, g=None))]
+fn wave_deep_water_wavelength(period: f64, g: Option<f64>) -> f64 {
+    deep_water_wavelength(period, g.unwrap_or(STANDARD_GRAVITY))
+}
+
+/// Solve dispersion `ω² = g k tanh(k h)` for `k` [1/m].
+#[pyfunction]
+#[pyo3(signature = (omega, depth, g=None))]
+fn wave_solve_k(omega: f64, depth: f64, g: Option<f64>) -> f64 {
+    solve_wave_number(omega, depth, g.unwrap_or(STANDARD_GRAVITY))
+}
+
+/// Phase speed `ω/k` [m/s].
+#[pyfunction]
+fn wave_phase_speed(omega: f64, k: f64) -> f64 {
+    phase_speed(omega, k)
+}
+
+/// Group speed [m/s].
+#[pyfunction]
+fn wave_group_speed(omega: f64, k: f64, depth: f64) -> f64 {
+    group_speed(omega, k, depth)
+}
+
+/// Airy free-surface elevation η(x,y,t) [m].
+#[pyfunction]
+#[pyo3(signature = (amplitude, period, depth, x, y, t, theta=0.0, g=None))]
+#[allow(clippy::too_many_arguments)]
+fn airy_height(
+    amplitude: f64,
+    period: f64,
+    depth: f64,
+    x: f64,
+    y: f64,
+    t: f64,
+    theta: f64,
+    g: Option<f64>,
+) -> f64 {
+    let g = g.unwrap_or(STANDARD_GRAVITY);
+    AiryWave::from_period(amplitude, period, depth, theta, 0.0, g, 0.0).height(x, y, t)
+}
+
+/// Pierson–Moskowitz `H_s ≈ 0.21 U²/g` [m].
+#[pyfunction]
+#[pyo3(signature = (u19_5, g=None))]
+fn pm_hs_approx(u19_5: f64, g: Option<f64>) -> f64 {
+    pierson_moskowitz_hs_approx(u19_5, g.unwrap_or(STANDARD_GRAVITY))
+}
+
+/// Discrete PM sea significant wave height from seeded components [m].
+#[pyfunction]
+#[pyo3(signature = (u19_5, depth, n_omega=32, n_theta=8, seed=1))]
+fn pm_hs_discrete(u19_5: f64, depth: f64, n_omega: usize, n_theta: usize, seed: u64) -> f64 {
+    SpectralOcean::pierson_moskowitz(u19_5, depth, n_omega, n_theta, seed).significant_wave_height()
+}
+
+/// Heave period with added mass: `2π √((m+a33)/(ρ g A_wp))` [s].
+#[pyfunction]
+#[pyo3(signature = (mass, a33, rho, a_wp, g=None))]
+fn heave_period_added_mass(mass: f64, a33: f64, rho: f64, a_wp: f64, g: Option<f64>) -> f64 {
+    heave_period_with_added_mass(mass, a33, rho, a_wp, g.unwrap_or(STANDARD_GRAVITY))
+}
+
+/// Prandtl–Glauert correction of an incompressible coefficient.
+#[pyfunction]
+fn compressibility_prandtl_glauert(c_incomp: f64, mach: f64) -> f64 {
+    prandtl_glauert(c_incomp, mach)
+}
+
+/// Kármán–Tsien pressure-coefficient correction.
+#[pyfunction]
+fn compressibility_karman_tsien(cp_incomp: f64, mach: f64) -> f64 {
+    karman_tsien(cp_incomp, mach)
+}
+
+/// Ackeret supersonic `C_L = 4 α / √(M²−1)` (`α` [rad]); `None` if M≤1.
+#[pyfunction]
+fn compressibility_ackeret_cl(alpha: f64, mach: f64) -> Option<f64> {
+    ackeret_cl(alpha, mach)
+}
+
+/// Normal-shock ratios as a dict (M1, gamma).
+#[pyfunction]
+fn gas_normal_shock<'py>(py: Python<'py>, m1: f64, gamma: f64) -> PyResult<Bound<'py, PyDict>> {
+    let s = normal_shock(m1, gamma).ok_or_else(|| PyValueError::new_err("need M1>1, gamma>1"))?;
+    let d = PyDict::new(py);
+    d.set_item("M2", s.m2)?;
+    d.set_item("p2_p1", s.p_ratio)?;
+    d.set_item("rho2_rho1", s.rho_ratio)?;
+    d.set_item("T2_T1", s.t_ratio)?;
+    d.set_item("p02_p01", s.p0_ratio)?;
+    Ok(d)
+}
+
+/// Isentropic ratios as a dict.
+#[pyfunction]
+fn gas_isentropic<'py>(py: Python<'py>, mach: f64, gamma: f64) -> PyResult<Bound<'py, PyDict>> {
+    let s = isentropic(mach, gamma);
+    let d = PyDict::new(py);
+    d.set_item("p_p0", s.p_over_p0)?;
+    d.set_item("T_T0", s.t_over_t0)?;
+    d.set_item("rho_rho0", s.rho_over_rho0)?;
+    Ok(d)
+}
+
+/// Canonical wave-driven floating-body hash (cross-OS).
+#[pyfunction]
+fn canonical_wave_body_hash() -> u64 {
+    wave_body_hash_rs()
+}
+
 /// Canonical stage-3 aero+hydro hash (same scenario as `pe-hydro` binary).
 #[pyfunction]
 fn canonical_aero_hydro_hash() -> u64 {
@@ -827,6 +960,20 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(box_added_mass_surge_py, m)?)?;
     m.add_function(wrap_pyfunction!(check_imo_is_code_py, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_aero_hydro_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(canonical_wave_body_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(wave_deep_water_wavelength, m)?)?;
+    m.add_function(wrap_pyfunction!(wave_solve_k, m)?)?;
+    m.add_function(wrap_pyfunction!(wave_phase_speed, m)?)?;
+    m.add_function(wrap_pyfunction!(wave_group_speed, m)?)?;
+    m.add_function(wrap_pyfunction!(airy_height, m)?)?;
+    m.add_function(wrap_pyfunction!(pm_hs_approx, m)?)?;
+    m.add_function(wrap_pyfunction!(pm_hs_discrete, m)?)?;
+    m.add_function(wrap_pyfunction!(heave_period_added_mass, m)?)?;
+    m.add_function(wrap_pyfunction!(compressibility_prandtl_glauert, m)?)?;
+    m.add_function(wrap_pyfunction!(compressibility_karman_tsien, m)?)?;
+    m.add_function(wrap_pyfunction!(compressibility_ackeret_cl, m)?)?;
+    m.add_function(wrap_pyfunction!(gas_normal_shock, m)?)?;
+    m.add_function(wrap_pyfunction!(gas_isentropic, m)?)?;
 
     m.add("RHO0", RHO0)?;
     m.add("RHO_FRESHWATER", RHO_FRESHWATER)?;

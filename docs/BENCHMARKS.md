@@ -50,15 +50,37 @@ Tree rebuild-from-scratch is slower than SAP at 1k (query overhead) but wins at 
 
 | Solver | Max contact depth [m] | Kinetic energy [J] |
 | --- | --- | --- |
-| PGS (20 iter) | ~3.0e-4 | ~4.37 |
-| Soft-step (4 sub, Hertz 30, ζ 10) | ~2.3e-3 | ~4.00 |
+| PGS (20 iter) | ~0.30 mm (3.0e-4 m) | ~4.37 J |
+| Soft-step (4 sub, Hertz 30, ζ 10) | ~2.29 mm (2.3e-3 m) | ~4.00 J |
 
-Soft-step 1000:1 sphere stack penetration ~1.7e-3 m (under 5 mm + 5 mm slop;
-PGS meets the 5 mm oracle). Values are comparative / engineering bounds — not
-closed-form oracles. Soft-step now integrates forces per sub-step with `h`,
-warm-starts each sub-step, and hard-holds high mass-ratio / heavy-static /
-single-body static contacts within linear slop so soft spring equilibrium
-cannot park under a 1000:1 stack.
+Soft-step 1000:1 sphere stack penetration ~1.7 mm (under 5 mm + 5 mm slop;
+PGS meets the 5 mm oracle). Soft-step KE is at or below PGS on this pyramid.
+
+**Known limitation:** soft-step max contact depth on the 5-row pyramid remains
+~2.29 mm vs PGS ~0.30 mm (~7.6× deeper). Soft-step recovers mass-ratio stacks and
+matches/beats PGS on kinetic energy, but equal-mass pyramid residual penetration
+is still larger than sequential-impulse PGS with 20 iterations. Values are
+comparative / engineering bounds — not closed-form oracles.
+
+Soft-step integrates forces per sub-step with `h`, warm-starts each sub-step, and
+hard-holds high mass-ratio / heavy-static / single-body static contacts within
+linear slop so soft spring equilibrium cannot park under a 1000:1 stack.
+
+## M9 — aero / hydro / waves (`pe-aero`, `pe-hydro`)
+
+| Benchmark | Workload | Median time |
+| --- | --- | --- |
+| `forces_eval_1k` | aero+thrust+gravity force eval (iter) | ~85 ns |
+| `rk4_1k_steps` | trimmed aircraft, 1000× RK4 @ dt=1e-3 | ~1.17 ms |
+| `normal_shock_1k` | 1000× normal-shock evaluations | ~83 µs |
+| `prandtl_glauert_1k` | 1000× PG corrections | ~4.0 µs |
+| `dryden_1k_steps` | 1000× Dryden filter steps | ~70 µs |
+| `buoyancy_forces_1k` | floating barge force eval (iter) | ~857 ns |
+| `heave_rk4_500_steps` | floating barge, 500× RK4 @ dt=1e-3 | ~2.27 ms |
+| `gz_curve_60_angles` | box GZ curve, 60 heel samples | ~51 µs |
+| `airy_height_1k` | 1000× Airy η evaluations | ~12.7 µs |
+| `spectral_height_eval` | one PM spectral η (24×8 components) | ~3.0 µs |
+| `wave_buoyancy_rk4_200` | wave-coupled barge, 200× RK4 @ 1e-2 | ~211 µs |
 
 ## M7 — space (`pe-space`)
 
@@ -69,6 +91,6 @@ cannot park under a 1000:1 stack.
 | `leo_rk4_2k_steps` | same, RK4 | ~1.68 ms |
 | `figure8_leapfrog_2k_steps` | figure-eight, 2000× leapfrog | ~162 µs |
 
-These are foundation baselines for M2–M7 — not throughput targets. Re-record when
+These are foundation baselines for M2–M9 — not throughput targets. Re-record when
 changing `libm` usage, SoA layout, integrator math, the contact solver, aero/hydro
-force models, or space integrators.
+force models, waves, or space integrators.

@@ -1,7 +1,6 @@
 //! Analytic hydrostatic helpers + IMO IS Code (MSC.267(85)) intact-stability checker.
 //!
-//! Deep-water wave relations are **not** in the Python reference; they are deferred
-//! (skip) per M4 scope. Units are SI throughout.
+//! Wave kinematics live in [`crate::waves`]. Units are SI throughout.
 
 use pe_math::libm_ops;
 use pe_math::{Quat, Vec3, STANDARD_GRAVITY};
@@ -30,11 +29,18 @@ pub fn righting_moment(rho: f64, volume: f64, gz: f64, g: f64) -> f64 {
     rho * g * volume * gz
 }
 
-/// Heave natural period [s]: `T = 2π √(m / (ρ g A_wp))`.
+/// Heave natural period [s]: `T = 2π √(m / (ρ g A_wp))` (no added mass).
 ///
 /// `mass` [kg], `rho` [kg/m³], `A_wp` [m²], `g` [m/s²].
 pub fn heave_period(mass: f64, rho: f64, a_wp: f64, g: f64) -> f64 {
-    2.0 * core::f64::consts::PI * libm_ops::sqrt(mass / (rho * g * a_wp))
+    heave_period_with_added_mass(mass, 0.0, rho, a_wp, g)
+}
+
+/// Heave natural period [s]: `T = 2π √((m + a₃₃) / (ρ g A_wp))`.
+///
+/// `mass` [kg], `a33` heave added mass [kg], `rho` [kg/m³], `A_wp` [m²], `g` [m/s²].
+pub fn heave_period_with_added_mass(mass: f64, a33: f64, rho: f64, a_wp: f64, g: f64) -> f64 {
+    2.0 * core::f64::consts::PI * libm_ops::sqrt((mass + a33) / (rho * g * a_wp))
 }
 
 /// Roll natural period [s]: `T = 2π k / √(g GM)`.

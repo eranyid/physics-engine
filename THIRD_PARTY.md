@@ -53,3 +53,21 @@ other GPL/AGPL/LGPL projects):
   future work only** (stubs); no code from those papers' reference implementations
   was used.
 - Chenciner–Montgomery / Simó figure-eight initial conditions are published IC values.
+
+### M9 note (`pe-hydro` waves / `pe-aero` compressibility & check-cases)
+
+Algorithms implemented clean-room from published papers / textbooks (formulas and
+coefficients only — **no** third-party simulation source translated):
+
+- Airy (1845); Dean & Dalrymple — finite-depth dispersion `ω² = g k tanh(k h)`.
+- Stokes (1847) / Fenton — second-order elevation.
+- Gerstner (1802); Kinsman / Tessendorf — trochoidal waves with steepness `Q k A ≤ 1`.
+- Pierson & Moskowitz (1964); Hasselmann et al. JONSWAP (1973); Longuet-Higgins /
+  Mitsuyasu `cos^{2s}` directional spreading.
+- Blackman & Vigna xoshiro256\*\* (deterministic PRNG; implemented in-tree, not
+  vendored from an external crate).
+- Prandtl–Glauert; Kármán–Tsien (1939); Ackeret linearized supersonic `C_L`.
+- Perfect-gas normal-shock / isentropic identities (Anderson / NASA textbook).
+- Dryden turbulence shaping (MIL-F-8785C / Hoblit) — 1st-order discrete surrogate.
+- NASA/TM-2015-218675 scenarios 1–3 described qualitatively; **published trajectory
+  tables are not used** (analytic / self-consistency oracles only).
