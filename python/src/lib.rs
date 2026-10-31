@@ -10,7 +10,8 @@ mod space;
 
 use numpy::{PyArray1, PyArray2, PyArrayMethods};
 use pe_collision::{
-    BoxShape, Capsule, ContactWorld, Material, Plane, Shape, Sphere, StaticCollider,
+    BoxShape, BroadPhaseKind, Capsule, ContactWorld, Material, Plane, Shape, SoftStepParams,
+    SolverMode, Sphere, StaticCollider,
 };
 use pe_core::diagnostics::{
     angular_momentum as ang_mom, kinetic_energy, linear_momentum, potential_energy, state_hash64,
@@ -506,6 +507,12 @@ fn canonical_collision_hash() -> u64 {
     pe_collision::canonical_collision_hash()
 }
 
+/// Canonical M5a soft-step collision hash (same pyramid, soft-step solver).
+#[pyfunction]
+fn canonical_soft_step_collision_hash() -> u64 {
+    pe_collision::canonical_soft_step_collision_hash()
+}
+
 // --- Stage 2 shapes / contact ------------------------------------------------
 
 /// Sphere shape [m].
@@ -698,7 +705,7 @@ struct PyContactWorld {
 #[pymethods]
 impl PyContactWorld {
     #[new]
-    #[pyo3(signature = (world, shapes, statics=None, materials=None, iterations=20, restitution_threshold=0.2, slop=1e-4, beta=0.2, warm_start=true))]
+    #[pyo3(signature = (world, shapes, statics=None, materials=None, iterations=20, restitution_threshold=0.2, slop=1e-4, beta=0.2, warm_start=true, solver="pgs", allow_sleep=false, broad_phase="sap"))]
     #[allow(clippy::too_many_arguments)]
     fn new(
         world: &Bound<'_, PyAny>,
@@ -710,6 +717,9 @@ impl PyContactWorld {
         slop: f64,
         beta: f64,
         warm_start: bool,
+        solver: &str,
+        allow_sleep: bool,
+        broad_phase: &str,
     ) -> PyResult<Self> {
         // Accept either a PyWorld or rebuild from bodies+gens is not supported —
         // require PyWorld and *move* its inner state by cloning via pack/rebuild is heavy.
@@ -756,6 +766,23 @@ impl PyContactWorld {
         cw.slop = slop;
         cw.beta = beta;
         cw.warm_start = warm_start;
+        cw.solver_mode = SolverMode::parse(solver).ok_or_else(|| {
+            PyValueError::new_err(format!("unknown solver {solver:?}; expected pgs|soft_step"))
+        })?;
+        cw.set_allow_sleep(allow_sleep);
+        cw.broad_phase = match broad_phase.trim().to_ascii_lowercase().as_str() {
+            "sap" | "sweep_and_prune" => BroadPhaseKind::Sap,
+            "brute" | "brute_force" => BroadPhaseKind::Brute,
+            "tree" | "dynamic_tree" | "aabb_tree" => BroadPhaseKind::DynamicTree,
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown broad_phase {other:?}; expected sap|brute|tree"
+                )));
+            }
+        };
+        if cw.solver_mode == SolverMode::SoftStep {
+            cw.soft_params = SoftStepParams::default();
+        }
         Ok(Self { inner: cw })
     }
 
@@ -767,6 +794,43 @@ impl PyContactWorld {
     #[getter]
     fn slop(&self) -> f64 {
         self.inner.slop
+    }
+
+    #[getter]
+    fn solver(&self) -> &'static str {
+        self.inner.solver_mode.as_str()
+    }
+
+    #[setter]
+    fn set_solver(&mut self, name: &str) -> PyResult<()> {
+        self.inner.solver_mode = SolverMode::parse(name).ok_or_else(|| {
+            PyValueError::new_err(format!("unknown solver {name:?}; expected pgs|soft_step"))
+        })?;
+        Ok(())
+    }
+
+    #[getter]
+    fn allow_sleep(&self) -> bool {
+        self.inner.sleep.enabled
+    }
+
+    #[setter]
+    fn set_allow_sleep(&mut self, allow: bool) {
+        self.inner.set_allow_sleep(allow);
+    }
+
+    /// Per-body awake flags (length N). Sleeping bodies are `False`.
+    #[getter]
+    fn awake<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<bool>> {
+        PyArray1::from_vec(py, self.inner.body_awake().to_vec())
+    }
+
+    fn wake_body(&mut self, i: usize) -> PyResult<()> {
+        if i >= self.inner.world.n {
+            return Err(PyValueError::new_err("body index out of range"));
+        }
+        self.inner.wake_body(i);
+        Ok(())
     }
 
     /// Underlying dynamic world state accessors (positions).
@@ -873,6 +937,7 @@ fn physics_engine_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(inertia_solid_cylinder, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_determinism_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_collision_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(canonical_soft_step_collision_hash, m)?)?;
     aero_hydro::register(m)?;
     space::register(m)?;
     m.add("G", G)?;
