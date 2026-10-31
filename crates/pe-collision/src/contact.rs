@@ -22,7 +22,9 @@ use pe_math::{Quat, Vec3};
 
 use crate::aabb_tree::DynamicAabbTree;
 use crate::broadphase::{BroadPhase, BruteForce, SweepAndPrune};
+use crate::ccd::{self, CcdParams};
 use crate::islands::{angular_speed, SleepState};
+use crate::joints::{self, Joint};
 use crate::manifold::{ContactPoint, FeatureId};
 use crate::narrowphase::{DedicatedNarrowPhase, NarrowPhase};
 use crate::shapes::{Material, Shape};
@@ -132,6 +134,12 @@ pub struct ContactWorld {
     pub broad_phase: BroadPhaseKind,
     /// Island sleeping bookkeeping.
     pub sleep: SleepState,
+    /// Maximal-coordinate joints (solved with contacts).
+    pub joints: Vec<Joint>,
+    /// Per-dynamic-body bullet flag (TOI CCD vs statics).
+    pub bullet: Vec<bool>,
+    /// Continuous collision detection parameters.
+    pub ccd: CcdParams,
     /// Last detected contacts.
     pub contacts: Vec<ContactPoint>,
     /// Previous step's broad-phase pairs (for wake-on-new-contact).
@@ -179,6 +187,9 @@ impl ContactWorld {
             soft_params: SoftStepParams::default(),
             broad_phase: BroadPhaseKind::Sap,
             sleep,
+            joints: Vec::new(),
+            bullet: vec![false; n],
+            ccd: CcdParams::default(),
             contacts: Vec::new(),
             prev_pairs: Vec::new(),
             cache: BTreeMap::new(),
@@ -205,6 +216,47 @@ impl ContactWorld {
     /// Wake dynamic body `i` (and its island).
     pub fn wake_body(&mut self, i: usize) {
         self.sleep.wake_island_of(i);
+    }
+
+    /// Append a joint; wakes both endpoints.
+    pub fn add_joint(&mut self, joint: Joint) -> usize {
+        let id = self.joints.len();
+        if joint.body_a < self.world.n {
+            self.wake_body(joint.body_a);
+        }
+        if joint.body_b < self.world.n {
+            self.wake_body(joint.body_b);
+        }
+        self.joints.push(joint);
+        id
+    }
+
+    /// Mark dynamic body `i` as a CCD bullet (TOI vs statics).
+    pub fn set_bullet(&mut self, i: usize, bullet: bool) {
+        if i < self.bullet.len() {
+            self.bullet[i] = bullet;
+        }
+    }
+
+    /// Reaction force [N] on the last step for joint `id`.
+    pub fn joint_reaction_force(&self, id: usize) -> Vec3 {
+        self.joints
+            .get(id)
+            .map(|j| j.reaction_force)
+            .unwrap_or(Vec3::zero())
+    }
+
+    /// Reaction torque [N·m] on A for joint `id` (last step).
+    pub fn joint_reaction_torque(&self, id: usize) -> Vec3 {
+        self.joints
+            .get(id)
+            .map(|j| j.reaction_torque)
+            .unwrap_or(Vec3::zero())
+    }
+
+    /// Whether joint `id` has broken.
+    pub fn joint_broken(&self, id: usize) -> bool {
+        self.joints.get(id).map(|j| j.broken).unwrap_or(true)
     }
 
     fn mats_ext(&self) -> Vec<Material> {
@@ -336,9 +388,62 @@ impl ContactWorld {
         self.detect_pairs_and_contacts(st).1
     }
 
-    /// Sequential-impulse velocity solve. Writes `st.v` / `st.l` for dynamics.
-    pub fn solve_velocities(&mut self, st: &mut State, contacts: &[ContactPoint]) {
+    /// Soft / hard PGS joint solve (maximal coordinates) for the PGS path.
+    fn solve_joints_pgs(&mut self, st: &mut State, dt: f64) {
+        if self.joints.is_empty() {
+            return;
+        }
         let n = self.world.n;
+        let n_total = n + self.statics.len();
+        let mut im = vec![0.0; n_total];
+        for i in 0..n {
+            im[i] = 1.0 / self.world.mass[i];
+        }
+        let mut iinv = vec![[[0.0; 3]; 3]; n_total];
+        for i in 0..n {
+            iinv[i] = self.world.inv_inertia_world(st.q[i], i);
+        }
+        let mut x = Vec::with_capacity(n_total);
+        x.extend_from_slice(&st.x);
+        x.extend_from_slice(&self.static_x);
+        let mut rmat: Vec<_> = st.q.iter().map(|q| q.to_matrix()).collect();
+        rmat.extend_from_slice(&self.static_r);
+        let mut v = vec![Vec3::zero(); n_total];
+        v[..n].copy_from_slice(&st.v);
+        let mut l = vec![Vec3::zero(); n_total];
+        l[..n].copy_from_slice(&st.l);
+        let awake = if self.sleep.enabled {
+            Some(self.sleep.awake.as_slice())
+        } else {
+            None
+        };
+        let mut rows = joints::build_joint_rows(
+            &self.joints,
+            n,
+            &x,
+            &rmat,
+            &self.static_x,
+            &self.static_r,
+            &im,
+            &iinv,
+            dt,
+            true,
+        );
+        joints::warm_start_joints(&mut rows, &self.joints, n, awake, &mut v, &mut l, &im);
+        for _ in 0..self.iterations {
+            joints::solve_joint_rows(&mut rows, n, awake, &mut v, &mut l, &iinv, &im);
+        }
+        joints::finalize_joints(&mut self.joints, &rows, dt);
+        st.v.copy_from_slice(&v[..n]);
+        st.l.copy_from_slice(&l[..n]);
+    }
+
+    /// Sequential-impulse velocity solve. Writes `st.v` / `st.l` for dynamics.
+    ///
+    /// `dt` is used for speculative contact bias (`sep/dt`).
+    pub fn solve_velocities(&mut self, st: &mut State, contacts: &[ContactPoint], dt: f64) {
+        let n = self.world.n;
+        let dt_for_speculative = if dt > 0.0 { dt } else { 1.0 };
         let n_total = n + self.statics.len();
         let mut im = vec![0.0; n_total];
         for i in 0..n {
@@ -400,11 +505,15 @@ impl ContactWorld {
             let vb = v[c.b] + mat_vec(&iinv[c.b], l[c.b]).cross(rb);
             let vrel = vb - va;
             let vn0 = vrel.dot(c.normal);
-            let bias = if vn0 < -self.restitution_threshold {
+            let bias = if c.depth < 0.0 {
+                // Speculative: target vn ≥ −sep/dt with sep = −depth.
+                c.depth / dt_for_speculative
+            } else if vn0 < -self.restitution_threshold {
                 -e * vn0
             } else {
                 0.0
             };
+            let mu = if c.depth < 0.0 { 0.0 } else { mu };
             rows.push(Row {
                 a: c.a,
                 b: c.b,
@@ -595,12 +704,60 @@ impl ContactWorld {
             }
         }
 
-        let (pairs, contacts) = self.detect_pairs_and_contacts(&st);
+        // Bullet TOI vs statics: advance fast bodies to first impact, shrink dt.
+        let mut step_dt = dt;
+        let mut toi_contacts: Vec<ContactPoint> = Vec::new();
+        if self.ccd.toi && self.bullet.iter().any(|&b| b) {
+            self.bullet.resize(n, false);
+            let statics: Vec<_> = self
+                .statics
+                .iter()
+                .map(|s| (s.shape, s.position, s.orientation))
+                .collect();
+            let (t_hit, hits) = ccd::advance_bullets_to_toi(
+                &self.bullet,
+                &self.shapes,
+                &mut st.x,
+                &st.q,
+                &st.v,
+                &statics,
+                dt,
+                &self.ccd,
+            );
+            if !hits.is_empty() {
+                toi_contacts = hits;
+                step_dt = (dt - t_hit).max(0.0);
+            }
+        }
+
+        let (pairs, mut contacts) = self.detect_pairs_and_contacts(&st);
+        // Speculative contacts for fast approaches (skip pairs already discrete).
+        {
+            let statics: Vec<_> = self
+                .statics
+                .iter()
+                .map(|s| (s.shape, s.position, s.orientation))
+                .collect();
+            let spec = ccd::generate_speculative_contacts(
+                &self.shapes,
+                &st.x,
+                &st.q,
+                &st.v,
+                &statics,
+                &contacts,
+                &self.ccd,
+            );
+            contacts.extend(spec);
+            contacts.extend(toi_contacts);
+        }
+
+        let joint_pairs = joints::joint_island_pairs(&self.joints, n);
+        let island_pairs = joints::merge_island_pairs(&pairs, &joint_pairs);
         self.sleep
-            .wake_from_new_contacts(n, &self.prev_pairs, &pairs);
-        self.sleep.rebuild_islands(n, &pairs);
+            .wake_from_new_contacts(n, &self.prev_pairs, &island_pairs);
+        self.sleep.rebuild_islands(n, &island_pairs);
         // Re-apply awake flags after rebuild (islands rebuilt; keep awake vector).
-        self.prev_pairs = pairs;
+        self.prev_pairs = island_pairs;
 
         match self.solver_mode {
             SolverMode::Pgs => {
@@ -615,16 +772,17 @@ impl ContactWorld {
                         a_ok && b_ok && (c.a >= n || c.b >= n || awake[c.a] || awake[c.b])
                     })
                     .collect();
-                self.solve_velocities(&mut st, &active);
+                self.solve_velocities(&mut st, &active, step_dt);
+                self.solve_joints_pgs(&mut st, step_dt);
                 self.contacts = contacts;
                 for i in 0..n {
                     if !self.sleep.is_awake(i) {
                         continue;
                     }
-                    st.x[i] += st.v[i] * dt;
+                    st.x[i] += st.v[i] * step_dt;
                 }
                 // Drift rotation only for awake bodies.
-                let q_new = drift_rotation(&self.world, &st.q, &st.l, dt);
+                let q_new = drift_rotation(&self.world, &st.q, &st.l, step_dt);
                 for i in 0..n {
                     if self.sleep.is_awake(i) {
                         st.q[i] = q_new[i].normalize();
@@ -645,13 +803,14 @@ impl ContactWorld {
                     &self.static_x,
                     &self.static_r,
                     &self.soft_params,
-                    dt,
+                    step_dt,
                     &mut st,
                     &contacts,
                     awake_slice,
                     &self.soft_warm,
                     &f,
                     &tau,
+                    &mut self.joints,
                 );
                 self.soft_warm = result.warm;
                 self.contacts = result.contacts;

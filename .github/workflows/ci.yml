@@ -155,6 +155,19 @@ jobs:
             exit 1
           fi
 
+      - name: Compute canonical M5b joints hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-collision --bin joints_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical joints hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=62156ada3fa770ad
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::Joints determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+
       - name: Compute canonical stage-3 aero+hydro hash
         shell: bash
         run: |

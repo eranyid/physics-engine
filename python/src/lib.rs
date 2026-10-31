@@ -11,8 +11,9 @@ mod space;
 
 use numpy::{PyArray1, PyArray2, PyArrayMethods};
 use pe_collision::{
-    BoxShape, BroadPhaseKind, Capsule, ContactWorld, Material, Plane, Shape, SoftStepParams,
-    SolverMode, Sphere, StaticCollider,
+    BoxShape, BroadPhaseKind, Capsule, CcdParams, ContactWorld, Joint, JointBreak, JointLimit,
+    JointMotor, JointSoftParams, Material, Plane, Shape, SoftStepParams, SolverMode, Sphere,
+    StaticCollider, WORLD_BODY,
 };
 use pe_core::diagnostics::{
     angular_momentum as ang_mom, kinetic_energy, linear_momentum, potential_energy, state_hash64,
@@ -514,6 +515,12 @@ fn canonical_soft_step_collision_hash() -> u64 {
     pe_collision::canonical_soft_step_collision_hash()
 }
 
+/// Canonical M5b joints hash (double pendulum, soft-step).
+#[pyfunction]
+fn canonical_joints_hash() -> u64 {
+    pe_collision::canonical_joints_hash()
+}
+
 // --- Stage 2 shapes / contact ------------------------------------------------
 
 /// Sphere shape [m].
@@ -834,6 +841,121 @@ impl PyContactWorld {
         Ok(())
     }
 
+    /// Mark body `i` as a CCD bullet (TOI vs statics).
+    fn set_bullet(&mut self, i: usize, bullet: bool) -> PyResult<()> {
+        if i >= self.inner.world.n {
+            return Err(PyValueError::new_err("body index out of range"));
+        }
+        self.inner.set_bullet(i, bullet);
+        Ok(())
+    }
+
+    /// Enable/disable speculative contacts and bullet TOI.
+    #[pyo3(signature = (speculative=true, toi=true, speculative_distance=0.02))]
+    fn set_ccd(&mut self, speculative: bool, toi: bool, speculative_distance: f64) {
+        self.inner.ccd = CcdParams {
+            speculative,
+            speculative_distance,
+            toi,
+            ..CcdParams::default()
+        };
+        // Preserve enable flags even though Default has them false.
+        self.inner.ccd.speculative = speculative;
+        self.inner.ccd.toi = toi;
+        self.inner.ccd.speculative_distance = speculative_distance;
+    }
+
+    /// Add a distance joint. `body_b=None` ⇒ world. Returns joint id.
+    #[pyo3(signature = (body_a, body_b, local_a, local_b, length, hertz=60.0, zeta=0.7, break_force=0.0))]
+    #[allow(clippy::too_many_arguments)]
+    fn add_distance_joint(
+        &mut self,
+        body_a: usize,
+        body_b: Option<usize>,
+        local_a: [f64; 3],
+        local_b: [f64; 3],
+        length: f64,
+        hertz: f64,
+        zeta: f64,
+        break_force: f64,
+    ) -> usize {
+        let b = body_b.unwrap_or(WORLD_BODY);
+        let mut j = Joint::distance(
+            body_a,
+            b,
+            Vec3::from_slice(&local_a),
+            Vec3::from_slice(&local_b),
+            length,
+        );
+        j.soft = JointSoftParams { hertz, zeta };
+        if break_force > 0.0 {
+            j.break_threshold = JointBreak {
+                force: break_force,
+                torque: 0.0,
+            };
+        }
+        self.inner.add_joint(j)
+    }
+
+    /// Add a revolute joint with optional limits / motor.
+    #[pyo3(signature = (body_a, body_b, local_a, local_b, axis_a, axis_b, ref_a, ref_b, hertz=60.0, zeta=0.7, limit=None, motor_speed=None, motor_max_torque=0.0))]
+    #[allow(clippy::too_many_arguments)]
+    fn add_revolute_joint(
+        &mut self,
+        body_a: usize,
+        body_b: Option<usize>,
+        local_a: [f64; 3],
+        local_b: [f64; 3],
+        axis_a: [f64; 3],
+        axis_b: [f64; 3],
+        ref_a: [f64; 3],
+        ref_b: [f64; 3],
+        hertz: f64,
+        zeta: f64,
+        limit: Option<(f64, f64)>,
+        motor_speed: Option<f64>,
+        motor_max_torque: f64,
+    ) -> usize {
+        let b = body_b.unwrap_or(WORLD_BODY);
+        let mut j = Joint::revolute(
+            body_a,
+            b,
+            Vec3::from_slice(&local_a),
+            Vec3::from_slice(&local_b),
+            Vec3::from_slice(&axis_a),
+            Vec3::from_slice(&axis_b),
+            Vec3::from_slice(&ref_a),
+            Vec3::from_slice(&ref_b),
+        );
+        j.soft = JointSoftParams { hertz, zeta };
+        if let Some((lo, hi)) = limit {
+            j.limit = JointLimit {
+                enabled: true,
+                lower: lo,
+                upper: hi,
+            };
+        }
+        if let Some(speed) = motor_speed {
+            j.motor = JointMotor {
+                enabled: true,
+                target_speed: speed,
+                max_force: motor_max_torque,
+            };
+        }
+        self.inner.add_joint(j)
+    }
+
+    /// Joint broken flag.
+    fn joint_broken(&self, id: usize) -> bool {
+        self.inner.joint_broken(id)
+    }
+
+    /// Joint reaction force [N] as length-3 array.
+    fn joint_reaction_force<'py>(&self, py: Python<'py>, id: usize) -> Bound<'py, PyArray1<f64>> {
+        let f = self.inner.joint_reaction_force(id);
+        PyArray1::from_vec(py, f.to_array().to_vec())
+    }
+
     /// Underlying dynamic world state accessors (positions).
     #[getter]
     fn x<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
@@ -939,6 +1061,7 @@ fn physics_engine_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(canonical_determinism_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_collision_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_soft_step_collision_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(canonical_joints_hash, m)?)?;
     aero_hydro::register(m)?;
     space::register(m)?;
     blast_ballistics::register(m)?;

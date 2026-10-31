@@ -29,6 +29,8 @@ The following published descriptions informed clean-room reimplementations in
 | Soft Step / TGS_Soft pipeline (sub-steps, warm start, relax, restitution) | Erin Catto, Solver2D post + Box2D v3 release notes | `soft_step.rs`, `contact.rs` |
 | Dynamic AABB tree (SAH insert, fat AABBs, rotations) | Published Box2D dynamic-tree / BVH descriptions (Erin Catto) | `aabb_tree.rs` |
 | Island sleeping thresholds | Box2D-style defaults adapted to SI (documented in `islands.rs`) | `islands.rs` |
+| Soft joints / motors / limits (maximal coordinates) | Erin Catto GDC soft-constraint talks; Box2D v3 joint descriptions (algorithms only) | `joints.rs`, `soft_step.rs` |
+| Speculative contacts + bullet TOI CCD | Box2D v3 / Catto CCD notes (algorithms only); sphere–plane TOI is textbook | `ccd.rs` |
 
 ISA constants and formulas follow ICAO Doc 7488 / ISO 2533 (public standards);
 IMO IS Code criteria are from MSC.267(85) (regulatory text — criteria encoded as
