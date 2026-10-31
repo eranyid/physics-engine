@@ -15,29 +15,37 @@ invariants that the Rust port must preserve (units, frames, numerics, test bar).
 
 ## Architecture / module layout
 
-### Dual-track (as of M1–M2)
+### Dual-track (as of M1–M3)
 
 | Track | Role |
 | --- | --- |
 | `src/physics_engine/` (Python) | Reference oracle; analytic tests; slow/energy runs |
-| `crates/pe-math`, `crates/pe-core` (Rust) | Stage-1 production core; same SI models; analytic + Criterion CI |
+| `crates/pe-math`, `pe-core`, `pe-collision` (Rust) | Stages 1–2 production core; analytic + Criterion |
 | `python/` → `physics_engine_rs` | PyO3 abi3 wheel; GIL released on step; oracle harness |
 | Godot GDExtension | Later consumer of a stable C/Rust ABI (not started) |
 
-Determinism / oracle tolerances: [DETERMINISM.md](DETERMINISM.md). Integrator baselines:
-[BENCHMARKS.md](BENCHMARKS.md). Stages 2–3 remain Python-only until M3–M4.
+Determinism / oracle tolerances: [DETERMINISM.md](DETERMINISM.md). Baselines:
+[BENCHMARKS.md](BENCHMARKS.md). Stage 3 (aero/hydro) remains Python-only until M4.
 
-### Rust stage 1 (as built)
+### Rust stages 1–2 (as built)
 
 ```
-crates/pe-math/     Vec3, Quat [w,x,y,z], SI constants, portable libm wrappers
-crates/pe-core/     World SoA, forces, integrators, diagnostics, canonical_hash bin
-python/             PyO3 module physics_engine_rs (abi3 ≥ 3.10)
+crates/pe-math/       Vec3, Quat [w,x,y,z], SI constants, portable libm wrappers
+crates/pe-core/       World SoA, forces, integrators, diagnostics, canonical_hash bin
+crates/pe-collision/  shapes, BroadPhase/NarrowPhase traits, ContactWorld, collision_hash bin
+python/               PyO3 module physics_engine_rs (abi3 ≥ 3.10) — World + ContactWorld
 ```
 
 Invariants preserved from the Python oracle: SI units; world-frame `L`; quaternion
 body→world; fixed-step Euler / symplectic Euler / velocity Verlet / RK4 with the same
-implicit-midpoint rotational drift; force set including springs and constant torque.
+implicit-midpoint rotational drift; force set including springs and constant torque;
+stage-2 sequential impulses with Coulomb friction, restitution threshold, warm start,
+and translational positional correction (β, slop). Pair order sorted by `(min id, max id)`.
+
+**Designed for next (not in M3):** `BroadPhase` / `NarrowPhase` traits so a dynamic AABB
+tree and GJK/EPA (or SAT with feature caching) can replace SAP + dedicated pairs;
+`FeatureId` on manifold points for stable warm starting. Soft-step, CCD, joints, and
+islands remain M5+.
 
 ### Python reference (as built)
 

@@ -1,11 +1,14 @@
-//! PyO3 bindings for stage-1 (`physics_engine_rs`).
+//! PyO3 bindings for stages 1–2 (`physics_engine_rs`).
 //!
 //! - Built as **abi3** (CPython 3.10+)
-//! - GIL released during `step` / `run`
+//! - GIL released during `step` / `run` (including contact steps)
 //! - State export packs into a contiguous `Vec<f64>` then moves into NumPy
 //!   (`PyArray::from_vec`) — one allocation, no second copy
 
 use numpy::{PyArray1, PyArray2, PyArrayMethods};
+use pe_collision::{
+    BoxShape, Capsule, ContactWorld, Material, Plane, Shape, Sphere, StaticCollider,
+};
 use pe_core::diagnostics::{
     angular_momentum as ang_mom, kinetic_energy, linear_momentum, potential_energy, state_hash64,
     total_energy,
@@ -492,6 +495,357 @@ fn canonical_determinism_hash() -> u64 {
     state_hash64(&w.state)
 }
 
+/// Canonical stage-2 collision hash (10-box pyramid, 600 steps).
+#[pyfunction]
+fn canonical_collision_hash() -> u64 {
+    pe_collision::canonical_collision_hash()
+}
+
+// --- Stage 2 shapes / contact ------------------------------------------------
+
+/// Sphere shape [m].
+#[pyclass(name = "Sphere", module = "physics_engine_rs")]
+#[derive(Clone)]
+struct PySphere {
+    inner: Sphere,
+}
+
+#[pymethods]
+impl PySphere {
+    #[new]
+    fn new(radius: f64) -> Self {
+        Self {
+            inner: Sphere::new(radius),
+        }
+    }
+
+    #[getter]
+    fn radius(&self) -> f64 {
+        self.inner.radius
+    }
+
+    fn volume(&self) -> f64 {
+        self.inner.volume()
+    }
+
+    fn inertia(&self, mass: f64) -> [[f64; 3]; 3] {
+        self.inner.inertia(mass)
+    }
+}
+
+/// Oriented box half-extents `(hx, hy, hz)` [m].
+#[pyclass(name = "Box", module = "physics_engine_rs")]
+#[derive(Clone)]
+struct PyBox {
+    inner: BoxShape,
+}
+
+#[pymethods]
+impl PyBox {
+    #[new]
+    fn new(half_extents: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let h = vec3_from_seq(half_extents)?;
+        Ok(Self {
+            inner: BoxShape::new(h.x, h.y, h.z),
+        })
+    }
+
+    #[getter]
+    fn half_extents(&self) -> [f64; 3] {
+        self.inner.half_extents.to_array()
+    }
+
+    fn volume(&self) -> f64 {
+        self.inner.volume()
+    }
+
+    fn inertia(&self, mass: f64) -> [[f64; 3]; 3] {
+        self.inner.inertia(mass)
+    }
+}
+
+/// Capsule: radius + half-height along body z [m].
+#[pyclass(name = "Capsule", module = "physics_engine_rs")]
+#[derive(Clone)]
+struct PyCapsule {
+    inner: Capsule,
+}
+
+#[pymethods]
+impl PyCapsule {
+    #[new]
+    fn new(radius: f64, half_height: f64) -> Self {
+        Self {
+            inner: Capsule::new(radius, half_height),
+        }
+    }
+
+    fn volume(&self) -> f64 {
+        self.inner.volume()
+    }
+
+    fn inertia(&self, mass: f64) -> [[f64; 3]; 3] {
+        self.inner.inertia(mass)
+    }
+}
+
+/// Static half-space plane.
+#[pyclass(name = "Plane", module = "physics_engine_rs")]
+#[derive(Clone)]
+struct PyPlane {
+    inner: Plane,
+}
+
+#[pymethods]
+impl PyPlane {
+    #[new]
+    #[pyo3(signature = (normal, offset=0.0))]
+    fn new(normal: &Bound<'_, PyAny>, offset: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: Plane::new(vec3_from_seq(normal)?, offset),
+        })
+    }
+}
+
+/// Contact material (`e`, `μ`).
+#[pyclass(name = "Material", module = "physics_engine_rs")]
+#[derive(Clone)]
+struct PyMaterial {
+    inner: Material,
+}
+
+#[pymethods]
+impl PyMaterial {
+    #[new]
+    #[pyo3(signature = (restitution=0.0, friction=0.5))]
+    fn new(restitution: f64, friction: f64) -> Self {
+        Self {
+            inner: Material::new(restitution, friction),
+        }
+    }
+
+    #[getter]
+    fn restitution(&self) -> f64 {
+        self.inner.restitution
+    }
+
+    #[getter]
+    fn friction(&self) -> f64 {
+        self.inner.friction
+    }
+}
+
+fn shape_from_py(obj: &Bound<'_, PyAny>) -> PyResult<Shape> {
+    if let Ok(s) = obj.extract::<PyRef<PySphere>>() {
+        return Ok(Shape::Sphere(s.inner));
+    }
+    if let Ok(s) = obj.extract::<PyRef<PyBox>>() {
+        return Ok(Shape::Box(s.inner));
+    }
+    if let Ok(s) = obj.extract::<PyRef<PyCapsule>>() {
+        return Ok(Shape::Capsule(s.inner));
+    }
+    if let Ok(s) = obj.extract::<PyRef<PyPlane>>() {
+        return Ok(Shape::Plane(s.inner));
+    }
+    Err(PyTypeError::new_err(
+        "shape must be Sphere|Box|Capsule|Plane",
+    ))
+}
+
+/// Infinite-mass static collider.
+#[pyclass(name = "StaticCollider", module = "physics_engine_rs")]
+#[derive(Clone)]
+struct PyStaticCollider {
+    inner: StaticCollider,
+}
+
+#[pymethods]
+impl PyStaticCollider {
+    #[new]
+    #[pyo3(signature = (shape, position=None, orientation=None, material=None))]
+    fn new(
+        shape: &Bound<'_, PyAny>,
+        position: Option<&Bound<'_, PyAny>>,
+        orientation: Option<&Bound<'_, PyAny>>,
+        material: Option<PyRef<PyMaterial>>,
+    ) -> PyResult<Self> {
+        let mut c = StaticCollider::new(shape_from_py(shape)?);
+        if let Some(p) = position {
+            c.position = vec3_from_seq(p)?;
+        }
+        if let Some(q) = orientation {
+            c.orientation = quat_from_seq(q)?;
+        }
+        if let Some(m) = material {
+            c.material = m.inner;
+        }
+        Ok(Self { inner: c })
+    }
+}
+
+/// Contact world: semi-implicit Euler + sequential impulses (stage 2).
+#[pyclass(name = "ContactWorld", module = "physics_engine_rs")]
+struct PyContactWorld {
+    inner: ContactWorld,
+}
+
+#[pymethods]
+impl PyContactWorld {
+    #[new]
+    #[pyo3(signature = (world, shapes, statics=None, materials=None, iterations=20, restitution_threshold=0.2, slop=1e-4, beta=0.2, warm_start=true))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        world: &Bound<'_, PyAny>,
+        shapes: &Bound<'_, PyAny>,
+        statics: Option<&Bound<'_, PyAny>>,
+        materials: Option<&Bound<'_, PyAny>>,
+        iterations: usize,
+        restitution_threshold: f64,
+        slop: f64,
+        beta: f64,
+        warm_start: bool,
+    ) -> PyResult<Self> {
+        // Accept either a PyWorld or rebuild from bodies+gens is not supported —
+        // require PyWorld and *move* its inner state by cloning via pack/rebuild is heavy.
+        // Instead: take ownership by extracting bodies is not available; we clone World
+        // by re-reading state. Simplest path: require the caller pass a freshly built
+        // World and we take it via a dedicated constructor that consumes generators.
+        //
+        // Practical approach matching oracle tests: accept PyWorld and deep-copy SoA +
+        // rebuild with the same generators by requiring World was just constructed.
+        let mut py_world: PyRefMut<PyWorld> = world.extract()?;
+        // Move the world out by replacing with an empty placeholder.
+        let taken = std::mem::replace(&mut py_world.inner, World::new(Vec::new(), Vec::new()));
+
+        let shape_list = shapes.downcast::<PyList>()?;
+        let mut shape_vec = Vec::with_capacity(shape_list.len());
+        for item in shape_list.iter() {
+            shape_vec.push(shape_from_py(&item)?);
+        }
+
+        let mut static_vec = Vec::new();
+        if let Some(st) = statics {
+            let list = st.downcast::<PyList>()?;
+            for item in list.iter() {
+                let s: PyRef<PyStaticCollider> = item.extract()?;
+                static_vec.push(s.inner.clone());
+            }
+        }
+
+        let mats = if let Some(m) = materials {
+            let list = m.downcast::<PyList>()?;
+            let mut out = Vec::with_capacity(list.len());
+            for item in list.iter() {
+                let mat: PyRef<PyMaterial> = item.extract()?;
+                out.push(mat.inner);
+            }
+            Some(out)
+        } else {
+            None
+        };
+
+        let mut cw = ContactWorld::new(taken, shape_vec, static_vec, mats);
+        cw.iterations = iterations;
+        cw.restitution_threshold = restitution_threshold;
+        cw.slop = slop;
+        cw.beta = beta;
+        cw.warm_start = warm_start;
+        Ok(Self { inner: cw })
+    }
+
+    #[getter]
+    fn t(&self) -> f64 {
+        self.inner.t()
+    }
+
+    #[getter]
+    fn slop(&self) -> f64 {
+        self.inner.slop
+    }
+
+    /// Underlying dynamic world state accessors (positions).
+    #[getter]
+    fn x<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
+        let n = self.inner.world.n;
+        let mut flat = Vec::with_capacity(n * 3);
+        for p in &self.inner.world.state.x {
+            flat.extend_from_slice(&p.to_array());
+        }
+        PyArray1::from_vec(py, flat)
+            .reshape([n, 3])
+            .expect("reshape x")
+    }
+
+    #[getter]
+    fn v<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
+        let n = self.inner.world.n;
+        let mut flat = Vec::with_capacity(n * 3);
+        for v in &self.inner.world.state.v {
+            flat.extend_from_slice(&v.to_array());
+        }
+        PyArray1::from_vec(py, flat)
+            .reshape([n, 3])
+            .expect("reshape v")
+    }
+
+    #[getter]
+    #[allow(non_snake_case)]
+    fn L<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
+        let n = self.inner.world.n;
+        let mut flat = Vec::with_capacity(n * 3);
+        for l in &self.inner.world.state.l {
+            flat.extend_from_slice(&l.to_array());
+        }
+        PyArray1::from_vec(py, flat)
+            .reshape([n, 3])
+            .expect("reshape L")
+    }
+
+    #[getter]
+    fn q<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
+        let n = self.inner.world.n;
+        let mut flat = Vec::with_capacity(n * 4);
+        for q in &self.inner.world.state.q {
+            flat.extend_from_slice(&q.to_array());
+        }
+        PyArray1::from_vec(py, flat)
+            .reshape([n, 4])
+            .expect("reshape q")
+    }
+
+    fn pack<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        PyArray1::from_vec(py, self.inner.world.state.pack())
+    }
+
+    fn state_hash(&self) -> u64 {
+        state_hash64(&self.inner.world.state)
+    }
+
+    fn kinetic_energy(&self) -> f64 {
+        kinetic_energy(&self.inner.world, &self.inner.world.state)
+    }
+
+    fn linear_momentum<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        let p = linear_momentum(&self.inner.world, &self.inner.world.state);
+        PyArray1::from_vec(py, p.to_array().to_vec())
+    }
+
+    /// One contact step; **releases the GIL**.
+    fn step(&mut self, py: Python<'_>, dt: f64) {
+        py.allow_threads(|| {
+            self.inner.step(dt);
+        });
+    }
+
+    /// Fixed-`dt` run to `t_end` [s]; **releases the GIL**.
+    fn run(&mut self, py: Python<'_>, t_end: f64, dt: f64) {
+        py.allow_threads(|| {
+            self.inner.run_for(t_end, dt);
+        });
+    }
+}
+
 #[pymodule]
 fn physics_engine_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyRigidBody>()?;
@@ -502,10 +856,18 @@ fn physics_engine_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyQuadraticDrag>()?;
     m.add_class::<PySpring>()?;
     m.add_class::<PyConstantTorque>()?;
+    m.add_class::<PySphere>()?;
+    m.add_class::<PyBox>()?;
+    m.add_class::<PyCapsule>()?;
+    m.add_class::<PyPlane>()?;
+    m.add_class::<PyMaterial>()?;
+    m.add_class::<PyStaticCollider>()?;
+    m.add_class::<PyContactWorld>()?;
     m.add_function(wrap_pyfunction!(inertia_solid_sphere, m)?)?;
     m.add_function(wrap_pyfunction!(inertia_solid_box, m)?)?;
     m.add_function(wrap_pyfunction!(inertia_solid_cylinder, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_determinism_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(canonical_collision_hash, m)?)?;
     m.add("G", G)?;
     m.add("STANDARD_GRAVITY", STANDARD_GRAVITY)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;

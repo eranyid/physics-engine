@@ -207,9 +207,9 @@ ported early because the Python oracle already exists.
 | ID | Milestone | Exit criteria | Status |
 | --- | --- | --- | --- |
 | **M0** | Docs & policy | This roadmap + DESIGN dual-track; `THIRD_PARTY.md` policy; CI still green on Python | **done** |
-| **M1** | Rust skeleton | Workspace builds; `pe-math` + `pe-core`; maturin abi3 wheel; CI: `cargo test`/`clippy`/`fmt` + pytest | **done** (this PR) |
-| **M2** | Port stage 1 | Rust matches Python oracle on stage-1 analytic tests (tolerances documented); bit-stable deterministic mode | **done** (this PR) |
-| **M3** | Port stage 2 | Contacts/friction/stacks cross-validated; missing narrow pairs tracked; SAP≡brute in Rust | planned |
+| **M1** | Rust skeleton | Workspace builds; `pe-math` + `pe-core`; maturin abi3 wheel; CI: `cargo test`/`clippy`/`fmt` + pytest | **done** |
+| **M2** | Port stage 1 | Rust matches Python oracle on stage-1 analytic tests (tolerances documented); bit-stable deterministic mode | **done** |
+| **M3** | Port stage 2 | Contacts/friction/stacks cross-validated; missing narrow pairs tracked; SAP≡brute in Rust | **done** (this PR) |
 | **M4** | Port stage 3 | ISA/aero/hydro parity with Python suite | planned |
 | **M5** | Joints + islands + sleep | Pendulum/motor tests; large resting scene sleeps; Python may gain thin joint oracle or shared fixtures | planned |
 | **M6** | CCD + convex | TOI tests (no tunnel at configured speeds); GJK/EPA convex; capsule–box | planned |
@@ -226,7 +226,21 @@ ported early because the Python oracle already exists.
   hash CI on Linux/macOS/Windows (`docs/DETERMINISM.md`).
 - Bindings: GIL released in `step`/`run`; state moved into NumPy via contiguous pack.
 - Tests: Rust analytic suite + Python oracle (`tests/test_oracle_rust.py`); Criterion baselines in
-  `docs/BENCHMARKS.md`. Collision port (M3) not started.
+  `docs/BENCHMARKS.md`.
+
+### M3 as built (summary)
+
+- New crate `crates/pe-collision`: shapes, `BroadPhase` (SAP + brute), `NarrowPhase` (dedicated
+  primitives + box–box SAT), sequential-impulse `ContactWorld` (Coulomb friction, restitution,
+  warm start via `FeatureId`, positional correction). Soft-step / CCD / joints / islands deferred.
+- Extension hooks only (not implemented): dynamic AABB tree behind `BroadPhase`; GJK/EPA or
+  SAT-with-feature-caching behind `NarrowPhase`; geometric feature ids on manifold points.
+- Capsule–box still `NotImplemented` (tracked for M6 with convex/GJK).
+- Determinism: sorted `(min id, max id)` pairs; `BTreeMap` warm-start cache; cross-OS collision
+  hash CI (10-box pyramid, 600 steps) — `docs/DETERMINISM.md`.
+- Tests: Rust unit + proptest narrow-phase; analytic contact suite; Python oracle
+  `tests/test_oracle_contacts_rust.py` (near bit-exact). Criterion pyramid benches in
+  `docs/BENCHMARKS.md`. Default CI stays fast (no Criterion; slow pytest marker unchanged).
 
 **Rule.** No milestone merges without: (1) analytic or published benchmark tests,
 (2) oracle or cross-impl diff where a Python reference exists, (3) CI green.

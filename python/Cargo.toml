@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "PyO3 bindings for physics-engine stage-1 Rust core (abi3)"
+description = "PyO3 bindings for physics-engine Rust core stages 1–2 (abi3)"
 
 [lib]
 name = "physics_engine_rs"
@@ -13,5 +13,6 @@ crate-type = ["cdylib"]
 [dependencies]
 pe-math = { workspace = true }
 pe-core = { workspace = true }
+pe-collision = { workspace = true }
 numpy = { workspace = true }
 pyo3 = { workspace = true }

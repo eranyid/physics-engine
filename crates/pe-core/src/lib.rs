@@ -18,13 +18,15 @@ pub mod integrators;
 pub mod world;
 
 pub use body::{
-    inertia_solid_box, inertia_solid_cylinder, inertia_solid_sphere, BodyId, RigidBody,
+    inertia_solid_box, inertia_solid_cylinder, inertia_solid_sphere, invert3, mat_mul,
+    mat_transpose, mat_vec, BodyId, RigidBody,
 };
 pub use forces::{
     ConstantTorque, ForceGenerator, LinearDrag, NewtonianGravity, QuadraticDrag, Spring,
     UniformGravity,
 };
 pub use integrators::{
-    explicit_euler, rk4, symplectic_euler, velocity_verlet, Integrator, IntegratorKind,
+    drift_rotation, explicit_euler, rk4, symplectic_euler, velocity_verlet, Integrator,
+    IntegratorKind,
 };
 pub use world::{State, World};
