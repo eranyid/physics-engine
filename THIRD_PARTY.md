@@ -31,6 +31,11 @@ The following published descriptions informed clean-room reimplementations in
 | Island sleeping thresholds | Box2D-style defaults adapted to SI (documented in `islands.rs`) | `islands.rs` |
 | Soft joints / motors / limits (maximal coordinates) | Erin Catto GDC soft-constraint talks; Box2D v3 joint descriptions (algorithms only) | `joints.rs`, `soft_step.rs` |
 | Speculative contacts + bullet TOI CCD | Box2D v3 / Catto CCD notes (algorithms only); sphere–plane TOI is textbook | `ccd.rs` |
+| GJK distance / intersection | Gino van den Bergen, *Collision Detection in Interactive 3D Environments* (2003); Erin Catto GDC GJK notes | `gjk.rs`, `support.rs` |
+| EPA penetration | van den Bergen EPA; Catto contact notes | `epa.rs` |
+| Quickhull convex hull | Barber, Dobkin, Huhdanpaa, Quickhull (ACM TOMS 1996) | `hull.rs` |
+| Conservative advancement CCD | Mirtich; Catto CCD notes (algorithms only) | `ccd.rs` |
+| Segment / triangle closest points | Ericson, *Real-Time Collision Detection* | `narrowphase.rs`, `gjk.rs` |
 
 ISA constants and formulas follow ICAO Doc 7488 / ISO 2533 (public standards);
 IMO IS Code criteria are from MSC.267(85) (regulatory text — criteria encoded as

@@ -4,7 +4,9 @@
 //! Record medians in `docs/BENCHMARKS.md` after numerical changes.
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use pe_collision::ccd::sphere_plane_toi;
+use pe_collision::ccd::{conservative_advancement_toi, sphere_plane_toi, CcdParams};
+use pe_collision::epa::{epa_from_overlap, EpaTol};
+use pe_collision::gjk::{gjk, GjkTol};
 use pe_collision::shapes::Plane;
 use pe_collision::{
     brute_force_pairs, dynamic_tree_pairs, sweep_and_prune, Aabb, BoxShape, BroadPhaseKind,
@@ -13,7 +15,7 @@ use pe_collision::{
 };
 use pe_core::forces::UniformGravity;
 use pe_core::{RigidBody, World};
-use pe_math::Vec3;
+use pe_math::{Quat, Vec3};
 
 fn pyramid_bodies(rows: usize) -> (Vec<RigidBody>, Vec<Shape>, Vec<Material>) {
     let h = 0.5;
@@ -181,11 +183,81 @@ fn bench_joints_and_ccd(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_m6_convex(c: &mut Criterion) {
+    let mut group = c.benchmark_group("m6_convex");
+    group.sample_size(30);
+    let eye = Quat::identity().to_matrix();
+    let sa = Shape::Sphere(Sphere::new(1.0));
+    let sb = Shape::Sphere(Sphere::new(1.0));
+    group.bench_function("gjk_sphere_sphere_1k", |b| {
+        b.iter(|| {
+            for i in 0..1000 {
+                let x = 2.5 + (i as f64) * 1e-6;
+                std::hint::black_box(gjk(
+                    &sa,
+                    Vec3::zero(),
+                    &eye,
+                    &sb,
+                    Vec3::new(x, 0.0, 0.0),
+                    &eye,
+                    GjkTol::default(),
+                ));
+            }
+        });
+    });
+    let ba = Shape::Box(BoxShape::new(1.0, 1.0, 1.0));
+    let bb = Shape::Box(BoxShape::new(1.0, 1.0, 1.0));
+    group.bench_function("epa_box_box_1k", |b| {
+        b.iter(|| {
+            for _ in 0..1000 {
+                std::hint::black_box(epa_from_overlap(
+                    &ba,
+                    Vec3::zero(),
+                    &eye,
+                    &bb,
+                    Vec3::new(1.5, 0.0, 0.0),
+                    &eye,
+                    EpaTol::default(),
+                ));
+            }
+        });
+    });
+    let params = CcdParams {
+        toi: true,
+        toi_max_iters: 24,
+        toi_tolerance: 1e-4,
+        ..CcdParams::default()
+    };
+    let thin = Shape::Box(BoxShape::new(1.0, 1.0, 0.01));
+    let bullet = Shape::Box(BoxShape::new(0.1, 0.1, 0.1));
+    group.bench_function("ccd_ca_box_thin", |b| {
+        b.iter(|| {
+            std::hint::black_box(conservative_advancement_toi(
+                &bullet,
+                Vec3::new(0.0, 0.0, 1.0),
+                &eye,
+                Vec3::new(0.0, 0.0, -500.0),
+                Vec3::zero(),
+                &thin,
+                Vec3::zero(),
+                &eye,
+                1.0 / 60.0,
+                &params,
+            ))
+        });
+    });
+    group.bench_function("convex_hash_scene", |b| {
+        b.iter(|| std::hint::black_box(pe_collision::canonical_convex_hash()));
+    });
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_pyramid,
     bench_broadphase,
     bench_pyramid_broad_kind,
-    bench_joints_and_ccd
+    bench_joints_and_ccd,
+    bench_m6_convex
 );
 criterion_main!(benches);

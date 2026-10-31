@@ -185,7 +185,10 @@ fn mass_ratio_world(soft: bool) -> ContactWorld {
         .with_position(Vec3::new(0.0, 0.0, 3.0 * r));
     let mut cw = make(
         vec![light, heavy],
-        vec![Shape::Sphere(pe_collision::Sphere::new(r)); 2],
+        vec![
+            Shape::Sphere(pe_collision::Sphere::new(r)),
+            Shape::Sphere(pe_collision::Sphere::new(r)),
+        ],
         vec![
             StaticCollider::new(Shape::Plane(Plane::new(Vec3::unit_z(), 0.0)))
                 .with_material(Material::new(0.0, 1.0)),
@@ -258,7 +261,10 @@ fn soft_step_elastic_head_on_exchange() {
                 .with_position(Vec3::new(1.0, 0.0, 0.0))
                 .with_velocity(Vec3::new(-2.0, 0.0, 0.0)),
         ],
-        vec![Shape::Sphere(pe_collision::Sphere::new(r)); 2],
+        vec![
+            Shape::Sphere(pe_collision::Sphere::new(r)),
+            Shape::Sphere(pe_collision::Sphere::new(r)),
+        ],
         vec![],
         Some(vec![Material::new(1.0, 0.0); 2]),
         false,
@@ -321,7 +327,10 @@ fn sleeping_and_waking_on_new_contact() {
     // Rebuild world with two boxes for the wake scenario.
     let mut cw2 = make(
         std::mem::take(&mut bodies),
-        vec![Shape::Box(BoxShape::new(0.5, 0.5, 0.5)); 2],
+        vec![
+            Shape::Box(BoxShape::new(0.5, 0.5, 0.5)),
+            Shape::Box(BoxShape::new(0.5, 0.5, 0.5)),
+        ],
         vec![
             StaticCollider::new(Shape::Plane(Plane::new(Vec3::unit_z(), 0.0)))
                 .with_material(Material::new(0.0, 1.0)),

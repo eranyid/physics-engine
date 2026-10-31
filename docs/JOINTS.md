@@ -121,7 +121,8 @@ from the integrator alone.
    advances the body to impact before the discrete step. Verified: **no tunnel**
    for a sphere at 1000 m/s against a plane (“1 cm wall” class) at 60 Hz.
 
-Full convex–convex GJK CCD is **deferred** (tracked with M6 GJK/EPA).
+Full convex–convex GJK CCD: **shipped in M6** (conservative advancement; see
+[`docs/COLLISION.md`](COLLISION.md)). Angular CA bounds remain deferred.
 
 ## Analytic oracles (tests)
 

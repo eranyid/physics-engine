@@ -79,6 +79,18 @@ linear slop so soft spring equilibrium cannot park under a 1000:1 stack.
 Re-record after changing joint softness or CCD paths. Analytic oracles live in
 `tests/m5b_joints_ccd.rs` / `docs/JOINTS.md` (not throughput targets).
 
+## M6 — GJK / EPA / convex CCD (`pe-collision`)
+
+| Benchmark | Workload | Median time |
+| --- | --- | --- |
+| `gjk_sphere_sphere_1k` | 1000× GJK distance (separated spheres) | ~152 µs |
+| `epa_box_box_1k` | 1000× EPA penetration (overlapping boxes) | ~5.24 ms |
+| `ccd_ca_box_thin` | CA TOI fast box vs thin static box | ~1.43 µs |
+| `convex_hash_scene` | canonical M6 convex hash scenario | ~19.0 ms |
+
+Oracles: `tests/m6_convex.rs` / `docs/COLLISION.md`. Re-record medians on the
+Cloud Agent host after GJK/EPA numerical changes.
+
 ## M9 — aero / hydro / waves (`pe-aero`, `pe-hydro`)
 
 | Benchmark | Workload | Median time |
