@@ -45,4 +45,6 @@ See [`DETERMINISM.md`](DETERMINISM.md).
   `SceneDocument::capture` requires the caller to pass the `forces` list.
 - JSON decimal floats for body mass/inertia/solver tuning can lose ULPs if edited
   by hand; bit-exact continue relies on the `*_bits` fields and binary framing.
-- Soft-body / GJK assets: out of scope (other tracks).
+- Soft-body / GJK assets: out of scope (other tracks). Capturing a live world
+  that already uses `Shape::Convex` / `Shape::Rounded` returns
+  `SceneError::Invalid` until schema v2 adds those descriptors.

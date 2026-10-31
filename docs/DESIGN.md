@@ -52,7 +52,8 @@ Mach ≈ 1 singularities are not modelled (no compressibility).
 Gerstner, PM/JONSWAP spectral sum) coupled into `Buoyancy`; `pe-aero` compressibility
 helpers, Dryden/steady wind, NASA TM flat-Earth check-cases 1–3. Morison / full
 seakeeping and blade-element maps remain deferred. Soft-step remains deferred.
-Joints/islands/sleep (M5); CCD + convex/GJK (M6) still planned.
+Joints/islands/sleep (M5) and CCD + convex/GJK (M6) are shipped; see
+[`JOINTS.md`](JOINTS.md) and [`COLLISION.md`](COLLISION.md).
 
 ### Python reference (as built)
 

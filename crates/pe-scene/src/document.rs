@@ -267,9 +267,17 @@ impl SceneDocument {
             };
             bodies.push(body_to_desc(&b));
         }
-        let shapes: Vec<_> = cw.shapes.iter().copied().map(shape_to_desc).collect();
+        let shapes: Vec<ShapeDesc> = cw
+            .shapes
+            .iter()
+            .map(shape_to_desc)
+            .collect::<Result<_, _>>()?;
         let materials: Vec<_> = cw.materials.iter().copied().map(material_to_desc).collect();
-        let statics: Vec<_> = cw.statics.iter().map(static_to_desc).collect();
+        let statics: Vec<_> = cw
+            .statics
+            .iter()
+            .map(static_to_desc)
+            .collect::<Result<_, _>>()?;
         let joints: Vec<_> = cw.joints.iter().map(joint_to_desc).collect();
         use crate::convert::bits3;
         use crate::types::{SoftWarmEntry, WarmCacheEntry};

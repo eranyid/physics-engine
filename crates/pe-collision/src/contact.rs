@@ -303,11 +303,14 @@ impl ContactWorld {
         let mut out = Vec::new();
         for &(i, j) in &pairs {
             let mut cs = narrow.collide(
-                &crate::narrowphase::ColliderPose::new(shapes[i], x[i], r[i]),
-                &crate::narrowphase::ColliderPose::new(shapes[j], x[j], r[j]),
+                &crate::narrowphase::ColliderPose::new(shapes[i].clone(), x[i], r[i]),
+                &crate::narrowphase::ColliderPose::new(shapes[j].clone(), x[j], r[j]),
             );
             for (k, c) in cs.iter_mut().enumerate() {
-                c.feature = FeatureId(k as u32);
+                // Prefer geometric feature ids from narrow phase when set; else index.
+                if c.feature.0 == 0 {
+                    c.feature = FeatureId(k as u32);
+                }
                 out.push(ContactPoint {
                     a: i,
                     b: j,
@@ -350,7 +353,7 @@ impl ContactWorld {
 
     fn all_shapes(&self) -> Vec<Shape> {
         let mut s = self.shapes.clone();
-        s.extend(self.statics.iter().map(|c| c.shape));
+        s.extend(self.statics.iter().map(|c| c.shape.clone()));
         s
     }
 
@@ -382,11 +385,13 @@ impl ContactWorld {
         let mut out = Vec::new();
         for (i, j) in pairs {
             let mut cs = narrow.collide(
-                &crate::narrowphase::ColliderPose::new(shapes[i], x[i], r[i]),
-                &crate::narrowphase::ColliderPose::new(shapes[j], x[j], r[j]),
+                &crate::narrowphase::ColliderPose::new(shapes[i].clone(), x[i], r[i]),
+                &crate::narrowphase::ColliderPose::new(shapes[j].clone(), x[j], r[j]),
             );
             for (k, c) in cs.iter_mut().enumerate() {
-                c.feature = FeatureId(k as u32);
+                if c.feature.0 == 0 {
+                    c.feature = FeatureId(k as u32);
+                }
                 out.push(ContactPoint {
                     a: i,
                     b: j,
@@ -729,7 +734,7 @@ impl ContactWorld {
             let statics: Vec<_> = self
                 .statics
                 .iter()
-                .map(|s| (s.shape, s.position, s.orientation))
+                .map(|s| (s.shape.clone(), s.position, s.orientation))
                 .collect();
             let (t_hit, hits) = ccd::advance_bullets_to_toi(
                 &self.bullet,
@@ -753,7 +758,7 @@ impl ContactWorld {
             let statics: Vec<_> = self
                 .statics
                 .iter()
-                .map(|s| (s.shape, s.position, s.orientation))
+                .map(|s| (s.shape.clone(), s.position, s.orientation))
                 .collect();
             let spec = ccd::generate_speculative_contacts(
                 &self.shapes,
@@ -1058,7 +1063,10 @@ mod tests {
                     Vec3::zero(),
                 ),
             ],
-            vec![Shape::Sphere(crate::shapes::Sphere::new(0.5)); 2],
+            vec![
+                Shape::Sphere(crate::shapes::Sphere::new(0.5)),
+                Shape::Sphere(crate::shapes::Sphere::new(0.5)),
+            ],
             vec![],
             Some(vec![Material::new(1.0, 0.0); 2]),
             false,
@@ -1093,7 +1101,10 @@ mod tests {
                         Vec3::zero(),
                     ),
                 ],
-                vec![Shape::Sphere(crate::shapes::Sphere::new(0.5)); 2],
+                vec![
+                    Shape::Sphere(crate::shapes::Sphere::new(0.5)),
+                    Shape::Sphere(crate::shapes::Sphere::new(0.5)),
+                ],
                 vec![],
                 Some(vec![Material::new(e, 0.0); 2]),
                 false,
