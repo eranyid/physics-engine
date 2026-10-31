@@ -116,3 +116,15 @@ PositionBasedDynamics source copied):
 - Müller, M. et al. (2005). Meshless deformations based on shape matching.
 - Material table values are **nominal** with `verified: false` — no handbook
   constants were fetched from a primary source for this milestone.
+
+### M8 note (`pe-scene`, `pe-ffi`, Godot GDExtension)
+
+- Scene / FFI / Godot binding code in this repository is **clean-room** (no
+  third-party simulation source copied).
+- Cargo dependencies used as packages (not vendored into this tree): `serde`,
+  `serde_json`, `ron` (Apache-2.0 / MIT), `cbindgen` (tooling, MPL-2.0).
+- Godot bindings: [`godot`](https://crates.io/crates/godot) (**godot-rust /
+  gdext**, **MPL-2.0**). Used as a Cargo dependency from `godot/`; **no** gdext
+  source is copied into this tree. Godot Engine itself is MIT
+  (<https://godotengine.org/license/>). Editor/headless runs are **unverified**
+  in CI — see [`docs/GODOT.md`](docs/GODOT.md).

@@ -22,7 +22,7 @@ invariants that the Rust port must preserve (units, frames, numerics, test bar).
 | `src/physics_engine/` (Python) | Reference oracle; analytic tests; slow/energy runs |
 | `crates/pe-math`, `pe-core`, `pe-collision`, `pe-aero`, `pe-hydro`, `pe-space`, `pe-blast`, `pe-ballistics`, `pe-soft` (Rust) | Stages 1–3 + space/blast/soft production core; analytic + Criterion |
 | `python/` → `physics_engine_rs` | PyO3 abi3 wheel; GIL released on step; oracle harness |
-| Godot GDExtension | Later consumer of a stable C/Rust ABI (not started) |
+| Godot GDExtension | `godot/` + `pe-ffi` C ABI (M8; compile-checked — see docs/GODOT.md) |
 
 Determinism / oracle tolerances: [DETERMINISM.md](DETERMINISM.md). Baselines:
 [BENCHMARKS.md](BENCHMARKS.md).

@@ -1,0 +1,11 @@
+; Engine configuration for the pe-godot smoke example.
+; Open with Godot 4.3+ after building `pe_godot` (see docs/GODOT.md).
+config_version=5
+
+[application]
+config/name="pe-godot-example"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.3")
+
+[physics]
+common/physics_ticks_per_second=60

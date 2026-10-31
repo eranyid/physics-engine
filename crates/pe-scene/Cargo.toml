@@ -1,0 +1,23 @@
+[package]
+name = "pe-scene"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Versioned scene serialization (JSON/RON/binary) and bit-exact state restore"
+
+[dependencies]
+pe-math = { workspace = true }
+pe-core = { workspace = true }
+pe-collision = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+ron = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
+proptest = { workspace = true }
+
+[[bin]]
+name = "scene_hash"
+path = "src/bin/scene_hash.rs"

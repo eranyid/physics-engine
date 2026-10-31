@@ -25,7 +25,7 @@ pub mod softness;
 pub use aabb_tree::{dynamic_tree_pairs, DynamicAabbTree, DEFAULT_FAT_MARGIN};
 pub use broadphase::{brute_force_pairs, sweep_and_prune, BroadPhase, BruteForce, SweepAndPrune};
 pub use ccd::{CcdParams, DEFAULT_SPECULATIVE_DISTANCE};
-pub use contact::{BroadPhaseKind, ContactWorld, StaticCollider};
+pub use contact::{BroadPhaseKind, ContactWorld, StaticCollider, WarmCacheRow};
 pub use islands::{SleepState, DEFAULT_ANGULAR_SLEEP, DEFAULT_LINEAR_SLEEP, DEFAULT_TIME_TO_SLEEP};
 pub use joints::{
     Joint, JointBreak, JointKind, JointLimit, JointMotor, JointSoftParams, DEFAULT_JOINT_HERTZ,
