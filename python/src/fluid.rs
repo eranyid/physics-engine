@@ -47,6 +47,7 @@ fn parse_dim(s: &str) -> PyResult<Dim> {
 /// Small PBF tank demo; returns `(positions [N,3], densities [N], mean_density_error)`.
 #[pyfunction]
 #[pyo3(signature = (n_side=4, steps=40, dt=1.0/120.0, dim="3"))]
+#[allow(clippy::type_complexity)]
 fn fluid_pbf_tank_demo<'py>(
     py: Python<'py>,
     n_side: usize,
