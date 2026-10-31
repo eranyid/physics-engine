@@ -81,3 +81,33 @@ pub fn asin(x: f64) -> f64 {
 pub fn acos(x: f64) -> f64 {
     libm::acos(x)
 }
+
+/// atan(x) [rad].
+#[inline]
+pub fn atan(x: f64) -> f64 {
+    libm::atan(x)
+}
+
+/// tan(x) with x in radians.
+#[inline]
+pub fn tan(x: f64) -> f64 {
+    libm::tan(x)
+}
+
+/// Cube root via pure-Rust libm.
+#[inline]
+pub fn cbrt(x: f64) -> f64 {
+    libm::cbrt(x)
+}
+
+/// Floor to integer as f64.
+#[inline]
+pub fn floor(x: f64) -> f64 {
+    libm::floor(x)
+}
+
+/// Truncate toward zero.
+#[inline]
+pub fn trunc(x: f64) -> f64 {
+    libm::trunc(x)
+}

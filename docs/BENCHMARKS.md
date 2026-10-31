@@ -4,8 +4,11 @@ Measured on the Cloud Agent host (Linux x86_64, release, Rust 1.99.1).
 Numbers are wall time for the named workload; re-run locally after numerical changes.
 
 Default CI does **not** run Criterion (`cargo test` omits harness benches). Use
-`cargo bench -p pe-core --bench integrators` and
-`cargo bench -p pe-collision --bench contact_pyramids`.
+`cargo bench -p pe-core --bench integrators`,
+`cargo bench -p pe-collision --bench contact_pyramids`,
+`cargo bench -p pe-aero --bench aero_forces`,
+`cargo bench -p pe-hydro --bench hydrostatics`, and
+`cargo bench -p pe-space --bench space`.
 
 ## Stage 1 — integrators (`pe-core`)
 
@@ -53,5 +56,15 @@ Tree rebuild-from-scratch is slower than SAP at 1k (query overhead) but wins at 
 Soft-step 1000:1 sphere stack penetration remains ~0.52 m (PGS meets the 5 mm
 oracle). Values are comparative / engineering bounds — not closed-form oracles.
 
-These are foundation baselines — not throughput targets. Re-record when changing
-`libm` usage, SoA layout, integrator math, or the contact solver.
+## M7 — space (`pe-space`)
+
+| Benchmark | Workload | Median time |
+| --- | --- | --- |
+| `leo_leapfrog_2k_steps` | circular LEO, 2000× leapfrog | ~101 µs |
+| `leo_yoshida4_2k_steps` | same, Yoshida4 | ~312 µs |
+| `leo_rk4_2k_steps` | same, RK4 | ~1.68 ms |
+| `figure8_leapfrog_2k_steps` | figure-eight, 2000× leapfrog | ~162 µs |
+
+These are foundation baselines for M2–M7 — not throughput targets. Re-record when
+changing `libm` usage, SoA layout, integrator math, the contact solver, aero/hydro
+force models, or space integrators.

@@ -6,6 +6,7 @@ members = [
     "crates/pe-collision",
     "crates/pe-aero",
     "crates/pe-hydro",
+    "crates/pe-space",
     "python",
 ]
 default-members = [
@@ -14,6 +15,7 @@ default-members = [
     "crates/pe-collision",
     "crates/pe-aero",
     "crates/pe-hydro",
+    "crates/pe-space",
 ]
 
 [workspace.package]
@@ -29,6 +31,7 @@ pe-core = { path = "crates/pe-core" }
 pe-collision = { path = "crates/pe-collision" }
 pe-aero = { path = "crates/pe-aero" }
 pe-hydro = { path = "crates/pe-hydro" }
+pe-space = { path = "crates/pe-space" }
 libm = "0.2"
 approx = "0.5"
 proptest = "1.5"
