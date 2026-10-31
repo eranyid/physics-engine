@@ -7,6 +7,11 @@ on:
     - cron: "0 6 * * 1"
   workflow_dispatch:
 
+env:
+  CARGO_TERM_COLOR: always
+  # Determinism: never enable native CPU or FMA in CI.
+  RUSTFLAGS: "-C target-cpu=generic"
+
 jobs:
   test:
     name: pytest
@@ -42,3 +47,84 @@ jobs:
 
       - name: Run slow pytest
         run: pytest -m slow
+
+  rust:
+    name: cargo test / clippy / fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.99.1"
+          components: rustfmt, clippy
+
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo test
+        # Omit --all-targets so Criterion benches are not executed in default CI.
+        run: cargo test --workspace
+
+  maturin-pytest:
+    name: maturin wheel + oracle pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.99.1"
+
+      - name: Build abi3 wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release -m python/Cargo.toml --out dist
+
+      - name: Install Python + Rust packages
+        run: |
+          pip install -e ".[test]"
+          pip install dist/*.whl
+          python -c "import physics_engine_rs as pe; print(pe.__version__, hex(pe.canonical_determinism_hash()))"
+
+      - name: Pytest (includes oracle; skips slow)
+        run: pytest
+
+  determinism-hash:
+    name: cross-OS state hash (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.99.1"
+
+      - name: Compute canonical hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-core --bin canonical_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=ca172fe3e3e57c79
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::Determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi

@@ -1,0 +1,19 @@
+[package]
+name = "pe-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Rigid-body world, forces, integrators, and diagnostics (stage 1)"
+
+[dependencies]
+pe-math = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
+proptest = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "integrators"
+harness = false

@@ -15,16 +15,29 @@ invariants that the Rust port must preserve (units, frames, numerics, test bar).
 
 ## Architecture / module layout
 
-### Dual-track (planned)
+### Dual-track (as of M1–M2)
 
 | Track | Role |
 | --- | --- |
 | `src/physics_engine/` (Python) | Reference oracle; analytic tests; slow/energy runs |
-| `crates/*` (Rust, see ROADMAP) | Production core; same SI models; oracle + analytic CI |
-| `python/` maturin wheel | Bindings for studio/tools; not a second physics truth |
-| Godot GDExtension | Later consumer of a stable C/Rust ABI |
+| `crates/pe-math`, `crates/pe-core` (Rust) | Stage-1 production core; same SI models; analytic + Criterion CI |
+| `python/` → `physics_engine_rs` | PyO3 abi3 wheel; GIL released on step; oracle harness |
+| Godot GDExtension | Later consumer of a stable C/Rust ABI (not started) |
 
-Until Rust crates land, the live architecture is the Python layout below.
+Determinism / oracle tolerances: [DETERMINISM.md](DETERMINISM.md). Integrator baselines:
+[BENCHMARKS.md](BENCHMARKS.md). Stages 2–3 remain Python-only until M3–M4.
+
+### Rust stage 1 (as built)
+
+```
+crates/pe-math/     Vec3, Quat [w,x,y,z], SI constants, portable libm wrappers
+crates/pe-core/     World SoA, forces, integrators, diagnostics, canonical_hash bin
+python/             PyO3 module physics_engine_rs (abi3 ≥ 3.10)
+```
+
+Invariants preserved from the Python oracle: SI units; world-frame `L`; quaternion
+body→world; fixed-step Euler / symplectic Euler / velocity Verlet / RK4 with the same
+implicit-midpoint rotational drift; force set including springs and constant torque.
 
 ### Python reference (as built)
 

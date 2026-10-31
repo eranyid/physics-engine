@@ -1,0 +1,513 @@
+//! PyO3 bindings for stage-1 (`physics_engine_rs`).
+//!
+//! - Built as **abi3** (CPython 3.10+)
+//! - GIL released during `step` / `run`
+//! - State export packs into a contiguous `Vec<f64>` then moves into NumPy
+//!   (`PyArray::from_vec`) — one allocation, no second copy
+
+use numpy::{PyArray1, PyArray2, PyArrayMethods};
+use pe_core::diagnostics::{
+    angular_momentum as ang_mom, kinetic_energy, linear_momentum, potential_energy, state_hash64,
+    total_energy,
+};
+use pe_core::forces::{
+    ConstantTorque, ForceGenerator, LinearDrag, NewtonianGravity, QuadraticDrag, Spring,
+    UniformGravity,
+};
+use pe_core::integrators::IntegratorKind;
+use pe_core::{RigidBody, World};
+use pe_math::{Quat, Vec3, G, STANDARD_GRAVITY};
+use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::prelude::*;
+use pyo3::types::{PyList, PyModule};
+
+fn vec3_from_seq(obj: &Bound<'_, PyAny>) -> PyResult<Vec3> {
+    let arr: Vec<f64> = obj.extract()?;
+    if arr.len() != 3 {
+        return Err(PyValueError::new_err("expected length-3 sequence [x,y,z]"));
+    }
+    Ok(Vec3::new(arr[0], arr[1], arr[2]))
+}
+
+fn quat_from_seq(obj: &Bound<'_, PyAny>) -> PyResult<Quat> {
+    let arr: Vec<f64> = obj.extract()?;
+    if arr.len() != 4 {
+        return Err(PyValueError::new_err(
+            "expected length-4 quaternion [w,x,y,z]",
+        ));
+    }
+    Ok(Quat::new(arr[0], arr[1], arr[2], arr[3]).normalize())
+}
+
+fn inertia_from_obj(obj: &Bound<'_, PyAny>) -> PyResult<[[f64; 3]; 3]> {
+    if let Ok(diag) = obj.extract::<Vec<f64>>() {
+        if diag.len() == 3 {
+            return Ok([
+                [diag[0], 0.0, 0.0],
+                [0.0, diag[1], 0.0],
+                [0.0, 0.0, diag[2]],
+            ]);
+        }
+        if diag.len() == 9 {
+            return Ok([
+                [diag[0], diag[1], diag[2]],
+                [diag[3], diag[4], diag[5]],
+                [diag[6], diag[7], diag[8]],
+            ]);
+        }
+    }
+    let rows: Vec<Vec<f64>> = obj.extract()?;
+    if rows.len() != 3 || rows.iter().any(|r| r.len() != 3) {
+        return Err(PyValueError::new_err(
+            "inertia_body: diag[3], flat[9], or 3x3 nested",
+        ));
+    }
+    Ok([
+        [rows[0][0], rows[0][1], rows[0][2]],
+        [rows[1][0], rows[1][1], rows[1][2]],
+        [rows[2][0], rows[2][1], rows[2][2]],
+    ])
+}
+
+fn parse_integrator(name: &str) -> PyResult<IntegratorKind> {
+    IntegratorKind::parse(name).ok_or_else(|| {
+        PyValueError::new_err(format!(
+            "unknown integrator {name:?}; expected explicit_euler|symplectic_euler|velocity_verlet|rk4"
+        ))
+    })
+}
+
+/// Initial rigid-body description (SI).
+#[pyclass(name = "RigidBody", module = "physics_engine_rs")]
+#[derive(Clone)]
+struct PyRigidBody {
+    inner: RigidBody,
+}
+
+#[pymethods]
+impl PyRigidBody {
+    #[new]
+    #[pyo3(signature = (mass, position=None, velocity=None, inertia_body=None, orientation=None, angular_velocity=None, name=None))]
+    fn new(
+        mass: f64,
+        position: Option<&Bound<'_, PyAny>>,
+        velocity: Option<&Bound<'_, PyAny>>,
+        inertia_body: Option<&Bound<'_, PyAny>>,
+        orientation: Option<&Bound<'_, PyAny>>,
+        angular_velocity: Option<&Bound<'_, PyAny>>,
+        name: Option<String>,
+    ) -> PyResult<Self> {
+        if mass <= 0.0 {
+            return Err(PyValueError::new_err("mass must be positive"));
+        }
+        let mut b = RigidBody::new(mass);
+        if let Some(p) = position {
+            b.position = vec3_from_seq(p)?;
+        }
+        if let Some(v) = velocity {
+            b.velocity = vec3_from_seq(v)?;
+        }
+        if let Some(i) = inertia_body {
+            b = b.with_inertia(inertia_from_obj(i)?);
+        }
+        if let Some(q) = orientation {
+            b.orientation = quat_from_seq(q)?;
+        }
+        if let Some(w) = angular_velocity {
+            b.angular_velocity = vec3_from_seq(w)?;
+        }
+        if let Some(n) = name {
+            b.name = n;
+        }
+        Ok(Self { inner: b })
+    }
+
+    #[getter]
+    fn mass(&self) -> f64 {
+        self.inner.mass
+    }
+}
+
+/// `F = m g` with `g` [m/s²] (default `(0,0,-g0)`).
+#[pyclass(name = "UniformGravity", module = "physics_engine_rs")]
+#[derive(Clone)]
+struct PyUniformGravity {
+    inner: UniformGravity,
+}
+
+#[pymethods]
+impl PyUniformGravity {
+    #[new]
+    #[pyo3(signature = (g=None))]
+    fn new(g: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
+        let g = match g {
+            Some(obj) => vec3_from_seq(obj)?,
+            None => Vec3::new(0.0, 0.0, -STANDARD_GRAVITY),
+        };
+        Ok(Self {
+            inner: UniformGravity::new(g),
+        })
+    }
+}
+
+/// Pairwise Newtonian gravity.
+#[pyclass(name = "NewtonianGravity", module = "physics_engine_rs")]
+#[derive(Clone)]
+struct PyNewtonianGravity {
+    inner: NewtonianGravity,
+}
+
+#[pymethods]
+impl PyNewtonianGravity {
+    #[new]
+    #[pyo3(signature = (g_const=None, softening=0.0))]
+    fn new(g_const: Option<f64>, softening: f64) -> Self {
+        Self {
+            inner: NewtonianGravity::with_params(g_const.unwrap_or(G), softening),
+        }
+    }
+}
+
+/// Stokes drag `F = -b (v - wind)`, `b` [kg/s].
+#[pyclass(name = "LinearDrag", module = "physics_engine_rs")]
+#[derive(Clone)]
+struct PyLinearDrag {
+    inner: LinearDrag,
+}
+
+#[pymethods]
+impl PyLinearDrag {
+    #[new]
+    #[pyo3(signature = (b, wind=None))]
+    fn new(b: f64, wind: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
+        let wind = match wind {
+            Some(w) => vec3_from_seq(w)?,
+            None => Vec3::zero(),
+        };
+        Ok(Self {
+            inner: LinearDrag::new(b, wind),
+        })
+    }
+}
+
+/// Newton drag `F = -k |u| u`, `k` [kg/m].
+#[pyclass(name = "QuadraticDrag", module = "physics_engine_rs")]
+#[derive(Clone)]
+struct PyQuadraticDrag {
+    inner: QuadraticDrag,
+}
+
+#[pymethods]
+impl PyQuadraticDrag {
+    #[new]
+    #[pyo3(signature = (k, wind=None))]
+    fn new(k: f64, wind: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
+        let wind = match wind {
+            Some(w) => vec3_from_seq(w)?,
+            None => Vec3::zero(),
+        };
+        Ok(Self {
+            inner: QuadraticDrag::new(k, wind),
+        })
+    }
+
+    #[staticmethod]
+    fn coefficient(rho: f64, cd: f64, area: f64) -> f64 {
+        QuadraticDrag::coefficient(rho, cd, area)
+    }
+}
+
+/// Hookean spring to a fixed anchor, stiffness `k` [N/m].
+#[pyclass(name = "Spring", module = "physics_engine_rs")]
+#[derive(Clone)]
+struct PySpring {
+    inner: Spring,
+}
+
+#[pymethods]
+impl PySpring {
+    #[new]
+    fn new(body: usize, anchor: &Bound<'_, PyAny>, k: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: Spring::new(body, vec3_from_seq(anchor)?, k),
+        })
+    }
+}
+
+/// Constant world-frame torque [N m].
+#[pyclass(name = "ConstantTorque", module = "physics_engine_rs")]
+#[derive(Clone)]
+struct PyConstantTorque {
+    inner: ConstantTorque,
+}
+
+#[pymethods]
+impl PyConstantTorque {
+    #[new]
+    fn new(body: usize, torque: &Bound<'_, PyAny>) -> PyResult<Self> {
+        Ok(Self {
+            inner: ConstantTorque::new(body, vec3_from_seq(torque)?),
+        })
+    }
+}
+
+fn extract_generators(gens: &Bound<'_, PyAny>) -> PyResult<Vec<Box<dyn ForceGenerator>>> {
+    let list = gens.downcast::<PyList>()?;
+    let mut out: Vec<Box<dyn ForceGenerator>> = Vec::with_capacity(list.len());
+    for item in list.iter() {
+        if let Ok(g) = item.extract::<PyRef<PyUniformGravity>>() {
+            out.push(Box::new(g.inner.clone()));
+        } else if let Ok(g) = item.extract::<PyRef<PyNewtonianGravity>>() {
+            out.push(Box::new(g.inner.clone()));
+        } else if let Ok(g) = item.extract::<PyRef<PyLinearDrag>>() {
+            out.push(Box::new(g.inner.clone()));
+        } else if let Ok(g) = item.extract::<PyRef<PyQuadraticDrag>>() {
+            out.push(Box::new(g.inner.clone()));
+        } else if let Ok(g) = item.extract::<PyRef<PySpring>>() {
+            out.push(Box::new(g.inner.clone()));
+        } else if let Ok(g) = item.extract::<PyRef<PyConstantTorque>>() {
+            out.push(Box::new(g.inner.clone()));
+        } else {
+            return Err(PyTypeError::new_err(
+                "generators must be UniformGravity|NewtonianGravity|LinearDrag|QuadraticDrag|Spring|ConstantTorque",
+            ));
+        }
+    }
+    Ok(out)
+}
+
+/// Simulation world (SoA). Stage-1 API mirror of the Python oracle.
+#[pyclass(name = "World", module = "physics_engine_rs")]
+struct PyWorld {
+    inner: World,
+}
+
+#[pymethods]
+impl PyWorld {
+    #[new]
+    #[pyo3(signature = (bodies, generators=None))]
+    fn new(bodies: &Bound<'_, PyAny>, generators: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
+        let list = bodies.downcast::<PyList>()?;
+        let mut rbodies = Vec::with_capacity(list.len());
+        for item in list.iter() {
+            let b: PyRef<PyRigidBody> = item.extract()?;
+            rbodies.push(b.inner.clone());
+        }
+        let gens = match generators {
+            Some(g) => extract_generators(g)?,
+            None => Vec::new(),
+        };
+        Ok(Self {
+            inner: World::new(rbodies, gens),
+        })
+    }
+
+    #[getter]
+    fn t(&self) -> f64 {
+        self.inner.t
+    }
+
+    #[getter]
+    fn n(&self) -> usize {
+        self.inner.n
+    }
+
+    /// Positions as `(N, 3)` float64 array [m]. Packs then moves into NumPy (no second copy).
+    #[getter]
+    fn x<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
+        let n = self.inner.n;
+        let mut flat = Vec::with_capacity(n * 3);
+        for p in &self.inner.state.x {
+            flat.extend_from_slice(&p.to_array());
+        }
+        let arr = PyArray1::from_vec(py, flat);
+        arr.reshape([n, 3]).expect("reshape x")
+    }
+
+    /// Quaternions as `(N, 4)` float64 `[w,x,y,z]`.
+    #[getter]
+    fn q<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
+        let n = self.inner.n;
+        let mut flat = Vec::with_capacity(n * 4);
+        for q in &self.inner.state.q {
+            flat.extend_from_slice(&q.to_array());
+        }
+        let arr = PyArray1::from_vec(py, flat);
+        arr.reshape([n, 4]).expect("reshape q")
+    }
+
+    /// Velocities as `(N, 3)` float64 [m/s].
+    #[getter]
+    fn v<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
+        let n = self.inner.n;
+        let mut flat = Vec::with_capacity(n * 3);
+        for v in &self.inner.state.v {
+            flat.extend_from_slice(&v.to_array());
+        }
+        let arr = PyArray1::from_vec(py, flat);
+        arr.reshape([n, 3]).expect("reshape v")
+    }
+
+    /// World-frame angular momenta as `(N, 3)` float64 [kg m²/s].
+    #[getter]
+    #[allow(non_snake_case)]
+    fn L<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
+        let n = self.inner.n;
+        let mut flat = Vec::with_capacity(n * 3);
+        for l in &self.inner.state.l {
+            flat.extend_from_slice(&l.to_array());
+        }
+        let arr = PyArray1::from_vec(py, flat);
+        arr.reshape([n, 3]).expect("reshape L")
+    }
+
+    /// Packed state `[x…, q…, v…, L…]` moved into a 1-D NumPy array.
+    fn pack<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        PyArray1::from_vec(py, self.inner.state.pack())
+    }
+
+    /// FNV-1a hash of packed IEEE bits (cross-OS determinism).
+    fn state_hash(&self) -> u64 {
+        state_hash64(&self.inner.state)
+    }
+
+    /// One step; **releases the GIL** for the duration of the integrator.
+    fn step(&mut self, py: Python<'_>, dt: f64, integrator: &str) -> PyResult<()> {
+        let kind = parse_integrator(integrator)?;
+        let f = kind.as_fn();
+        py.allow_threads(|| {
+            self.inner.step(dt, f);
+        });
+        Ok(())
+    }
+
+    /// Fixed-`dt` run to `t_end` [s]; **releases the GIL**.
+    #[pyo3(signature = (t_end, dt, integrator))]
+    fn run(&mut self, py: Python<'_>, t_end: f64, dt: f64, integrator: &str) -> PyResult<()> {
+        let kind = parse_integrator(integrator)?;
+        let f = kind.as_fn();
+        py.allow_threads(|| {
+            self.inner.run_for(t_end, dt, f);
+        });
+        Ok(())
+    }
+
+    /// Instantaneous forces/torques at current state: returns `(F, T)` arrays.
+    #[pyo3(signature = (t=None))]
+    #[allow(clippy::type_complexity)]
+    fn forces<'py>(
+        &self,
+        py: Python<'py>,
+        t: Option<f64>,
+    ) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyArray2<f64>>)> {
+        let t = t.unwrap_or(self.inner.t);
+        let (f, tau) = self.inner.forces(&self.inner.state, t);
+        let n = self.inner.n;
+        let mut ff = Vec::with_capacity(n * 3);
+        let mut tt = Vec::with_capacity(n * 3);
+        for i in 0..n {
+            ff.extend_from_slice(&f[i].to_array());
+            tt.extend_from_slice(&tau[i].to_array());
+        }
+        let fa = PyArray1::from_vec(py, ff).reshape([n, 3])?;
+        let ta = PyArray1::from_vec(py, tt).reshape([n, 3])?;
+        Ok((fa, ta))
+    }
+
+    fn kinetic_energy(&self) -> f64 {
+        kinetic_energy(&self.inner, &self.inner.state)
+    }
+
+    fn potential_energy(&self) -> f64 {
+        potential_energy(&self.inner, &self.inner.state)
+    }
+
+    fn total_energy(&self) -> f64 {
+        total_energy(&self.inner, &self.inner.state)
+    }
+
+    fn linear_momentum<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        let p = linear_momentum(&self.inner, &self.inner.state);
+        PyArray1::from_vec(py, p.to_array().to_vec())
+    }
+
+    #[pyo3(signature = (origin=None))]
+    fn angular_momentum<'py>(
+        &self,
+        py: Python<'py>,
+        origin: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Bound<'py, PyArray1<f64>>> {
+        let o = match origin {
+            Some(obj) => vec3_from_seq(obj)?,
+            None => Vec3::zero(),
+        };
+        let l = ang_mom(&self.inner, &self.inner.state, o);
+        Ok(PyArray1::from_vec(py, l.to_array().to_vec()))
+    }
+
+    /// Masses as length-N array [kg] (moved into NumPy).
+    #[getter]
+    fn mass<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        PyArray1::from_vec(py, self.inner.mass.clone())
+    }
+}
+
+#[pyfunction]
+fn inertia_solid_sphere(mass: f64, radius: f64) -> [[f64; 3]; 3] {
+    pe_core::inertia_solid_sphere(mass, radius)
+}
+
+#[pyfunction]
+fn inertia_solid_box(mass: f64, a: f64, b: f64, c: f64) -> [[f64; 3]; 3] {
+    pe_core::inertia_solid_box(mass, a, b, c)
+}
+
+#[pyfunction]
+fn inertia_solid_cylinder(mass: f64, r: f64, h: f64) -> [[f64; 3]; 3] {
+    pe_core::inertia_solid_cylinder(mass, r, h)
+}
+
+/// Canonical cross-OS hash scenario (same as Rust `cross_os_canonical_hash_fixture`).
+#[pyfunction]
+fn canonical_determinism_hash() -> u64 {
+    let mut w = World::new(
+        vec![
+            RigidBody::new(1.0)
+                .with_position(Vec3::new(0.0, 0.0, 10.0))
+                .with_velocity(Vec3::new(1.0, 0.0, 0.0)),
+            RigidBody::new(2.0)
+                .with_position(Vec3::new(1.0, 0.0, 0.0))
+                .with_velocity(Vec3::new(0.0, 0.5, 0.0))
+                .with_inertia_diag(0.4, 0.5, 0.6)
+                .with_angular_velocity(Vec3::new(0.1, 0.0, 0.2)),
+        ],
+        vec![
+            Box::new(UniformGravity::earth()),
+            Box::new(LinearDrag::new(0.01, Vec3::zero())),
+            Box::new(Spring::new(0, Vec3::new(0.0, 0.0, 10.0), 5.0)),
+            Box::new(ConstantTorque::new(1, Vec3::new(0.0, 0.0, 0.05))),
+        ],
+    );
+    w.run_for(2.0, 1e-3, IntegratorKind::Rk4.as_fn());
+    state_hash64(&w.state)
+}
+
+#[pymodule]
+fn physics_engine_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<PyRigidBody>()?;
+    m.add_class::<PyWorld>()?;
+    m.add_class::<PyUniformGravity>()?;
+    m.add_class::<PyNewtonianGravity>()?;
+    m.add_class::<PyLinearDrag>()?;
+    m.add_class::<PyQuadraticDrag>()?;
+    m.add_class::<PySpring>()?;
+    m.add_class::<PyConstantTorque>()?;
+    m.add_function(wrap_pyfunction!(inertia_solid_sphere, m)?)?;
+    m.add_function(wrap_pyfunction!(inertia_solid_box, m)?)?;
+    m.add_function(wrap_pyfunction!(inertia_solid_cylinder, m)?)?;
+    m.add_function(wrap_pyfunction!(canonical_determinism_hash, m)?)?;
+    m.add("G", G)?;
+    m.add("STANDARD_GRAVITY", STANDARD_GRAVITY)?;
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+    Ok(())
+}
