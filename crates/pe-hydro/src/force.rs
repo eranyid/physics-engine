@@ -1,6 +1,11 @@
 //! Buoyancy and hull-drag force generators for a [`World`] body.
 //!
 //! Buoyancy: `F = ρ g ∇` along +z [N], torque `(r_COB − r_COM) × F` [N m].
+//! With an optional [`WaveField`], the local free-surface elevation sets the
+//! instantaneous waterplane (pressure/immersion at the wave surface). An optional
+//! long-wave Froude–Krylov correction uses the undisturbed Airy pressure head
+//! at the geometric centre (Dean & Dalrymple).
+//!
 //! Hull drag: quadratic surge resistance opposing horizontal velocity.
 
 use pe_core::forces::ForceGenerator;
@@ -9,8 +14,9 @@ use pe_math::libm_ops;
 use pe_math::{Vec3, STANDARD_GRAVITY};
 
 use crate::hull::{Hull, SubmergedState, RHO_FRESHWATER};
+use crate::waves::{AiryWave, Wave, WaveField};
 
-/// Archimedes buoyancy on one body from a [`Hull`].
+/// Archimedes buoyancy on one body from a [`Hull`], optionally on a wave surface.
 #[derive(Clone, Debug)]
 pub struct Buoyancy {
     /// Body index.
@@ -21,10 +27,16 @@ pub struct Buoyancy {
     pub rho: f64,
     /// Gravity magnitude [m/s²] (force along +z).
     pub g: f64,
-    /// Waterplane world z [m].
+    /// Still / mean waterplane world z [m] (used when `wave` is `None`).
     pub water_level: f64,
     /// COM offset in the geometric body frame [m].
     pub com_body: Vec3,
+    /// Optional wave field: local η shifts the waterplane.
+    pub wave: Option<WaveField>,
+    /// If true and `wave` is [`WaveField::Airy`], add a long-wave Froude–Krylov
+    /// vertical force from the undisturbed dynamic pressure head at the COM
+    /// horizontal position / draft mid-depth (tractable FK approximation).
+    pub froude_krylov: bool,
 }
 
 impl Buoyancy {
@@ -44,6 +56,8 @@ impl Buoyancy {
             g,
             water_level,
             com_body,
+            wave: None,
+            froude_krylov: false,
         }
     }
 
@@ -59,24 +73,82 @@ impl Buoyancy {
         )
     }
 
+    /// Attach a wave field (local elevation as waterplane).
+    pub fn with_wave(mut self, wave: WaveField) -> Self {
+        self.wave = Some(wave);
+        self
+    }
+
+    /// Enable / disable long-wave Froude–Krylov (Airy only).
+    pub fn with_froude_krylov(mut self, enable: bool) -> Self {
+        self.froude_krylov = enable;
+        self
+    }
+
+    /// Instantaneous waterplane z [m] at the body horizontal position.
+    pub fn waterplane_z(&self, s: &State, t: f64) -> f64 {
+        let i = self.body;
+        match &self.wave {
+            Some(w) => w.mean_water_level() + w.height(s.x[i].x, s.x[i].y, t),
+            None => self.water_level,
+        }
+    }
+
     /// Submerged state at the current pose (geometric origin corrected by `com_body`).
-    pub fn submerged(&self, s: &State) -> SubmergedState {
+    pub fn submerged_at(&self, s: &State, t: f64) -> SubmergedState {
         let i = self.body;
         let x_geom = s.x[i] - s.q[i].rotate(self.com_body);
-        self.hull.submerged(x_geom, s.q[i], self.water_level)
+        let wl = self.waterplane_z(s, t);
+        self.hull.submerged(x_geom, s.q[i], wl)
+    }
+
+    /// Submerged state at t = 0 (compat with still-water callers).
+    pub fn submerged(&self, s: &State) -> SubmergedState {
+        self.submerged_at(s, 0.0)
+    }
+
+    /// Long-wave FK vertical force [N] from Airy pressure head (optional).
+    ///
+    /// Approximates `F_z ≈ ρ g A_wp · (p_dyn/(ρ g))` evaluated at mid-draft under
+    /// the COM — the hydrostatic part of the undisturbed wave pressure already
+    /// enters via the elevated waterplane; this term adds the depth-attenuated
+    /// dynamic head relative to the surface elevation (difference of
+    /// `cosh(k(z+h))/cosh(kh)` vs 1 at the free surface). For very long waves
+    /// (`kh → 0`) the difference vanishes.
+    fn froude_krylov_force(&self, airy: &AiryWave, s: &State, t: f64, a_wp: f64) -> Vec3 {
+        if a_wp <= 0.0 {
+            return Vec3::zero();
+        }
+        let i = self.body;
+        let x = s.x[i].x;
+        let y = s.x[i].y;
+        let eta = airy.height(x, y, t);
+        // Evaluation depth: geometric COM z (under surface).
+        let z = s.x[i].z;
+        let head = airy.pressure_head(x, y, z, t);
+        // Dynamic FK residual vs pure surface hydrostatic: head − η * attenuation≈1
+        // at surface. Using (head − η) removes double-counting with waterplane shift.
+        let residual = head - eta;
+        Vec3::new(0.0, 0.0, self.rho * self.g * a_wp * residual)
     }
 }
 
 impl ForceGenerator for Buoyancy {
-    fn apply(&self, _world: &World, s: &State, _t: f64, f: &mut [Vec3], torque: &mut [Vec3]) {
+    fn apply(&self, _world: &World, s: &State, t: f64, f: &mut [Vec3], torque: &mut [Vec3]) {
         let i = self.body;
-        let sub = self.submerged(s);
+        let sub = self.submerged_at(s, t);
         if sub.volume <= 0.0 {
             return;
         }
         let fb = Vec3::new(0.0, 0.0, self.rho * self.g * sub.volume);
         f[i] += fb;
         torque[i] += (sub.cob_world - s.x[i]).cross(fb);
+
+        if self.froude_krylov {
+            if let Some(WaveField::Airy(ref airy)) = self.wave {
+                f[i] += self.froude_krylov_force(airy, s, t, sub.a_wp);
+            }
+        }
     }
 }
 

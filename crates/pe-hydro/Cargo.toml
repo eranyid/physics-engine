@@ -22,3 +22,7 @@ harness = false
 [[bin]]
 name = "aero_hydro_hash"
 path = "src/bin/aero_hydro_hash.rs"
+
+[[bin]]
+name = "wave_body_hash"
+path = "src/bin/wave_body_hash.rs"

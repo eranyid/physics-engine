@@ -169,11 +169,11 @@ Sizes are relative engineering scope, not calendar schedules.
 
 ### D7 — Hydrodynamics & waves
 
-- **Models:** linear Airy waves → spectrum (Pierson–Moskowitz/JONSWAP); Morison
-  forces; strip-theory or panel hooks later.
-- **Validation:** Airy elevation/kinematics; Morison cylinder force vs analytic
-  oscillatory flow; RAO comparisons where published.
-- **Effort:** L.
+- **Models:** linear Airy / Stokes II / Gerstner + spectral (PM/JONSWAP) in
+  `pe-hydro` (**shipped**); Morison forces; strip-theory or panel hooks later.
+- **Validation:** Airy elevation/kinematics + dispersion oracles; spectral `H_s`;
+  wave-coupled buoyancy heave; Morison / RAO later.
+- **Effort:** L (v1 waves done; Morison/seakeeping remain).
 
 ### D8 — Materials (elasticity, plasticity, friction, thermal)
 
@@ -216,7 +216,7 @@ ported early because the Python oracle already exists.
 | **M6** | CCD + convex | TOI tests (no tunnel at configured speeds); GJK/EPA convex; capsule–box | planned |
 | **M7** | Space module | Kepler + n-body conservation suite in Rust (+ Python helpers as needed) | **done** (this PR) |
 | **M8** | Scene I/O + C ABI | Round-trip serialization; `pe-ffi` headers; smoke GDExtension optional | planned |
-| **M9** | Waves / hydrodynamics v1 | Airy + Morison validated | planned |
+| **M9** | Waves / hydrodynamics v1 | Airy + Stokes/Gerstner/spectra + buoyancy coupling (Morison later) | **done** (this PR; Morison deferred) |
 | **M10** | Materials + soft v1 | Elastic validation; one soft demo with analytic check | planned |
 | **M11** | Fluids / blast v1 | Particle hydrostatic + one blast engineering model vs scaling law | planned |
 
@@ -255,7 +255,8 @@ ported early because the Python oracle already exists.
 - Tests: Rust published-value + analytic suites; Python oracle
   `tests/test_oracle_aero_hydro_rust.py`. Criterion benches in `docs/BENCHMARKS.md`.
   Default CI stays fast (no Criterion; slow pytest marker unchanged).
-- **Out of scope (later):** waves, 6-DOF aero check-cases, blade element, compressibility.
+- **Out of scope (M4):** waves, 6-DOF aero check-cases, blade element, compressibility
+  — **waves + check-cases + compressibility + Dryden shipped in M9 follow-on** (this PR).
 
 ### M7 as built (summary)
 

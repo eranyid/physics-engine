@@ -1,9 +1,11 @@
-//! Criterion benches for aero force evaluation (stage 3).
+//! Criterion benches for aero force evaluation + compressibility / Dryden (M9).
 //!
 //! Baseline numbers are recorded in `docs/BENCHMARKS.md`.
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use pe_aero::atmosphere::{DensityModel, RHO0};
+use pe_aero::compressibility::{normal_shock, prandtl_glauert};
+use pe_aero::turbulence::{DrydenParams, DrydenTurbulence};
 use pe_aero::{AircraftAero, FixedThrust, WingPolar};
 use pe_core::forces::UniformGravity;
 use pe_core::integrators::rk4;
@@ -47,6 +49,37 @@ fn bench_aero(c: &mut Criterion) {
             for _ in 0..1000 {
                 w.step(1e-3, rk4);
             }
+        });
+    });
+    group.bench_function("normal_shock_1k", |b| {
+        b.iter(|| {
+            let mut s = 0.0;
+            for i in 0..1000 {
+                let m = 1.1 + 0.002 * i as f64;
+                if let Some(n) = normal_shock(m, 1.4) {
+                    s += n.p_ratio;
+                }
+            }
+            s
+        });
+    });
+    group.bench_function("prandtl_glauert_1k", |b| {
+        b.iter(|| {
+            let mut s = 0.0;
+            for i in 0..1000 {
+                s += prandtl_glauert(1.0, 0.1 + 0.0005 * i as f64);
+            }
+            s
+        });
+    });
+    group.bench_function("dryden_1k_steps", |b| {
+        b.iter(|| {
+            let mut d = DrydenTurbulence::new(DrydenParams::light_low_altitude(), 7);
+            let mut s = 0.0;
+            for _ in 0..1000 {
+                s += d.step(50.0, 0.01).x;
+            }
+            s
         });
     });
     group.finish();

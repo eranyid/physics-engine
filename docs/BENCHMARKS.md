@@ -31,11 +31,17 @@ Default CI does **not** run Criterion (`cargo test` omits harness benches). Use
 
 | Benchmark | Workload | Median time |
 | --- | --- | --- |
-| `forces_eval_1k` | aero+thrust+gravity force eval (iter) | ~77 ns |
-| `rk4_1k_steps` | trimmed aircraft, 1000× RK4 @ dt=1e-3 | ~1.09 ms |
-| `buoyancy_forces_1k` | floating barge force eval (iter) | ~821 ns |
-| `heave_rk4_500_steps` | floating barge, 500× RK4 @ dt=1e-3 | ~2.23 ms |
-| `gz_curve_60_angles` | box GZ curve, 60 heel samples | ~54 µs |
+| `forces_eval_1k` | aero+thrust+gravity force eval (iter) | ~85 ns |
+| `rk4_1k_steps` | trimmed aircraft, 1000× RK4 @ dt=1e-3 | ~1.17 ms |
+| `normal_shock_1k` | 1000× normal-shock evaluations | ~83 µs |
+| `prandtl_glauert_1k` | 1000× PG corrections | ~4.0 µs |
+| `dryden_1k_steps` | 1000× Dryden filter steps | ~70 µs |
+| `buoyancy_forces_1k` | floating barge force eval (iter) | ~857 ns |
+| `heave_rk4_500_steps` | floating barge, 500× RK4 @ dt=1e-3 | ~2.27 ms |
+| `gz_curve_60_angles` | box GZ curve, 60 heel samples | ~51 µs |
+| `airy_height_1k` | 1000× Airy η evaluations | ~12.7 µs |
+| `spectral_height_eval` | one PM spectral η (24×8 components) | ~3.0 µs |
+| `wave_buoyancy_rk4_200` | wave-coupled barge, 200× RK4 @ 1e-2 | ~211 µs |
 
 ## M7 — space (`pe-space`)
 

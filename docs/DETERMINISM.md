@@ -1,4 +1,4 @@
-# Determinism policy (stages 1–3 / M2–M4 + M7 space)
+# Determinism policy (stages 1–3 / M2–M4 + M7 space + M9 waves/aero)
 
 ## Guarantees
 
@@ -13,7 +13,9 @@ N-body / Kepler / perturbation paths):
 4. Contact pairs sorted by `(min_id, max_id)` before narrow phase; warm-start cache is a
    `BTreeMap` keyed by `(a, b, feature)` (lookups only — never unordered iteration).
 5. Hydro mesh waterplane points sorted by `atan2` about the centroid (`total_cmp`) — no hash maps.
-6. Identical inputs → **bit-identical** packed state on the same ISA across OS when (1)–(5) hold.
+6. Spectral-wave / Dryden randomness uses the portable seeded **xoshiro256\*\*** in
+   `pe-math` (no external RNG crate; fixed component order — never `HashMap`).
+7. Identical inputs → **bit-identical** packed state on the same ISA across OS when (1)–(6) hold.
 
 Cross-check helpers:
 
@@ -25,6 +27,8 @@ Cross-check helpers:
   `physics_engine_rs.canonical_aero_hydro_hash()`
 - M7 space: `cargo run -p pe-space --bin space_hash --release` /
   `physics_engine_rs.canonical_space_hash()`
+- M9 wave-body: `cargo run -p pe-hydro --bin wave_body_hash --release` /
+  `physics_engine_rs.canonical_wave_body_hash()`
 
 ### Canonical stage-1 scenario hash (locked)
 
@@ -75,6 +79,24 @@ Scenario:
 | Linux x86_64 (CI + local) | `25ecc6e6a8911d8c` | locked |
 | macOS (CI) | same expected | CI asserts equality |
 | Windows (CI) | same expected | CI asserts equality |
+
+### Canonical wave-body hash (locked)
+
+Scenario (must stay in sync in `pe_hydro::canonical_wave_body_hash`, the
+`wave_body_hash` binary, and `physics_engine_rs.canonical_wave_body_hash()`):
+
+- Box barge 12×4×2 m, mass 24 000 kg at Archimedes draft (freshwater).
+- Airy wave: A=0.25 m, T=8 s, h=50 m, θ=0; buoyancy reads local η + long-wave FK.
+- Integrate with **RK4**, `t_end=2`, `dt=1e-2`.
+- Hash: FNV-1a 64 over little-endian IEEE bits of `State::pack()`.
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `3f1f6102a4606fbe` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+Helper: `cargo run -p pe-hydro --bin wave_body_hash --release`.
 
 ### Canonical M7 space hash (locked)
 
