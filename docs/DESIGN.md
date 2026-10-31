@@ -20,7 +20,7 @@ invariants that the Rust port must preserve (units, frames, numerics, test bar).
 | Track | Role |
 | --- | --- |
 | `src/physics_engine/` (Python) | Reference oracle; analytic tests; slow/energy runs |
-| `crates/pe-math`, `pe-core`, `pe-collision`, `pe-aero`, `pe-hydro` (Rust) | Stages 1–3 production core; analytic + Criterion |
+| `crates/pe-math`, `pe-core`, `pe-collision`, `pe-aero`, `pe-hydro`, `pe-space`, `pe-blast`, `pe-ballistics`, `pe-soft` (Rust) | Stages 1–3 + space/blast/soft production core; analytic + Criterion |
 | `python/` → `physics_engine_rs` | PyO3 abi3 wheel; GIL released on step; oracle harness |
 | Godot GDExtension | `godot/` + `pe-ffi` C ABI (M8; compile-checked — see docs/GODOT.md) |
 
@@ -35,8 +35,9 @@ crates/pe-core/       World SoA, forces, integrators, diagnostics, canonical_has
 crates/pe-collision/  shapes, BroadPhase/NarrowPhase traits, ContactWorld, collision_hash bin
 crates/pe-aero/       ISA atmosphere, WingPolar/stall, thrust, AircraftAero
 crates/pe-hydro/      Box/Cylinder/Sphere/Mesh hulls, Buoyancy, GM/GZ, IMO IS Code, aero_hydro_hash
+crates/pe-soft/       XPBD soft bodies / cloth / rope / tet FEM / materials (see docs/SOFT.md)
 crates/pe-fluid/      SPH (WCSPH) + PBF particle fluids (3-D / 2-D tests), fluid_hash
-python/               PyO3 module physics_engine_rs (abi3 ≥ 3.10) — World + ContactWorld + aero/hydro/fluid
+python/               PyO3 module physics_engine_rs (abi3 ≥ 3.10) — World + ContactWorld + aero/hydro + soft + fluid
 ```
 
 Invariants preserved from the Python oracle: SI units; world-frame `L`; quaternion

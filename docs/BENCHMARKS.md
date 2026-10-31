@@ -135,6 +135,16 @@ Cloud Agent host after GJK/EPA numerical changes.
 | `step_10k_bullets` | one ProjectileSystem step, 10k bullets | ~15.1 ms |
 | `volley_hash` | canonical 100-bullet hash scenario | ~14.5 ms |
 
+## M8 — soft bodies (`pe-soft`)
+
+| Benchmark | Workload | Median time |
+| --- | --- | --- |
+| `rope_hang_1s` | 16-seg rope, 60× step @ 1/60 | ~653 µs |
+| `cloth_4x4_2s` | 4×4 cloth, 120× step @ 1/60 | ~2.35 ms |
+| `jelly_cube_drop_1s` | 2-div jelly cube, 60× step | ~6.72 ms |
+| `soft_canonical_hash` | canonical rope+cloth+jelly hash | ~8.24 ms |
+| `soft_canonical_world_build` | build-only | ~3.4 µs |
+
 ## Fluids (`pe-fluid`)
 
 Measured on the Cloud Agent host (Linux x86_64, release).
@@ -149,7 +159,7 @@ Neighbour-list reuse across PBF iterations (default on):
 
 Re-record with `cargo bench -p pe-fluid --bench fluid` after solver changes.
 
-These are foundation baselines for M2–M9 + blast/ballistics/fluids — not
+These are foundation baselines for M2–M9 + blast/ballistics + soft + fluids — not
 throughput targets. Re-record when changing `libm` usage, SoA layout, integrator
 math, the contact solver, aero/hydro force models, waves, space integrators,
-blast/ballistics, or SPH/PBF loops.
+blast/ballistics, soft XPBD, or SPH/PBF loops.

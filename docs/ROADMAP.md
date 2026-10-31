@@ -219,10 +219,10 @@ ported early because the Python oracle already exists.
 | **M5** | Joints + islands + sleep | Pendulum/motor tests; large resting scene sleeps; Python may gain thin joint oracle or shared fixtures | **M5a done**; **M5b done** (joints + speculative/TOI CCD; convex GJK remains M6) |
 | **M6** | CCD + convex | TOI tests (no tunnel at configured speeds); GJK/EPA convex; capsule–box | **done** (GJK/EPA, hulls, capsule–box, convex CA CCD; see `docs/COLLISION.md`) |
 | **M7** | Space module | Kepler + n-body conservation suite in Rust (+ Python helpers as needed) | **done** (this PR) |
-| **M8** | Scene I/O + C ABI | Round-trip serialization; `pe-ffi` headers; smoke GDExtension optional | **done** (pe-scene + pe-ffi + godot/ compile check; see docs/SCENE.md, FFI.md, GODOT.md) |
+| **M8** | Scene I/O + C ABI | Round-trip serialization; `pe-ffi` headers; smoke GDExtension optional | **done** (pe-scene + pe-ffi + godot/; soft-body track also shipped as **M8 soft** / `pe-soft`) |
 | **M9** | Waves / hydrodynamics v1 | Airy + Stokes/Gerstner/spectra + buoyancy coupling (Morison later) | **done** (Morison shipped in M11 hydro follow-on) |
-| **M10** | Materials + soft v1 | Elastic validation; one soft demo with analytic check | planned |
-| **M11** | Fluids / blast v1 *or* deferred aero/hydro | Particle hydrostatic + blast scaling; Morison/seakeeping/BEM | **partial+** (blast earlier; **`pe-fluid` SPH/PBF shipped**; Morison/seakeeping/BEM done this PR; DFSPH / rigid coupling deferred) |
+| **M10** | Materials + soft v1 | Elastic validation; one soft demo with analytic check | **done** (shipped as M8 soft / `pe-soft`) |
+| **M11** | Fluids / blast v1 *or* deferred aero/hydro | Particle hydrostatic + blast scaling; Morison/seakeeping/BEM | **partial+** (blast earlier; **`pe-fluid` SPH/PBF shipped**; Morison/seakeeping/BEM done; DFSPH / rigid coupling deferred) |
 
 ### M1–M2 as built (summary)
 
@@ -327,7 +327,7 @@ ported early because the Python oracle already exists.
 - **Deferred:** Cummins memory; 6-DOF seakeeping; MacCamy–Fuchs; Vugts tables;
   swirl induction `a'`; certified airfoil polars.
 
-### Blast / ballistics track (this PR)
+### Blast / ballistics track
 
 - New crates `crates/pe-blast` and `crates/pe-ballistics` (clean-room literature;
   SI; `libm`; no FMA / `HashMap` iteration). Docs: [`BLAST.md`](BLAST.md),
@@ -339,6 +339,22 @@ ported early because the Python oracle already exists.
   Dryden wind, Coriolis/Eötvös, spin/Magnus models, hit-scan, Poncelet /
   Recht–Ipson, ballistic tables; cross-OS 100-bullet volley hash.
 - PyO3 + Python tests; Criterion benches recorded in [`BENCHMARKS.md`](BENCHMARKS.md).
+
+### M8 soft / materials (`pe-soft`) as built
+
+- New crate `crates/pe-soft`: XPBD particles + compliance (`α̃ = α/dt²`), substeps
+  (Macklin 2019), distance / bend / volume / tetra StVK & stable neo-Hookean
+  (Macklin & Müller 2021) / shape matching / pressure; static plane/sphere/box +
+  deterministic spatial-hash self-collision. Docs: [`SOFT.md`](SOFT.md).
+- `Material` table (density, E, ν, friction, restitution, yield, thermal) — all
+  built-ins `verified: false` / nominal; E,ν → Lamé and XPBD compliance helpers.
+- Analytic oracles: catenary rope, spring period, axial `FL/(EA)`, tet volume,
+  cantilever vs Euler–Bernoulli (honest tolerances), cloth energy, zero-compliance
+  rigid limit, energy bounds, substep study. Cross-OS soft hash CI.
+- PyO3 `SoftWorld` returning NumPy `(n,3)` arrays; pytest in
+  `tests/test_soft_rust.py`. Criterion benches in [`BENCHMARKS.md`](BENCHMARKS.md).
+- **Deferred:** corotational FEM, plasticity, fracture, thermal coupling, rigid
+  two-way coupling.
 
 **Rule.** No milestone merges without: (1) analytic or published benchmark tests,
 (2) oracle or cross-impl diff where a Python reference exists, (3) CI green.

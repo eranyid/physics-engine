@@ -314,6 +314,19 @@ jobs:
             exit 1
           fi
 
+      - name: Compute canonical M8 soft-body hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-soft --bin soft_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical soft-body hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=adfc0a4c1209e5dc
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::Soft-body determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+
       - name: Compute canonical fluid-tank hash
         shell: bash
         run: |
