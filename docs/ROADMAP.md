@@ -346,15 +346,20 @@ ported early because the Python oracle already exists.
   (Macklin 2019), distance / bend / volume / tetra StVK & stable neo-Hookean
   (Macklin & Müller 2021) / shape matching / pressure; static plane/sphere/box +
   deterministic spatial-hash self-collision. Docs: [`SOFT.md`](SOFT.md).
-- `Material` table (density, E, ν, friction, restitution, yield, thermal) — all
-  built-ins `verified: false` / nominal; E,ν → Lamé and XPBD compliance helpers.
+- `Material` table (density, E, ν, friction, restitution, yield, H, thermal k/c_p/α,
+  fracture thresholds) — all built-ins `verified: false` / nominal; E,ν → Lamé and
+  XPBD compliance helpers. Docs: [`MATERIALS.md`](MATERIALS.md).
 - Analytic oracles: catenary rope, spring period, axial `FL/(EA)`, tet volume,
   cantilever vs Euler–Bernoulli (honest tolerances), cloth energy, zero-compliance
   rigid limit, energy bounds, substep study. Cross-OS soft hash CI.
+- **Materials track:** J2 plasticity (&lt;1% uniaxial), max-principal fracture
+  (&lt;2%), lumped thermal + Fourier (&lt;2%) + free expansion; locked
+  `materials_hash` CI; PyO3 helpers + pytest.
 - PyO3 `SoftWorld` returning NumPy `(n,3)` arrays; pytest in
   `tests/test_soft_rust.py`. Criterion benches in [`BENCHMARKS.md`](BENCHMARKS.md).
-- **Deferred:** corotational FEM, plasticity, fracture, thermal coupling, rigid
-  two-way coupling.
+- **Deferred:** corotational FEM; full per-step FEM plastic XPBD coupling;
+  cohesive fracture; implicit thermal; rigid two-way coupling; verified handbook
+  rows.
 
 **Rule.** No milestone merges without: (1) analytic or published benchmark tests,
 (2) oracle or cross-impl diff where a Python reference exists, (3) CI green.

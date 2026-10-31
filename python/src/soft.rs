@@ -8,8 +8,10 @@ use pe_soft::material::{
     builtin_materials, lame_lambda, lame_mu, material_by_name, stretch_compliance,
 };
 use pe_soft::particle::Particle;
-use pe_soft::scenarios::soft_canonical_hash;
+use pe_soft::plasticity::{return_map_uniaxial, J2Params, UniaxialPlasticState};
+use pe_soft::scenarios::{materials_canonical_hash, soft_canonical_hash};
 use pe_soft::solver::{SoftParams, SoftWorld};
+use pe_soft::thermal::{free_expansion_delta_l, rod_fourier_mode1};
 use pe_soft::{kinetic_energy, total_energy};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -27,6 +29,12 @@ fn vec3_from_seq(obj: &Bound<'_, PyAny>) -> PyResult<Vec3> {
 #[pyfunction]
 fn canonical_soft_hash() -> u64 {
     soft_canonical_hash()
+}
+
+/// Canonical materials-track determinism hash (plasticity + thermal + fracture).
+#[pyfunction]
+fn canonical_materials_hash() -> u64 {
+    materials_canonical_hash()
 }
 
 /// List built-in material names (all `verified=false` / nominal).
@@ -65,13 +73,66 @@ fn soft_material_dict(name: &str) -> PyResult<std::collections::HashMap<String, 
     out.insert("restitution".into(), format!("{}", m.restitution));
     out.insert("yield_strength".into(), format!("{}", m.yield_strength));
     out.insert(
+        "hardening_modulus".into(),
+        format!("{}", m.hardening_modulus),
+    );
+    out.insert(
         "thermal_conductivity".into(),
         format!("{}", m.thermal_conductivity),
     );
     out.insert("specific_heat".into(), format!("{}", m.specific_heat));
+    out.insert(
+        "thermal_expansion".into(),
+        format!("{}", m.thermal_expansion),
+    );
+    out.insert("fracture_stress".into(), format!("{}", m.fracture_stress));
+    out.insert("fracture_strain".into(), format!("{}", m.fracture_strain));
     out.insert("verified".into(), format!("{}", m.verified));
     out.insert("source_note".into(), m.source_note.to_string());
     Ok(out)
+}
+
+/// 1-D J2 return map: returns `(stress, plastic_strain, eq_plastic_strain, plastic_flag)`.
+#[pyfunction]
+fn soft_j2_uniaxial_step(
+    e: f64,
+    nu: f64,
+    yield_strength: f64,
+    hardening: f64,
+    strain: f64,
+    plastic_strain: f64,
+    eq_plastic_strain: f64,
+) -> (f64, f64, f64, bool) {
+    let p = J2Params {
+        youngs_modulus: e,
+        poisson_ratio: nu,
+        yield_strength,
+        hardening_modulus: hardening,
+    };
+    let state = UniaxialPlasticState {
+        plastic_strain,
+        eq_plastic_strain,
+        stress: 0.0,
+    };
+    let r = return_map_uniaxial(&p, state, strain);
+    (
+        r.state.stress,
+        r.state.plastic_strain,
+        r.state.eq_plastic_strain,
+        r.plastic,
+    )
+}
+
+/// Free thermal expansion `ΔL = α L₀ ΔT`.
+#[pyfunction]
+fn soft_free_expansion_delta_l(l0: f64, alpha: f64, d_t: f64) -> f64 {
+    free_expansion_delta_l(l0, alpha, d_t)
+}
+
+/// Analytic 1-D rod Fourier mode-1 temperature.
+#[pyfunction]
+fn soft_rod_fourier_mode1(x: f64, t: f64, length: f64, t0: f64, diffusivity: f64) -> f64 {
+    rod_fourier_mode1(x, t, length, t0, diffusivity)
 }
 
 /// XPBD soft world exposed to Python.
@@ -286,9 +347,13 @@ impl PySoftWorld {
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySoftWorld>()?;
     m.add_function(wrap_pyfunction!(canonical_soft_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(canonical_materials_hash, m)?)?;
     m.add_function(wrap_pyfunction!(soft_material_names, m)?)?;
     m.add_function(wrap_pyfunction!(soft_material_dict, m)?)?;
     m.add_function(wrap_pyfunction!(soft_lame_parameters, m)?)?;
     m.add_function(wrap_pyfunction!(soft_stretch_compliance, m)?)?;
+    m.add_function(wrap_pyfunction!(soft_j2_uniaxial_step, m)?)?;
+    m.add_function(wrap_pyfunction!(soft_free_expansion_delta_l, m)?)?;
+    m.add_function(wrap_pyfunction!(soft_rod_fourier_mode1, m)?)?;
     Ok(())
 }

@@ -53,6 +53,7 @@ pub fn make_rope(
             rest_length: rest,
             compliance,
             lambda: Multiplier::default(),
+            broken: false,
         });
     }
     w
@@ -97,6 +98,7 @@ pub fn make_cloth(
                     rest_length: dx,
                     compliance: stretch_compliance,
                     lambda: Multiplier::default(),
+                    broken: false,
                 });
             }
             if j + 1 < ny {
@@ -106,6 +108,7 @@ pub fn make_cloth(
                     rest_length: dy,
                     compliance: stretch_compliance,
                     lambda: Multiplier::default(),
+                    broken: false,
                 });
             }
             // Distance-based bend (skip one)
@@ -194,6 +197,7 @@ pub fn make_soft_cube(
                             neo_hookean,
                             lambda_dev: Multiplier::default(),
                             lambda_vol: Multiplier::default(),
+                            broken: false,
                         });
                         w.constraints.volumes.push(VolumeConstraint {
                             indices: tet,
@@ -319,6 +323,7 @@ pub fn make_axial_bar_grid(
                             neo_hookean: false,
                             lambda_dev: Multiplier::default(),
                             lambda_vol: Multiplier::default(),
+                            broken: false,
                         });
                     }
                 }
@@ -360,6 +365,7 @@ pub fn make_axial_bar_springs(
             rest_length: dx,
             compliance: alpha,
             lambda: Multiplier::default(),
+            broken: false,
         });
     }
     w
@@ -436,6 +442,7 @@ pub fn make_cantilever(
                             neo_hookean: false,
                             lambda_dev: Multiplier::default(),
                             lambda_vol: Multiplier::default(),
+                            broken: false,
                         });
                     }
                 }
@@ -495,6 +502,7 @@ pub fn make_balloon(
             rest_length: (w.particles[north].x - w.particles[rings[0][j]].x).norm(),
             compliance: stretch_compliance,
             lambda: Multiplier::default(),
+            broken: false,
         });
     }
     // rings
@@ -509,6 +517,7 @@ pub fn make_balloon(
                 rest_length: (w.particles[a].x - w.particles[b].x).norm(),
                 compliance: stretch_compliance,
                 lambda: Multiplier::default(),
+                broken: false,
             });
             if r + 1 < rings.len() {
                 let c = rings[r + 1][j];
@@ -522,6 +531,7 @@ pub fn make_balloon(
                     rest_length: (w.particles[a].x - w.particles[c].x).norm(),
                     compliance: stretch_compliance,
                     lambda: Multiplier::default(),
+                    broken: false,
                 });
             }
         }
@@ -537,6 +547,7 @@ pub fn make_balloon(
             rest_length: (w.particles[south].x - w.particles[rings[last][j]].x).norm(),
             compliance: stretch_compliance,
             lambda: Multiplier::default(),
+            broken: false,
         });
     }
 

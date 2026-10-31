@@ -4,7 +4,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use pe_math::Vec3;
 use pe_soft::builders::{make_cloth, make_rope, make_soft_cube};
 use pe_soft::material::material_by_name;
-use pe_soft::scenarios::{soft_canonical_hash, soft_canonical_world};
+use pe_soft::scenarios::{materials_canonical_hash, soft_canonical_hash, soft_canonical_world};
 
 fn rope_hang_1s(c: &mut Criterion) {
     c.bench_function("rope_hang_1s", |b| {
@@ -69,6 +69,12 @@ fn canonical_hash_bench(c: &mut Criterion) {
     });
 }
 
+fn materials_hash_bench(c: &mut Criterion) {
+    c.bench_function("materials_canonical_hash", |b| {
+        b.iter(|| black_box(materials_canonical_hash()));
+    });
+}
+
 fn canonical_world_build(c: &mut Criterion) {
     c.bench_function("soft_canonical_world_build", |b| {
         b.iter(|| black_box(soft_canonical_world().len()));
@@ -81,6 +87,7 @@ criterion_group!(
     cloth_4x4_2s,
     jelly_cube_drop,
     canonical_hash_bench,
+    materials_hash_bench,
     canonical_world_build
 );
 criterion_main!(soft_benches);

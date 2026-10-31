@@ -68,3 +68,37 @@ def test_canonical_soft_hash_stable():
     b = pe.canonical_soft_hash()
     assert a == b
     assert isinstance(a, int)
+
+
+def test_canonical_materials_hash_stable():
+    a = pe.canonical_materials_hash()
+    b = pe.canonical_materials_hash()
+    assert a == b
+    assert a == 0x19498AB91F6FEBDC
+
+
+def test_j2_uniaxial_and_expansion_bindings():
+    e = 2.0e11
+    sy = 2.5e8
+    h = 2.0e9
+    eps_y = sy / e
+    stress, eps_p, alpha, plastic = pe.soft_j2_uniaxial_step(
+        e, 0.3, sy, h, eps_y + 1e-3, 0.0, 0.0
+    )
+    assert plastic
+    assert stress > sy
+    assert eps_p > 0.0 and alpha > 0.0
+    dl = pe.soft_free_expansion_delta_l(1.0, 1e-5, 100.0)
+    assert abs(dl - 1e-3) < 1e-15
+    t = pe.soft_rod_fourier_mode1(0.5, 0.0, 1.0, 10.0, 1e-4)
+    assert abs(t - 10.0) < 1e-12
+
+
+def test_material_table_has_copper_and_fields():
+    names = pe.soft_material_names()
+    assert "copper_nominal" in names
+    assert "polycarbonate_nominal" in names
+    d = pe.soft_material_dict("copper_nominal")
+    assert d["verified"] == "false"
+    assert float(d["thermal_expansion"]) > 0.0
+    assert float(d["hardening_modulus"]) >= 0.0

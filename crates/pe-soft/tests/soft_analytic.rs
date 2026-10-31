@@ -69,6 +69,7 @@ fn spring_mass_run(substeps: usize, outer_steps_per_period: usize) -> (f64, Vec<
         rest_length: 1.0,
         compliance: alpha,
         lambda: Multiplier::default(),
+        broken: false,
     });
 
     let dt = t_analytic / outer_steps_per_period as f64;
@@ -166,6 +167,7 @@ fn zero_compliance_equals_rigid_distance() {
         rest_length: 1.0,
         compliance: 0.0,
         lambda: Multiplier::default(),
+        broken: false,
     });
     for _ in 0..50 {
         w.step(1.0 / 120.0);
@@ -290,8 +292,12 @@ fn axial_bar_tet_fem_fl_over_ea_converges() {
             friction: 0.0,
             restitution: 0.0,
             yield_strength: 0.0,
+            hardening_modulus: 0.0,
             thermal_conductivity: 0.0,
             specific_heat: 0.0,
+            thermal_expansion: 0.0,
+            fracture_stress: 0.0,
+            fracture_strain: 0.0,
             verified: false,
             source_note: "test",
         };
@@ -343,8 +349,12 @@ fn axial_bar_tet_fem_fl_over_ea_converges() {
         friction: 0.0,
         restitution: 0.0,
         yield_strength: 0.0,
+        hardening_modulus: 0.0,
         thermal_conductivity: 0.0,
         specific_heat: 0.0,
+        thermal_expansion: 0.0,
+        fracture_stress: 0.0,
+        fracture_strain: 0.0,
         verified: false,
         source_note: "test",
     };
@@ -430,8 +440,12 @@ fn cantilever_deflection_vs_euler_bernoulli() {
         friction: 0.0,
         restitution: 0.0,
         yield_strength: 0.0,
+        hardening_modulus: 0.0,
         thermal_conductivity: 0.0,
         specific_heat: 0.0,
+        thermal_expansion: 0.0,
+        fracture_stress: 0.0,
+        fracture_strain: 0.0,
         verified: false,
         source_note: "test",
     };
@@ -534,6 +548,7 @@ fn conservative_spring_energy_long_run_decay() {
         rest_length: 1.0,
         compliance: 0.01,
         lambda: Multiplier::default(),
+        broken: false,
     });
     let e0 = total_energy(&w);
     let mut e_max = e0;
@@ -588,6 +603,7 @@ fn iteration_substep_convergence_distance() {
             rest_length: 0.5,
             compliance: 1e-4,
             lambda: Multiplier::default(),
+            broken: false,
         });
         for _ in 0..120 {
             w.step(1.0 / 60.0);
@@ -644,6 +660,7 @@ fn project_distance_unit() {
         rest_length: 1.0,
         compliance: 0.0,
         lambda: Multiplier::default(),
+        broken: false,
     };
     project_distance(&mut particles, &mut c, 0.01);
     let len = (particles[0].x - particles[1].x).norm();
