@@ -48,8 +48,9 @@ SI only (m, kg, s, N, rad). No unit conversion inside the engine. Enforcement:
   * velocity Verlet (kick-drift-kick leapfrog) — symplectic, order 2 for position-dependent forces;
     with velocity-dependent forces (drag) it uses the half-step velocity (still stable, lower order).
   * RK4 — order 4, not symplectic: secular energy drift on long runs.
-  * Rotation in Euler/Verlet: L kicked by torque, q drifted with the exact exponential map
-    `q ← exp(ω dt/2) q`. RK4 integrates q̇ = ½ (0,ω) ⊗ q then renormalises.
+  * Rotation in Euler/Verlet: L kicked by torque, q drifted with the exponential map evaluated at
+    the midpoint attitude (implicit midpoint, fixed-point iterated):
+    `q ← exp(dt ω(q_mid)) q`; using ω(q_n) instead gave ~2 % kinetic-energy drift in 20 s. RK4 integrates q̇ = ½ (0,ω) ⊗ q then renormalises.
 * Timestep policy: fixed dt chosen by the caller (default target 1/240 s for games-scale,
   physically chosen for orbital tests). Adaptive stepping (scipy `solve_ivp`) may be added
   as a reference integrator, never in the deterministic core loop.
