@@ -1,21 +1,23 @@
-# Determinism policy (stages 1–3 / M2–M5a + M7 space + M9 waves/aero)
+# Determinism policy (stages 1–3 / M2–M5a + M7 space + M9 waves/aero + M8 soft)
 
 ## Guarantees
 
 On the **Rust step path** (`pe-core` integrators + force apply + quaternion `exp_rotvec`,
-`pe-collision` broad/narrow/contact, `pe-aero` / `pe-hydro` force apply, and `pe-space`
-N-body / Kepler / perturbation paths):
+`pe-collision` broad/narrow/contact, `pe-aero` / `pe-hydro` force apply, `pe-space`
+N-body / Kepler / perturbation paths, and `pe-soft` XPBD):
 
 1. **f64 only**; no `target-cpu=native`, no explicit FMA (`mul_add` unused).
 2. Elementary functions go through the pure-Rust [`libm`](https://crates.io/crates/libm) crate
-   (`pe_math::libm_ops`: `sin`/`cos`/`tan`/`sqrt`/`cbrt`/`exp`/`log`/`tanh`/`fabs`/`hypot`/`atan2`/`atan`/`copysign`/`pow`/`asin`/`acos`).
+   (`pe_math::libm_ops`: `sin`/`cos`/`tan`/`sqrt`/`cbrt`/`exp`/`log`/`tanh`/`fabs`/`hypot`/`atan2`/`atan`/`copysign`/`pow`/`asin`/`acos`/`sinh`/`cosh`/`floor`).
 3. Fixed body and generator order (`Vec`, never `HashMap` iteration).
 4. Contact pairs sorted by `(min_id, max_id)` before narrow phase; warm-start cache is a
    `BTreeMap` keyed by `(a, b, feature)` (lookups only — never unordered iteration).
 5. Hydro mesh waterplane points sorted by `atan2` about the centroid (`total_cmp`) — no hash maps.
 6. Spectral-wave / Dryden randomness uses the portable seeded **xoshiro256\*\*** in
    `pe-math` (no external RNG crate; fixed component order — never `HashMap`).
-7. Identical inputs → **bit-identical** packed state on the same ISA across OS when (1)–(6) hold.
+7. Soft-body self-collision uses a dense `Vec` spatial hash; pairs sorted by
+   `(min_id, max_id)` before resolve (never `HashMap` iteration).
+8. Identical inputs → **bit-identical** packed state on the same ISA across OS when (1)–(7) hold.
 
 Cross-check helpers:
 
@@ -35,6 +37,8 @@ Cross-check helpers:
   `physics_engine_rs.canonical_ballistics_hash()`
 - M9 wave-body: `cargo run -p pe-hydro --bin wave_body_hash --release` /
   `physics_engine_rs.canonical_wave_body_hash()`
+- M8 soft bodies: `cargo run -p pe-soft --bin soft_hash --release` /
+  `physics_engine_rs.canonical_soft_hash()`
 
 ### Canonical stage-1 scenario hash (locked)
 
@@ -177,6 +181,21 @@ Scenario (`pe_ballistics::ballistics_volley_hash`, `ballistics_hash` binary,
 | Platform | Hash (hex) | Status |
 | --- | --- | --- |
 | Linux x86_64 (CI + local) | `c839907696748e9a` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+### Canonical M8 soft-body hash (locked)
+
+Scenario (`pe_soft::soft_canonical_hash`, `soft_hash` binary,
+`physics_engine_rs.canonical_soft_hash()`):
+
+- Merged rope (8 seg) + 4×4 cloth + 2-div jelly cube above a `z=0` plane.
+- 120 outer steps at `dt=1/60`, 10 XPBD substeps, 1 iteration/substep.
+- Hash: FNV-1a 64 over packed `(x‖v)` particle state (IEEE bits, LE).
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `7e7d0d3af68735c6` | locked |
 | macOS (CI) | same expected | CI asserts equality |
 | Windows (CI) | same expected | CI asserts equality |
 

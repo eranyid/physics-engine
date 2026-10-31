@@ -19,5 +19,6 @@ pe-hydro = { workspace = true }
 pe-space = { workspace = true }
 pe-blast = { workspace = true }
 pe-ballistics = { workspace = true }
+pe-soft = { workspace = true }
 numpy = { workspace = true }
 pyo3 = { workspace = true }

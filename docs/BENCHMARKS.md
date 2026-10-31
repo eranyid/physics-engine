@@ -108,7 +108,17 @@ linear slop so soft spring equilibrium cannot park under a 1000:1 stack.
 | `step_10k_bullets` | one ProjectileSystem step, 10k bullets | ~15.1 ms |
 | `volley_hash` | canonical 100-bullet hash scenario | ~14.5 ms |
 
-These are foundation baselines for M2–M9 + blast/ballistics — not throughput
+## M8 — soft bodies (`pe-soft`)
+
+| Benchmark | Workload | Median time |
+| --- | --- | --- |
+| `rope_hang_1s` | 16-seg rope, 60× step @ 1/60 | ~653 µs |
+| `cloth_4x4_2s` | 4×4 cloth, 120× step @ 1/60 | ~2.35 ms |
+| `jelly_cube_drop_1s` | 2-div jelly cube, 60× step | ~6.72 ms |
+| `soft_canonical_hash` | canonical rope+cloth+jelly hash | ~8.24 ms |
+| `soft_canonical_world_build` | build-only | ~3.4 µs |
+
+These are foundation baselines for M2–M9 + blast/ballistics + soft — not throughput
 targets. Re-record when changing `libm` usage, SoA layout, integrator math, the
-contact solver, aero/hydro force models, waves, space integrators, or
-blast/ballistics.
+contact solver, aero/hydro force models, waves, space integrators,
+blast/ballistics, or soft XPBD.
