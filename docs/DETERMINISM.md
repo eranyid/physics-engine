@@ -1,4 +1,4 @@
-# Determinism policy (stages 1–3 / M2–M5a + M7 space + M9 waves/aero + M8 soft)
+# Determinism policy (stages 1–3 / M2–M5a + M7 space + M9 waves/aero + M8 soft + fluids)
 
 ## Guarantees
 

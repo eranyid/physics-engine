@@ -7,8 +7,8 @@
 
 mod aero_hydro;
 mod blast_ballistics;
-mod soft;
 mod fluid;
+mod soft;
 mod space;
 
 use numpy::{PyArray1, PyArray2, PyArrayMethods};
