@@ -175,8 +175,7 @@ pub(crate) fn raycast(cw: &ContactWorld, origin: Vec3, dir: Vec3, tmax: f64) -> 
         }
     }
     for (si, s) in cw.statics.iter().enumerate() {
-        if let Some((t, n)) =
-            ray_shape(origin, dir, &s.shape, s.position, s.orientation, 0.0, tmax)
+        if let Some((t, n)) = ray_shape(origin, dir, &s.shape, s.position, s.orientation, 0.0, tmax)
         {
             update(&mut best, cw.world.n + si, t, n);
         }
