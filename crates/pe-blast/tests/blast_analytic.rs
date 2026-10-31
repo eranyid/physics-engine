@@ -150,8 +150,7 @@ fn euler_spherical_sedov_like_radius() {
     // Hot central cells approximate a point blast.
     let e_blast = 1.0;
     for i in 0..4 {
-        let vol = 4.0 / 3.0 * core::f64::consts::PI
-            * (s.x[i] + 0.5 * s.dx[i]).powi(3).max(1e-8);
+        let vol = 4.0 / 3.0 * core::f64::consts::PI * (s.x[i] + 0.5 * s.dx[i]).powi(3).max(1e-8);
         let p = (gamma - 1.0) * e_blast / (4.0 * vol);
         s.u[i] = Prim {
             rho: 1.0,
