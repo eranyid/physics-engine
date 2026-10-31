@@ -19,7 +19,9 @@ src/physics_engine/
   narrowphase.py  sphere/sphere, sphere/plane, sphere/box, box/plane, box/box (SAT + clipping),
                   capsule/plane, capsule/sphere, capsule/capsule; dispatcher `collide`
   contact.py      ContactWorld: wraps a World, adds shapes/statics, sequential-impulse solver
-  # stage 3: aero.py, hydro.py
+  atmosphere.py   ISA / ICAO standard atmosphere (T, p, ρ, a vs geopotential altitude)
+  aero.py         Wing polar (stall + parabolic drag), AircraftAero, Fixed/Propeller/Jet thrust
+  hydro.py        Box/cylinder/convex-mesh hulls, buoyancy, GM/GZ, hull drag, added-mass helpers
 ```
 
 Data flow: `World.step(dt, integrator)` → integrator queries `World.accelerations(state)` which
@@ -132,3 +134,56 @@ settles; plus the two long stage-1 energy runs. Default `pytest` skips them (`ad
   velocity solver), and lifting bodies out of penetration adds ≤ m g β(depth − slop) potential
   energy per step. Tall stacks drift slowly (tens of µm over 5 s for 3 boxes); no sleeping.
 * Warm-start matching by contact index assumes a stable contact order per pair.
+
+## Stage 3 as built (vehicles — library layer, no game/combat/visuals)
+
+Reusable force generators and pure helpers on top of stage-1 `World`. No coupling to contacts
+beyond sharing rigid bodies; SI only.
+
+### Atmosphere (`atmosphere.py`)
+ISA / ICAO Doc 7488 through 20 km geopotential altitude: troposphere lapse 6.5 K/km then
+isothermal lower stratosphere. `temperature`, `pressure`, `density`, `speed_of_sound`.
+Sea-level constants T₀=288.15 K, p₀=101325 Pa, ρ₀=1.225 kg/m³; R = p₀/(ρ₀ T₀); a=√(γ R T).
+
+### Aerodynamics (`aero.py`)
+Body axes: +x nose, +y right, +z up (z-up world when level). α = atan2(−v_z, v_x) in body
+frame. `WingPolar`: linear C_L(α) to α_stall then a linear stall break; parabolic
+C_D = C_D0 + C_L²/(π e AR); pitching C_m = C_m0 + C_mα α + C_mq (q c)/(2V).
+`AircraftAero` applies ½ρV²S (C_L ê_L + C_D ê_D) and M = ½ρV² S c C_m about +y.
+Thrust: `FixedThrust`, `PropellerThrust` (min of static and ηP/V, ·ρ/ρ_sl), `JetThrust`
+(T_sl · throttle · (ρ/ρ_sl)^n). Helpers: `level_flight_trim` (L=W, T=D at best L/D CL),
+`terminal_velocity_vertical`.
+
+### Hydrostatics (`hydro.py`)
+`BoxHull`, `CylinderHull` (vertical), `ConvexMeshHull`: `submerged(x,q,water_level)` →
+volume, COB, A_wp, I_xx/I_yy. Upright box/cylinder use closed form; general pose clips a
+convex mesh against z=water_level (Sutherland–Hodgman) and closes with the waterplane face.
+`Buoyancy` force generator: F = ρ g ∇ (+z), torque (r_COB−r_COM)×F. Analytic helpers:
+KB, BM=I/∇, GM=KB+BM−KG, GZ≈GM sin φ, heave period 2π√(m/(ρ g A_wp)), roll period
+2π k/√(g GM), large-angle `box_righting_arm_curve` / `angle_of_vanishing_stability`.
+Optional: `HullDrag` (viscous C_f + residual/wave C_w(Fr)), `box_added_mass_heave/surge`
+(bake into `RigidBody.mass`; not a force generator — acceleration is unavailable in `apply`).
+
+**Tests vs analytic results** (`tests/test_atmosphere.py`, `test_aero.py`, `test_hydro.py`):
+ISA table at 0/1/5/11/20 km vs published T, p, ρ, a (rel ~2e-4); drag polar and
+(L/D)_max = 1/(2√(C_D0 K)); stall break below linear extrapolation; level-flight trim
+L=W and T=D to 1e-12, net force ≈0 with freestream-aligned thrust (atol 1e-5 N); pitch
+C_mα restoring moment to 1e-9; vertical-dive terminal velocity within 0.5 % after 90 s;
+Archimedes draft T=m/(ρA) for box and cylinder (volume to 1e-12); barge GM=KB+BM−KG with
+BM=B²/(12T); numerical GZ vs GM sin φ within ~2 % at φ≤5°; GZ sign change past AVS on a
+low-freeboard barge; heave period from zero-crossings within 2 %; roll-period formula exact,
+simulated small-heel period within ~8 % (slow). Default `pytest` keeps these fast; slow
+markers cover trimmed level flight (5 s) and roll oscillation.
+
+**Known limitations / risks**
+* Longitudinal / planar aero only (no sideslip, no lateral-directional derivatives, no
+  ground effect, no compressibility; stall model is a simple linear break).
+* Propeller/jet models are first-order (no advance ratio map, no intake momentum drag).
+* ISA stops at 20 km; geometric vs geopotential altitude not distinguished.
+* Cylinder hull is vertical; heeled cylinder uses an N-gon prism (facet error).
+* Convex-mesh buoyancy is for closed convex polyhedra with consistent outward winding;
+  non-convex / open meshes are unsupported. Waterplane moments from clipped edges are
+  approximate under coarse faceting.
+* Added mass is a mass-property helper only (no radiation damping, no frequency dependence).
+* No coupling of aero/hydro to the contact solver; vehicles do not yet “land” or “dock”
+  through `ContactWorld`. No visuals, control systems, or combat logic.
