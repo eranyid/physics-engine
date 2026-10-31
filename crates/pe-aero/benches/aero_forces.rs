@@ -4,6 +4,7 @@
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use pe_aero::atmosphere::{DensityModel, RHO0};
+use pe_aero::bem::{nominal_rotor_polar, BemRotor, RotorGeometry};
 use pe_aero::compressibility::{normal_shock, prandtl_glauert};
 use pe_aero::turbulence::{DrydenParams, DrydenTurbulence};
 use pe_aero::{AircraftAero, FixedThrust, WingPolar};
@@ -81,6 +82,19 @@ fn bench_aero(c: &mut Criterion) {
             }
             s
         });
+    });
+    group.bench_function("bem_hover_eval", |b| {
+        let geom = RotorGeometry::uniform_chord(
+            2,
+            4.0,
+            0.3,
+            0.2,
+            10.0_f64.to_radians(),
+            4.0_f64.to_radians(),
+            16,
+        );
+        let bem = BemRotor::new(geom, nominal_rotor_polar(0.2, 0.012));
+        b.iter(|| bem.evaluate(35.0, 0.0, RHO0));
     });
     group.finish();
 }

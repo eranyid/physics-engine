@@ -1,18 +1,22 @@
-//! Atmosphere, wing polar / stall, thrust, compressibility, Dryden wind, NASA check cases.
+//! Atmosphere, wing polar / stall, thrust, compressibility, Dryden wind, NASA check cases,
+//! and blade-element / momentum (BEM) rotors.
 //!
 //! Conventions match the Python reference oracle (`src/physics_engine/atmosphere.py`,
 //! `aero.py`): SI units, body +x nose / +y right / +z up, α = atan2(−v_z, v_x).
 //! Deterministic step path uses portable [`pe_math::libm_ops`] only; turbulence /
 //! spectra share [`pe_math::Xoshiro256StarStar`].
 //!
+//! **M11:** [`bem`] Glauert BEMT + Prandtl tip loss — see `docs/ROTOR.md`.
+//!
 //! **Deferred:** sideslip / lateral-directional derivatives, ground effect,
-//! blade-element propeller maps, full 2nd-order Dryden v/w filters.
+//! swirl induction `a'`, full 2nd-order Dryden v/w filters.
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 #![allow(clippy::needless_range_loop)]
 
 pub mod atmosphere;
+pub mod bem;
 pub mod check_cases;
 pub mod compressibility;
 pub mod force;
@@ -24,6 +28,11 @@ pub mod turbulence;
 pub use atmosphere::{
     density, pressure, speed_of_sound, state, temperature, AtmState, DensityModel,
     IsaAltitudeError, GAMMA_AIR, H_STRATO_TOP, H_TROPOPAUSE, LAPSE, P0, RHO0, R_AIR, T0,
+};
+pub use bem::{
+    figure_of_merit, hover_induced_velocity, ideal_hover_power, induced_velocity_momentum,
+    nominal_rotor_polar, prandtl_tip_loss, rho_sl, BemResult, BemRotor, BemRotorForce,
+    BladeStation, RotorGeometry,
 };
 pub use check_cases::{
     angular_momentum_about_origin, build_check_case, dragless_ballistic, mechanical_energy,

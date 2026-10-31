@@ -275,6 +275,19 @@ jobs:
             exit 1
           fi
 
+      - name: Compute canonical M11 Morison+BEM hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-hydro --bin m11_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical M11 hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=83aebe96f5cb8e4c
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::M11 determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+
       - name: Compute canonical blast-pyramid hash
         shell: bash
         run: |

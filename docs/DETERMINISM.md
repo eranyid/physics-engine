@@ -1,4 +1,4 @@
-# Determinism policy (stages 1–3 / M2–M5a + M7 space + M9 waves/aero)
+# Determinism policy (stages 1–3 / M2–M9 + M11 Morison/seakeeping/BEM)
 
 ## Guarantees
 
@@ -39,6 +39,8 @@ Cross-check helpers:
   `physics_engine_rs.canonical_ballistics_hash()`
 - M9 wave-body: `cargo run -p pe-hydro --bin wave_body_hash --release` /
   `physics_engine_rs.canonical_wave_body_hash()`
+- M11 Morison+BEM: `cargo run -p pe-hydro --bin m11_hash --release` /
+  `physics_engine_rs.canonical_m11_hash()`
 
 ### Canonical stage-1 scenario hash (locked)
 
@@ -175,6 +177,26 @@ Scenario (must stay in sync in `pe_hydro::canonical_wave_body_hash`, the
 | Windows (CI) | same expected | CI asserts equality |
 
 Helper: `cargo run -p pe-hydro --bin wave_body_hash --release`.
+
+### Canonical M11 Morison + BEM hash (locked)
+
+Scenario (must stay in sync in `pe_hydro::canonical_m11_hash`, the `m11_hash`
+binary, and `physics_engine_rs.canonical_m11_hash()`):
+
+- Body 0: vertical slender cylinder D=0.5 m, L=10 m, mass 2000 kg; Morison
+  (`C_m=2`, `C_d=1` nominal) in Airy A=0.5 m, T=8 s, h=30 m (32 segments).
+- Body 1: 500 kg at z=50 m; BEM rotor R=4 m, 2 blades, Ω=40 rad/s, thrust +z,
+  constant ρ=ρ₀.
+- Integrate with **RK4**, `t_end=1`, `dt=1e-2`.
+- Hash: FNV-1a 64 over little-endian IEEE bits of `State::pack()`.
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `83aebe96f5cb8e4c` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+Helper: `cargo run -p pe-hydro --bin m11_hash --release`.
 
 ### Canonical M7 space hash (locked)
 
