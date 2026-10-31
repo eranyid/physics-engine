@@ -28,6 +28,8 @@ physics-engine/
     pe-aero/                   # ISA atmosphere, aero force models
     pe-hydro/                  # buoyancy, waves, ship/fluid interaction hooks
     pe-space/                  # n-body, orbital helpers, gravity fields
+    pe-blast/                  # Hopkinson–Cranz / Friedlander / Sedov / Euler blast
+    pe-ballistics/             # point-mass ballistics, ammo profiles, projectile SoA
     pe-materials/              # constitutive models (elastic/plastic/thermal)
     pe-soft/                   # soft bodies / FEM / XPBD cloth-style (later)
     pe-fluids/                 # particles / SPH / blast coupling (later)
@@ -218,7 +220,7 @@ ported early because the Python oracle already exists.
 | **M8** | Scene I/O + C ABI | Round-trip serialization; `pe-ffi` headers; smoke GDExtension optional | planned |
 | **M9** | Waves / hydrodynamics v1 | Airy + Stokes/Gerstner/spectra + buoyancy coupling (Morison later) | **done** (this PR; Morison deferred) |
 | **M10** | Materials + soft v1 | Elastic validation; one soft demo with analytic check | planned |
-| **M11** | Fluids / blast v1 | Particle hydrostatic + one blast engineering model vs scaling law | planned |
+| **M11** | Fluids / blast v1 | Particle hydrostatic + one blast engineering model vs scaling law | planned (blast engineering track shipped early — see below) |
 
 ### M1–M2 as built (summary)
 
@@ -295,6 +297,19 @@ ported early because the Python oracle already exists.
 - Tests: Rust analytic + proptest; Python `tests/test_space_rust.py`. Criterion benches in
   `docs/BENCHMARKS.md`.
 - Follow-up (deferred): Hairer DOP853 tableau + order tests; WHFast symplectic correctors.
+
+### Blast / ballistics track (this PR)
+
+- New crates `crates/pe-blast` and `crates/pe-ballistics` (clean-room literature;
+  SI; `libm`; no FMA / `HashMap` iteration). Docs: [`BLAST.md`](BLAST.md),
+  [`BALLISTICS.md`](BALLISTICS.md), [`AMMO.md`](AMMO.md).
+- Blast: Hopkinson–Cranz, Kinney–Graham, Friedlander, Swisdak/Kingery–Bulmash
+  (verified coeffs), Rankine–Hugoniot, Sedov–Taylor (`ξ₀` from energy integral),
+  1-D Euler HLLC/MUSCL/SSP-RK2 (Sod), rigid-body Friedlander loads, Gurney/Mott.
+- Ballistics: `AmmoProfile` (serde), SoA `ProjectileSystem` (per-shot RNG), ISA +
+  Dryden wind, Coriolis/Eötvös, spin/Magnus models, hit-scan, Poncelet /
+  Recht–Ipson, ballistic tables; cross-OS 100-bullet volley hash.
+- PyO3 + Python tests; Criterion benches recorded in [`BENCHMARKS.md`](BENCHMARKS.md).
 
 **Rule.** No milestone merges without: (1) analytic or published benchmark tests,
 (2) oracle or cross-impl diff where a Python reference exists, (3) CI green.

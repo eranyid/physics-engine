@@ -78,3 +78,23 @@ coefficients only — **no** third-party simulation source translated):
 - Dryden turbulence shaping (MIL-F-8785C / Hoblit) — 1st-order discrete surrogate.
 - NASA/TM-2015-218675 scenarios 1–3 described qualitatively; **published trajectory
   tables are not used** (analytic / self-consistency oracles only).
+
+### Blast / ballistics note (`pe-blast`, `pe-ballistics`)
+
+Clean-room formulas only — **no** third-party simulation source translated:
+
+- Hopkinson (1915) / Cranz (1926) cube-root scaling; Kinney & Graham (1985)
+  *Explosive Shocks in Air* peak-overpressure closed form; Friedlander (1946)
+  waveform.
+- Swisdak, M. M., Jr. (1994). *Simplified Kingery Airblast Calculations*
+  (NSWC IHTR / 26th DoD Explosives Safety Seminar; NTIS ADA526744) — Table 1
+  metric coefficients transcribed for Kingery–Bulmash fits (valid-Z clamp).
+- Rankine–Hugoniot / Anderson textbook gas dynamics; Sedov (1959) / Taylor (1950)
+  point-blast similarity (energy integral for `ξ₀`).
+- Toro (2009) HLLC / exact Riemann / MUSCL; Gottlieb–Shu SSP-RK2; Sod (1978).
+- Gurney (1943) BRL 405 energy method (caller-supplied `√(2E)`); Mott (1947)
+  fragment mass distribution.
+- Exterior ballistics oracles / Coriolis–Eötvös (McCoy textbook forms); Poncelet
+  penetration; Recht & Ipson (1963) residual velocity.
+- **Not used:** G1/G7 standard drag coefficient tables (no verified primary BRL
+  transcription in this milestone — analytic `C_D(M)` stand-in instead).

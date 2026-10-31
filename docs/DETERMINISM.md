@@ -31,6 +31,10 @@ Cross-check helpers:
   `physics_engine_rs.canonical_joints_hash()`
 - M7 space: `cargo run -p pe-space --bin space_hash --release` /
   `physics_engine_rs.canonical_space_hash()`
+- Blast: `cargo run -p pe-blast --bin blast_hash --release` /
+  `physics_engine_rs.canonical_blast_hash()`
+- Ballistics: `cargo run -p pe-ballistics --bin ballistics_hash --release` /
+  `physics_engine_rs.canonical_ballistics_hash()`
 - M9 wave-body: `cargo run -p pe-hydro --bin wave_body_hash --release` /
   `physics_engine_rs.canonical_wave_body_hash()`
 
@@ -163,6 +167,37 @@ Scenario (must stay in sync in the binary, Rust scenario helper, and Python help
 
 `cargo run -p pe-space --bin space_hash --release` prints figure-eight then IAS15
 (two lines).
+
+### Canonical blast-pyramid hash (locked)
+
+Scenario (`pe_blast::blast_pyramid_hash`, `blast_hash` binary,
+`physics_engine_rs.canonical_blast_hash()`):
+
+- 6-box pyramid (rows 1+2+3), mass 10 kg, half-extent 0.25 m, uniform gravity.
+- Friedlander blast load from `W_eq=1 kg` at `(-2,0,0.5)` m on exposed −x faces.
+- 200× RK4 steps at `dt=1/240` with per-step blast impulses.
+- Hash: FNV-1a 64 over packed `State`.
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `b51e11e89d4dd055` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+### Canonical ballistics volley hash (locked)
+
+Scenario (`pe_ballistics::ballistics_volley_hash`, `ballistics_hash` binary,
+`physics_engine_rs.canonical_ballistics_hash()`):
+
+- 100 bullets mixed across 5 bundled ammo classes; Dryden + steady wind; lat≈0.7 rad.
+- 120 steps at `dt=1/120`.
+- Hash: FNV-1a 64 over `(id, x, v, alive)` in ascending shot-id order.
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `c839907696748e9a` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
 
 If a platform ever diverges, **do not silently loosen**: record the OS, toolchain,
 exact first differing packed index / float bits, and root cause (usually accidental
