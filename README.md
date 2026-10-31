@@ -1,9 +1,15 @@
 # physics-engine
 
-Rigorous, reusable real-world physics simulation (Python, NumPy/SciPy, SI units).
-Design: [docs/DESIGN.md](docs/DESIGN.md).
+Rigorous, reusable real-world physics simulation (SI units). Correctness first.
 
-**Status:** stages 1–3.
+**Today:** Python reference oracle (NumPy/SciPy), stages 1–3 validated against
+analytic results. **Direction:** Rust core + Python bindings (PyO3/maturin), with
+Godot GDExtension later; Python kept to cross-check Rust.
+
+- Design (as-built Python + invariants): [docs/DESIGN.md](docs/DESIGN.md)
+- Roadmap (architecture, domains, milestones, survey): [docs/ROADMAP.md](docs/ROADMAP.md)
+
+**Status:** stages 1–3 (Python).
 - Stage 1: rigid bodies, gravity, drag, integrators, diagnostics
 - Stage 2: collision shapes, broad/narrow phase, sequential-impulse contacts
 - Stage 3: ISA atmosphere, aircraft aero (lift/drag/stall/thrust/pitch derivatives),
