@@ -66,6 +66,16 @@ Soft-step integrates forces per sub-step with `h`, warm-starts each sub-step, an
 hard-holds high mass-ratio / heavy-static / single-body static contacts within
 linear slop so soft spring equilibrium cannot park under a 1000:1 stack.
 
+## M5b — joints / CCD (`pe-collision`)
+
+| Benchmark | Workload | Median time |
+| --- | --- | --- |
+| `joints_double_pendulum_600` | soft-step double pendulum, 600× @ 1/240 | ~5.36 ms |
+| `ccd_bullet_toi_sphere_plane` | 1000 m/s sphere vs plane TOI query | ~0.61 ns |
+
+Re-record after changing joint softness or CCD paths. Analytic oracles live in
+`tests/m5b_joints_ccd.rs` / `docs/JOINTS.md` (not throughput targets).
+
 ## M9 — aero / hydro / waves (`pe-aero`, `pe-hydro`)
 
 | Benchmark | Workload | Median time |

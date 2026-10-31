@@ -21,6 +21,8 @@ use pe_core::{State, World};
 use pe_math::libm_ops::sqrt;
 use pe_math::Vec3;
 
+use crate::ccd;
+use crate::joints::{self, Joint, JointRow};
 use crate::manifold::ContactPoint;
 use crate::shapes::Material;
 use crate::softness::{SoftStepParams, Softness};
@@ -79,6 +81,10 @@ struct SoftRow {
     point: Vec3,
     /// Current separation [m] (negative ⇒ penetration).
     separation: f64,
+    /// Speculative (CCD) contact: separation ≥ 0; bias = sep/h, λ ≥ 0 only.
+    speculative: bool,
+    /// Inverse sub-step size [1/s] for speculative bias (`sep / h`).
+    inv_h: f64,
 }
 
 fn is_awake(awake: Option<&[bool]>, n: usize, i: usize) -> bool {
@@ -229,7 +235,10 @@ fn solve_rows(
 
         let hard_within_slop =
             (high_ratio || heavy_static || single_static) && r.separation + linear_slop >= 0.0;
-        let (soft, bias) = if !use_separation_bias || hard_within_slop {
+        let (soft, bias) = if r.speculative && use_separation_bias {
+            // Speculative: allow approach at most sep/h (Box2D-style); λ≥0 prevents attract.
+            (Softness::HARD, r.separation * r.inv_h)
+        } else if !use_separation_bias || hard_within_slop {
             // Relax, or shallow high-ratio / heavy-static / single-body static hold.
             (Softness::HARD, 0.0)
         } else {
@@ -259,6 +268,7 @@ pub(crate) struct SoftStepResult {
 
 /// Soft-step solve. `mats_ext` is dynamics materials followed by static materials.
 /// `awake` is per-dynamic-body; `None` treats all as awake.
+/// Joints are solved each sub-step alongside contacts (maximal coordinates).
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn solve_soft_step(
     world: &World,
@@ -273,6 +283,7 @@ pub(crate) fn solve_soft_step(
     warm_cache: &[(usize, usize, f64, Vec3)],
     forces: &[Vec3],
     torques: &[Vec3],
+    joints: &mut [Joint],
 ) -> SoftStepResult {
     let n = world.n;
     let n_static = static_x.len();
@@ -344,6 +355,8 @@ pub(crate) fn solve_soft_step(
         let va = v[c.a] + mat_vec(&iinv[c.a], l[c.a]).cross(ra);
         let vb = v[c.b] + mat_vec(&iinv[c.b], l[c.b]).cross(rb);
         let vn0 = (vb - va).dot(c.normal);
+        let speculative = ccd::is_speculative(c);
+        // Discrete: depth≥0 ⇒ separation0=−depth ≤0. Speculative: depth=−sep ⇒ sep≥0.
         let separation0 = -c.depth;
         rows.push(SoftRow {
             a: c.a,
@@ -366,6 +379,8 @@ pub(crate) fn solve_soft_step(
             rb,
             point: c.point,
             separation: separation0,
+            speculative,
+            inv_h: 1.0 / h,
         });
     }
 
@@ -414,6 +429,12 @@ pub(crate) fn solve_soft_step(
             }
         }
 
+        // Joint rows (rebuilt each sub-step from current poses).
+        let mut joint_rows: Vec<JointRow> = joints::build_joint_rows(
+            joints, n, &x, &rmat, static_x, static_r, &im, &iinv, h, true,
+        );
+        joints::warm_start_joints(&mut joint_rows, joints, n, awake, &mut v, &mut l, &im);
+
         for _ in 0..soft_iters {
             solve_rows(
                 &mut rows,
@@ -429,6 +450,7 @@ pub(crate) fn solve_soft_step(
                 params.linear_slop,
                 params.max_push_out_speed,
             );
+            joints::solve_joint_rows(&mut joint_rows, n, awake, &mut v, &mut l, &iinv, &im);
         }
 
         for i in 0..n {
@@ -449,6 +471,12 @@ pub(crate) fn solve_soft_step(
             }
         }
         update_anchors(&mut rows, &x, &rmat, &iinv, &im);
+        // Persist soft-pass joint impulses, then rebuild HARD rows for relax.
+        joints::finalize_joints(joints, &joint_rows, h);
+        joint_rows = joints::build_joint_rows(
+            joints, n, &x, &rmat, static_x, static_r, &im, &iinv, h, false,
+        );
+        joints::warm_start_joints(&mut joint_rows, joints, n, awake, &mut v, &mut l, &im);
 
         for _ in 0..relax_iters {
             solve_rows(
@@ -465,7 +493,9 @@ pub(crate) fn solve_soft_step(
                 params.linear_slop,
                 params.max_push_out_speed,
             );
+            joints::solve_joint_rows(&mut joint_rows, n, awake, &mut v, &mut l, &iinv, &im);
         }
+        joints::finalize_joints(joints, &joint_rows, h);
     }
 
     // Restitution from pre-solve relative velocity.
