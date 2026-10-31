@@ -6,10 +6,14 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use pe_core::forces::UniformGravity;
 use pe_core::integrators::rk4;
 use pe_core::{inertia_solid_box, RigidBody, World};
-use pe_hydro::hull::{BoxHull, Hull, RHO_FRESHWATER};
+use pe_hydro::hull::{BoxHull, Hull, RHO_FRESHWATER, RHO_SEAWATER};
+use pe_hydro::morison::{
+    integrate_morison_fixed, MorisonMember, NOMINAL_CD_CIRCULAR, NOMINAL_CM_CIRCULAR,
+};
+use pe_hydro::seakeeping::{box_barge_stations, heave_pitch_rao};
 use pe_hydro::waves::{AiryWave, SpectralOcean, Wave, WaveField};
-use pe_hydro::Buoyancy;
-use pe_math::{Quat, Vec3};
+use pe_hydro::{canonical_m11_hash, Buoyancy};
+use pe_math::{Quat, Vec3, STANDARD_GRAVITY};
 
 fn floating_world() -> World {
     let hull = BoxHull::new(20.0, 6.0, 3.0);
@@ -88,6 +92,38 @@ fn bench_hydro(c: &mut Criterion) {
                 w.step(1e-2, rk4);
             }
         });
+    });
+    group.bench_function("morison_vertical_64", |b| {
+        let wave = AiryWave::earth(0.5, 8.0, 40.0, 0.0);
+        let member = MorisonMember::vertical_cylinder(
+            -15.0,
+            0.0,
+            0.4,
+            NOMINAL_CM_CIRCULAR,
+            NOMINAL_CD_CIRCULAR,
+            64,
+        );
+        b.iter(|| integrate_morison_fixed(&member, &wave, RHO_SEAWATER, 1.0, Vec3::zero()));
+    });
+    group.bench_function("seakeeping_rao_one", |b| {
+        let stations = box_barge_stations(60.0, 10.0, 3.0, 16);
+        let mass = RHO_FRESHWATER * 60.0 * 10.0 * 3.0;
+        let iyy = mass * 60.0 * 60.0 / 12.0;
+        let omega = 2.0 * std::f64::consts::PI / 8.0;
+        b.iter(|| {
+            heave_pitch_rao(
+                &stations,
+                mass,
+                iyy,
+                RHO_FRESHWATER,
+                omega,
+                100.0,
+                STANDARD_GRAVITY,
+            )
+        });
+    });
+    group.bench_function("m11_hash_scenario", |b| {
+        b.iter(canonical_m11_hash);
     });
     group.finish();
 }

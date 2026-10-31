@@ -54,6 +54,17 @@ pub trait Wave: Send + Sync {
     /// Fluid velocity `(u,v,w)` [m/s] at `(x,y,z,t)`. `w` positive up.
     fn velocity(&self, x: f64, y: f64, z: f64, t: f64) -> Vec3;
 
+    /// Fluid acceleration `(a_x,a_y,a_z)` [m/s²] at `(x,y,z,t)`.
+    ///
+    /// Default: central finite difference in time with `dt = 1e-4` s (portable
+    /// `libm` path). Prefer analytic overrides (Airy) for Morison inertia.
+    fn acceleration(&self, x: f64, y: f64, z: f64, t: f64) -> Vec3 {
+        let dt = 1e-4;
+        let vp = self.velocity(x, y, z, t + dt);
+        let vm = self.velocity(x, y, z, t - dt);
+        (vp - vm) * (0.5 / dt)
+    }
+
     /// Mean water level [m] (world z of the still-water plane).
     fn mean_water_level(&self) -> f64 {
         0.0
@@ -89,6 +100,15 @@ impl Wave for WaveField {
             WaveField::Stokes(w) => w.velocity(x, y, z, t),
             WaveField::Gerstner(w) => w.velocity(x, y, z, t),
             WaveField::Spectral(w) => w.velocity(x, y, z, t),
+        }
+    }
+
+    fn acceleration(&self, x: f64, y: f64, z: f64, t: f64) -> Vec3 {
+        match self {
+            WaveField::Airy(w) => w.acceleration(x, y, z, t),
+            WaveField::Stokes(w) => w.acceleration(x, y, z, t),
+            WaveField::Gerstner(w) => w.acceleration(x, y, z, t),
+            WaveField::Spectral(w) => w.acceleration(x, y, z, t),
         }
     }
 

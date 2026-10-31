@@ -106,6 +106,10 @@ Cloud Agent host after GJK/EPA numerical changes.
 | `airy_height_1k` | 1000× Airy η evaluations | ~12.7 µs |
 | `spectral_height_eval` | one PM spectral η (24×8 components) | ~3.0 µs |
 | `wave_buoyancy_rk4_200` | wave-coupled barge, 200× RK4 @ 1e-2 | ~211 µs |
+| `morison_vertical_64` | Morison integrate, 64 segments | ~8.3 µs |
+| `seakeeping_rao_one` | one heave/pitch RAO eval (16 strips) | ~940 ns |
+| `bem_hover_eval` | one BEM hover evaluation (16 stations) | ~55 µs |
+| `m11_hash_scenario` | canonical M11 Morison+BEM hash | ~17.8 ms |
 
 ## M7 — space (`pe-space`)
 

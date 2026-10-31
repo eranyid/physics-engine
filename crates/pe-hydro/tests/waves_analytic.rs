@@ -173,3 +173,12 @@ fn wave_body_hash_bit_stable() {
     let b = canonical_wave_body_hash();
     assert_eq!(a, b);
 }
+
+#[test]
+fn m11_hash_bit_stable_and_locked() {
+    use pe_hydro::canonical_m11_hash;
+    let a = canonical_m11_hash();
+    let b = canonical_m11_hash();
+    assert_eq!(a, b);
+    assert_eq!(a, 0x83ae_be96_f5cb_8e4c);
+}

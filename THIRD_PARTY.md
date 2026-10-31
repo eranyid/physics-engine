@@ -84,6 +84,26 @@ coefficients only — **no** third-party simulation source translated):
 - NASA/TM-2015-218675 scenarios 1–3 described qualitatively; **published trajectory
   tables are not used** (analytic / self-consistency oracles only).
 
+### M11 note (`pe-hydro` Morison / seakeeping, `pe-aero` BEM)
+
+Clean-room formulas only — **no** third-party simulation source translated:
+
+- Morison, J. R., O’Brien, M. P., Johnson, J. W. & Schaaf, S. A. (1950). The
+  force exerted by surface waves on piles. *Petrol. Trans. AIME* **189**.
+- API RP 2A / DNV-RP-C205 — typical \(C_m\), \(C_d\) ranges cited as
+  **nominal / unverified** defaults (not copied tables).
+- Salvesen, N., Tuck, E. O. & Faltinsen, O. (1970). Ship motions and sea loads.
+  *Trans. SNAME* **78** — strip heave/pitch + Haskind diffraction structure.
+- Lewis, F. M. (1929). The inertia of water surrounding a pitching vessel —
+  circular / Lewis-substitute sectional added-mass idea.
+- Faltinsen (1990) *Sea Loads…*; Newman *Marine Hydrodynamics* — floating-circle
+  \(a_{33}^\infty\), non-dimensional damping scaling (β=0.5 marked nominal).
+- Glauert, H. (1935). Airplane propellers (Durand). Momentum + blade element.
+- Prandtl tip-loss factor as quoted in Leishman, *Principles of Helicopter
+  Aerodynamics*.
+- **Not used:** Vugts (1968) tabulated sections, WAMIT/NEMOH panel outputs,
+  certified airfoil polars, commercial BEM codes.
+
 ### Blast / ballistics note (`pe-blast`, `pe-ballistics`)
 
 Clean-room formulas only — **no** third-party simulation source translated:

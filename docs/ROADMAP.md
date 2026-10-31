@@ -148,10 +148,11 @@ Sizes are relative engineering scope, not calendar schedules.
 
 ### D4 — Atmosphere & aerodynamics (exists in Python)
 
-- **Models:** ISA; wing polar + stall; thrust; pitch derivatives.
+- **Models:** ISA; wing polar + stall; thrust; pitch derivatives; compressibility /
+  Dryden (M9); BEM rotors (M11).
 - **Validation:** ISA tables; trim L=W, T=D; \((L/D)_{\max}\); dive terminal V;
-  published polars as optional fixtures.
-- **Effort:** S port; M for 6-DOF aero / compressibility later.
+  actuator-disk \(v_h\); BEM hover FM band.
+- **Effort:** S port; M for 6-DOF aero / compressibility later (partially done).
 
 ### D5 — Hydrostatics & ships (exists in Python)
 
@@ -172,10 +173,11 @@ Sizes are relative engineering scope, not calendar schedules.
 ### D7 — Hydrodynamics & waves
 
 - **Models:** linear Airy / Stokes II / Gerstner + spectral (PM/JONSWAP) in
-  `pe-hydro` (**shipped**); Morison forces; strip-theory or panel hooks later.
+  `pe-hydro` (**shipped**); Morison forces (**shipped** M11); STF strip heave/pitch
+  (**shipped** M11). Panel / Cummins memory later.
 - **Validation:** Airy elevation/kinematics + dispersion oracles; spectral `H_s`;
-  wave-coupled buoyancy heave; Morison / RAO later.
-- **Effort:** L (v1 waves done; Morison/seakeeping remain).
+  wave-coupled buoyancy heave; Morison closed-form pile force; long-wave heave RAO→1.
+- **Effort:** L (v1 waves + M11 Morison/seakeeping done).
 
 ### D8 — Materials (elasticity, plasticity, friction, thermal)
 
@@ -218,9 +220,9 @@ ported early because the Python oracle already exists.
 | **M6** | CCD + convex | TOI tests (no tunnel at configured speeds); GJK/EPA convex; capsule–box | **done** (GJK/EPA, hulls, capsule–box, convex CA CCD; see `docs/COLLISION.md`) |
 | **M7** | Space module | Kepler + n-body conservation suite in Rust (+ Python helpers as needed) | **done** (this PR) |
 | **M8** | Scene I/O + C ABI | Round-trip serialization; `pe-ffi` headers; smoke GDExtension optional | **done** (pe-scene + pe-ffi + godot/ compile check; see docs/SCENE.md, FFI.md, GODOT.md) |
-| **M9** | Waves / hydrodynamics v1 | Airy + Stokes/Gerstner/spectra + buoyancy coupling (Morison later) | **done** (this PR; Morison deferred) |
+| **M9** | Waves / hydrodynamics v1 | Airy + Stokes/Gerstner/spectra + buoyancy coupling (Morison later) | **done** (Morison shipped in M11 hydro follow-on) |
 | **M10** | Materials + soft v1 | Elastic validation; one soft demo with analytic check | planned |
-| **M11** | Fluids / blast v1 | Particle hydrostatic + one blast engineering model vs scaling law | **partial** (blast track earlier; **`pe-fluid` SPH/PBF shipped** — DFSPH / rigid coupling deferred) |
+| **M11** | Fluids / blast v1 *or* deferred aero/hydro | Particle hydrostatic + blast scaling; Morison/seakeeping/BEM | **partial+** (blast earlier; **`pe-fluid` SPH/PBF shipped**; Morison/seakeeping/BEM done this PR; DFSPH / rigid coupling deferred) |
 
 ### M1–M2 as built (summary)
 
@@ -310,6 +312,20 @@ ported early because the Python oracle already exists.
 - Tests: Rust analytic + proptest; Python `tests/test_space_rust.py`. Criterion benches in
   `docs/BENCHMARKS.md`.
 - Follow-up (deferred): Hairer DOP853 tableau + order tests; WHFast symplectic correctors.
+
+### M11 Morison / seakeeping / BEM as built (summary)
+
+- `pe-hydro::morison`: relative-velocity Morison, Airy closed-form inertia/drag
+  oracles, segment convergence; `MorisonForce` generator.
+- `pe-hydro::seakeeping`: STF-style heave/pitch strip RAOs, box-barge helpers,
+  constant-coefficient time domain (no Cummins), free-decay β check.
+- `pe-aero::bem`: Glauert BEMT, Prandtl tip loss, induced-velocity iteration,
+  actuator-disk oracles, `BemRotorForce` generator.
+- Docs: [`SEAKEEPING.md`](SEAKEEPING.md), [`ROTOR.md`](ROTOR.md). Determinism:
+  cross-OS `m11_hash` (`83aebe96f5cb8e4c`). PyO3 + pytest; Criterion hooks in
+  [`BENCHMARKS.md`](BENCHMARKS.md).
+- **Deferred:** Cummins memory; 6-DOF seakeeping; MacCamy–Fuchs; Vugts tables;
+  swirl induction `a'`; certified airfoil polars.
 
 ### Blast / ballistics track (this PR)
 
