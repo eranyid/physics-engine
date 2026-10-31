@@ -3,9 +3,10 @@
 use numpy::PyArray1;
 use pe_aero::atmosphere::{self, DensityModel, RHO0};
 use pe_aero::{
-    ackeret_cl, isentropic, karman_tsien, lanchester_phugoid_period, level_flight_trim_earth,
-    normal_shock, prandtl_glauert, terminal_velocity_vertical, AircraftAero, FixedThrust,
-    JetThrust, PropellerThrust, WingPolar,
+    ackeret_cl, figure_of_merit, hover_induced_velocity, ideal_hover_power, isentropic,
+    karman_tsien, lanchester_phugoid_period, level_flight_trim_earth, nominal_rotor_polar,
+    normal_shock, prandtl_glauert, prandtl_tip_loss, terminal_velocity_vertical, AircraftAero,
+    BemRotor, FixedThrust, JetThrust, PropellerThrust, RotorGeometry, WingPolar,
 };
 use pe_core::diagnostics::state_hash64;
 use pe_core::forces::{ForceGenerator, UniformGravity};
@@ -16,11 +17,14 @@ use pe_hydro::hull::{
 };
 use pe_hydro::waves::{AiryWave, SpectralOcean, Wave, WaveField};
 use pe_hydro::{
-    angle_of_vanishing_stability, box_added_mass_heave, box_added_mass_surge,
-    box_righting_arm_curve, canonical_wave_body_hash as wave_body_hash_rs, check_imo_is_code,
-    deep_water_wavelength, group_speed, heave_period_earth, heave_period_with_added_mass,
-    metacentric_height, phase_speed, pierson_moskowitz_hs_approx, righting_arm, righting_moment,
-    roll_period_earth, solve_wave_number, Buoyancy, HullDrag, WaveDrag,
+    airy_inertia_closed_form, angle_of_vanishing_stability, box_added_mass_heave,
+    box_added_mass_surge, box_barge_stations, box_heave_natural_omega_earth,
+    box_righting_arm_curve, canonical_m11_hash as m11_hash_rs,
+    canonical_wave_body_hash as wave_body_hash_rs, check_imo_is_code, deep_water_wavelength,
+    group_speed, heave_period_earth, heave_period_with_added_mass, heave_pitch_rao,
+    integrate_morison_fixed, metacentric_height, phase_speed, pierson_moskowitz_hs_approx,
+    righting_arm, righting_moment, roll_natural_period, roll_period_earth, solve_wave_number,
+    Buoyancy, HullDrag, MorisonMember, WaveDrag, NOMINAL_CD_CIRCULAR, NOMINAL_CM_CIRCULAR,
 };
 use pe_math::{Quat, Vec3, STANDARD_GRAVITY};
 use pyo3::exceptions::PyValueError;
@@ -873,6 +877,184 @@ fn canonical_wave_body_hash() -> u64 {
     wave_body_hash_rs()
 }
 
+/// Canonical M11 Morison + BEM hash (cross-OS).
+#[pyfunction]
+fn canonical_m11_hash() -> u64 {
+    m11_hash_rs()
+}
+
+/// Hover induced velocity `√(T/(2 ρ A))` [m/s].
+#[pyfunction]
+fn rotor_hover_vi(thrust: f64, rho: f64, area: f64) -> f64 {
+    hover_induced_velocity(thrust, rho, area)
+}
+
+/// Ideal hover power `T·v_h` [W].
+#[pyfunction]
+fn rotor_ideal_hover_power(thrust: f64, rho: f64, area: f64) -> f64 {
+    ideal_hover_power(thrust, rho, area)
+}
+
+/// Figure of merit `T v_h / P`.
+#[pyfunction]
+fn rotor_figure_of_merit(thrust: f64, power: f64, rho: f64, area: f64) -> f64 {
+    figure_of_merit(thrust, power, rho, area)
+}
+
+/// Prandtl tip-loss factor.
+#[pyfunction]
+fn rotor_prandtl_tip_loss(n_blades: usize, radius: f64, r: f64, phi: f64) -> f64 {
+    prandtl_tip_loss(n_blades, radius, r, phi)
+}
+
+/// BEM hover / axial evaluation → dict with thrust, torque, power, vi, converged.
+#[pyfunction]
+#[pyo3(signature = (n_blades, radius, hub, chord, twist_root, twist_tip, n_stations, omega, v_inf=0.0, rho=None, cd0=0.012))]
+#[allow(clippy::too_many_arguments)]
+fn bem_evaluate<'py>(
+    py: Python<'py>,
+    n_blades: usize,
+    radius: f64,
+    hub: f64,
+    chord: f64,
+    twist_root: f64,
+    twist_tip: f64,
+    n_stations: usize,
+    omega: f64,
+    v_inf: f64,
+    rho: Option<f64>,
+    cd0: f64,
+) -> PyResult<Bound<'py, PyDict>> {
+    let geom = RotorGeometry::uniform_chord(
+        n_blades, radius, hub, chord, twist_root, twist_tip, n_stations,
+    );
+    let polar = nominal_rotor_polar(chord, cd0);
+    let bem = BemRotor::new(geom, polar);
+    let r = bem.evaluate(omega, v_inf, rho.unwrap_or(RHO0));
+    let d = PyDict::new(py);
+    d.set_item("thrust", r.thrust)?;
+    d.set_item("torque", r.torque)?;
+    d.set_item("power", r.power)?;
+    d.set_item("induced_velocity", r.induced_velocity)?;
+    d.set_item("iterations", r.iterations)?;
+    d.set_item("converged", r.converged)?;
+    Ok(d)
+}
+
+/// Morison force on a fixed vertical cylinder under an Airy wave [N] (Fx,Fy,Fz).
+#[pyfunction]
+#[pyo3(signature = (amplitude, period, depth, diameter, z_bottom, z_top, t, cm=None, cd=None, n_segments=64, rho=None, theta=0.0))]
+#[allow(clippy::too_many_arguments)]
+fn morison_vertical_force(
+    amplitude: f64,
+    period: f64,
+    depth: f64,
+    diameter: f64,
+    z_bottom: f64,
+    z_top: f64,
+    t: f64,
+    cm: Option<f64>,
+    cd: Option<f64>,
+    n_segments: usize,
+    rho: Option<f64>,
+    theta: f64,
+) -> [f64; 3] {
+    let wave = AiryWave::from_period(amplitude, period, depth, theta, 0.0, STANDARD_GRAVITY, 0.0);
+    let member = MorisonMember::vertical_cylinder(
+        z_bottom,
+        z_top,
+        diameter,
+        cm.unwrap_or(NOMINAL_CM_CIRCULAR),
+        cd.unwrap_or(NOMINAL_CD_CIRCULAR),
+        n_segments,
+    );
+    let load = integrate_morison_fixed(
+        &member,
+        &wave,
+        rho.unwrap_or(RHO_SEAWATER),
+        t,
+        Vec3::new(0.0, 0.0, z_bottom),
+    );
+    load.force.to_array()
+}
+
+/// Closed-form Airy inertia force on a vertical pile [N] (Fx,Fy,Fz).
+#[pyfunction]
+#[pyo3(signature = (amplitude, period, depth, diameter, z_bottom, z_top, t, cm=None, rho=None))]
+#[allow(clippy::too_many_arguments)]
+fn morison_airy_inertia_closed_form(
+    amplitude: f64,
+    period: f64,
+    depth: f64,
+    diameter: f64,
+    z_bottom: f64,
+    z_top: f64,
+    t: f64,
+    cm: Option<f64>,
+    rho: Option<f64>,
+) -> [f64; 3] {
+    let wave = AiryWave::from_period(amplitude, period, depth, 0.0, 0.0, STANDARD_GRAVITY, 0.0);
+    let (f, _) = airy_inertia_closed_form(
+        &wave,
+        0.0,
+        0.0,
+        z_bottom,
+        z_top,
+        diameter,
+        cm.unwrap_or(NOMINAL_CM_CIRCULAR),
+        rho.unwrap_or(RHO_SEAWATER),
+        t,
+    );
+    f.to_array()
+}
+
+/// Box-barge heave natural ω [rad/s] from strip \(a_{33}^\infty\).
+#[pyfunction]
+#[pyo3(signature = (length, beam, draft, mass, rho=None, n_strips=16))]
+fn seakeeping_box_heave_omega(
+    length: f64,
+    beam: f64,
+    draft: f64,
+    mass: f64,
+    rho: Option<f64>,
+    n_strips: usize,
+) -> f64 {
+    box_heave_natural_omega_earth(
+        length,
+        beam,
+        draft,
+        mass,
+        rho.unwrap_or(RHO_FRESHWATER),
+        n_strips,
+    )
+}
+
+/// Heave RAO magnitude `|ξ3|/A` for a box barge in head seas.
+#[pyfunction]
+#[pyo3(signature = (length, beam, draft, mass, iyy, omega, depth, rho=None, n_strips=16))]
+#[allow(clippy::too_many_arguments)]
+fn seakeeping_heave_rao(
+    length: f64,
+    beam: f64,
+    draft: f64,
+    mass: f64,
+    iyy: f64,
+    omega: f64,
+    depth: f64,
+    rho: Option<f64>,
+    n_strips: usize,
+) -> f64 {
+    let rho = rho.unwrap_or(RHO_FRESHWATER);
+    let stations = box_barge_stations(length, beam, draft, n_strips);
+    heave_pitch_rao(&stations, mass, iyy, rho, omega, depth, STANDARD_GRAVITY).heave
+}
+
+/// Roll natural period `2π √((I+A44)/(ρ g ∇ GM))` [s].
+#[pyfunction]
+fn seakeeping_roll_period(inertia_plus_a44: f64, rho: f64, volume: f64, gm: f64) -> f64 {
+    roll_natural_period(inertia_plus_a44, rho, volume, gm, STANDARD_GRAVITY)
+}
+
 /// Canonical stage-3 aero+hydro hash (same scenario as `pe-hydro` binary).
 #[pyfunction]
 fn canonical_aero_hydro_hash() -> u64 {
@@ -961,7 +1143,20 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(check_imo_is_code_py, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_aero_hydro_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_wave_body_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(canonical_m11_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(rotor_hover_vi, m)?)?;
+    m.add_function(wrap_pyfunction!(rotor_ideal_hover_power, m)?)?;
+    m.add_function(wrap_pyfunction!(rotor_figure_of_merit, m)?)?;
+    m.add_function(wrap_pyfunction!(rotor_prandtl_tip_loss, m)?)?;
+    m.add_function(wrap_pyfunction!(bem_evaluate, m)?)?;
+    m.add_function(wrap_pyfunction!(morison_vertical_force, m)?)?;
+    m.add_function(wrap_pyfunction!(morison_airy_inertia_closed_form, m)?)?;
+    m.add_function(wrap_pyfunction!(seakeeping_box_heave_omega, m)?)?;
+    m.add_function(wrap_pyfunction!(seakeeping_heave_rao, m)?)?;
+    m.add_function(wrap_pyfunction!(seakeeping_roll_period, m)?)?;
     m.add_function(wrap_pyfunction!(wave_deep_water_wavelength, m)?)?;
+    m.add("NOMINAL_CM_CIRCULAR", NOMINAL_CM_CIRCULAR)?;
+    m.add("NOMINAL_CD_CIRCULAR", NOMINAL_CD_CIRCULAR)?;
     m.add_function(wrap_pyfunction!(wave_solve_k, m)?)?;
     m.add_function(wrap_pyfunction!(wave_phase_speed, m)?)?;
     m.add_function(wrap_pyfunction!(wave_group_speed, m)?)?;

@@ -1,4 +1,4 @@
-//! Stage-3 hydrostatics + waves: hull buoyancy, GM/GZ, Airy/Stokes/Gerstner/spectra.
+//! Stage-3 hydrostatics + waves + Morison + strip-theory seakeeping.
 //!
 //! Conventions match the Python reference (`src/physics_engine/hydro.py`) for
 //! still-water hydrostatics: SI units, body +x bow / +y starboard / +z up,
@@ -6,7 +6,11 @@
 //! Deterministic mesh clipping and wave sums use portable [`pe_math::libm_ops`]
 //! (no `HashMap` in the step; spectral phases from seeded xoshiro256**).
 //!
-//! **Deferred:** Morison forces, strip-theory / panel seakeeping, radiation damping.
+//! **M11:** [`morison`] (slender-member wave loads) and [`seakeeping`] (STF
+//! heave/pitch strip theory). See `docs/SEAKEEPING.md`.
+//!
+//! **Deferred:** Cummins radiation memory, 6-DOF seakeeping, MacCamy–Fuchs,
+//! tabulated Vugts sections, forward-speed strip theory.
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
@@ -16,7 +20,9 @@ pub mod clip;
 pub mod force;
 pub mod helpers;
 pub mod hull;
+pub mod morison;
 pub mod scenarios;
+pub mod seakeeping;
 pub mod waves;
 
 pub use force::{Buoyancy, HullDrag, WaveDrag};
@@ -30,7 +36,18 @@ pub use hull::{
     sphere_cap_volume, BoxHull, ConvexMeshHull, CylinderHull, Hull, SphereHull, SubmergedState,
     RHO_FRESHWATER, RHO_SEAWATER,
 };
-pub use scenarios::canonical_wave_body_hash;
+pub use morison::{
+    airy_drag_closed_form_no_reversal, airy_inertia_closed_form, integrate_morison,
+    integrate_morison_fixed, normal_component, MorisonForce, MorisonLoad, MorisonMember,
+    NOMINAL_CD_CIRCULAR, NOMINAL_CM_CIRCULAR,
+};
+pub use scenarios::{canonical_m11_hash, canonical_wave_body_hash};
+pub use seakeeping::{
+    assemble_strip_matrices, box_barge_stations, box_heave_natural_omega,
+    box_heave_natural_omega_earth, free_decay_heave, heave_pitch_rao, roll_natural_period,
+    sectional_a33, sectional_a33_inf, sectional_b33, HeavePitchRao, HeavePitchTd, StripMatrices,
+    StripStation,
+};
 pub use waves::{
     deep_water_wavelength, dispersion_omega, group_speed, jonswap_spectrum, phase_speed,
     pierson_moskowitz_hs_approx, pierson_moskowitz_spectrum, solve_wave_number, AiryWave,

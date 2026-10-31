@@ -203,6 +203,20 @@ impl Wave for AiryWave {
         Vec3::new(u_h * ct, u_h * st, w)
     }
 
+    fn acceleration(&self, x: f64, y: f64, z: f64, t: f64) -> Vec3 {
+        // χ̇ = −ω ⇒ ∂(cos χ)/∂t = ω sin χ, ∂(sin χ)/∂t = −ω cos χ.
+        let z_rel = z - self.mwl;
+        let chi = self.phase_arg(x, y, t);
+        let c = libm_ops::cos(chi);
+        let s = libm_ops::sin(chi);
+        let a_om2 = self.amplitude * self.omega * self.omega;
+        let ct = libm_ops::cos(self.theta);
+        let st = libm_ops::sin(self.theta);
+        let a_h = a_om2 * self.cosh_factor(z_rel) * s;
+        let a_w = -a_om2 * self.sinh_factor(z_rel) * c;
+        Vec3::new(a_h * ct, a_h * st, a_w)
+    }
+
     fn mean_water_level(&self) -> f64 {
         self.mwl
     }

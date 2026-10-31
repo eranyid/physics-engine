@@ -50,12 +50,16 @@ GM/GZ, periods). Extra vs Python: IMO IS Code MSC.267(85) intact-stability check
 `SphereHull` closed-form upright buoyancy. At `V → 0`, α/β clamp to 0 (no divide-by-zero);
 Mach ≈ 1 singularities are not modelled (no compressibility).
 
-**M9 waves / aero extensions (this track):** `pe-hydro::waves` (Airy, Stokes II,
-Gerstner, PM/JONSWAP spectral sum) coupled into `Buoyancy`; `pe-aero` compressibility
-helpers, Dryden/steady wind, NASA TM flat-Earth check-cases 1–3. Morison / full
-seakeeping and blade-element maps remain deferred. Soft-step remains deferred.
-Joints/islands/sleep (M5) and CCD + convex/GJK (M6) are shipped; see
-[`JOINTS.md`](JOINTS.md) and [`COLLISION.md`](COLLISION.md).
+**M9 waves / aero extensions:** `pe-hydro::waves` (Airy, Stokes II, Gerstner,
+PM/JONSWAP spectral sum) coupled into `Buoyancy`; `pe-aero` compressibility
+helpers, Dryden/steady wind, NASA TM flat-Earth check-cases 1–3.
+
+**M11 Morison / seakeeping / BEM:** `pe-hydro::morison`, `pe-hydro::seakeeping`
+(STF heave/pitch strip theory); `pe-aero::bem` (Glauert BEMT + Prandtl tip loss).
+Docs: [`SEAKEEPING.md`](SEAKEEPING.md), [`ROTOR.md`](ROTOR.md). Soft bodies /
+particle fluids remain separate tracks. Joints/islands/sleep (M5) and CCD +
+convex/GJK (M6) are shipped; see [`JOINTS.md`](JOINTS.md) and
+[`COLLISION.md`](COLLISION.md).
 
 ### Python reference (as built)
 

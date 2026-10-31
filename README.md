@@ -11,11 +11,13 @@ GDExtension (`godot/`) ship as M8. Python remains the oracle for cross-checks.
 - Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
 - Determinism: [docs/DETERMINISM.md](docs/DETERMINISM.md)
 - Benchmarks: [docs/BENCHMARKS.md](docs/BENCHMARKS.md)
+- Seakeeping / Morison: [docs/SEAKEEPING.md](docs/SEAKEEPING.md)
+- Rotor BEM: [docs/ROTOR.md](docs/ROTOR.md)
 - Scene I/O: [docs/SCENE.md](docs/SCENE.md)
 - C ABI: [docs/FFI.md](docs/FFI.md)
 - Godot: [docs/GODOT.md](docs/GODOT.md)
 
-**Status:** M0–M5, M7–M9 done; M8 scene/FFI/Godot done (compile-check); M6 GJK partial.
+**Status:** M0–M9 done (incl. M6 convex); M11 Morison / seakeeping / BEM done; soft/fluids parallel tracks.
 - Stage 1: rigid bodies, gravity, drag, springs, integrators, diagnostics (Python + Rust)
 - Stage 2: collision shapes, broad/narrow phase, sequential-impulse contacts (Python + Rust)
 - Stage 3: ISA / aero / hydro (Python + Rust)
@@ -48,6 +50,7 @@ cargo run -p pe-core --bin canonical_hash --release
 cargo run -p pe-collision --bin collision_hash --release
 cargo run -p pe-hydro --bin aero_hydro_hash --release
 cargo run -p pe-soft --bin soft_hash --release
+cargo run -p pe-hydro --bin m11_hash --release
 ```
 
 ## Example (stage 1, Python oracle)

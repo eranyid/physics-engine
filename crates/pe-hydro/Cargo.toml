@@ -26,3 +26,7 @@ path = "src/bin/aero_hydro_hash.rs"
 [[bin]]
 name = "wave_body_hash"
 path = "src/bin/wave_body_hash.rs"
+
+[[bin]]
+name = "m11_hash"
+path = "src/bin/m11_hash.rs"
