@@ -1,4 +1,4 @@
-# Determinism policy (stages 1–3 / M2–M4 + M7 space + M9 waves/aero)
+# Determinism policy (stages 1–3 / M2–M5a + M7 space + M9 waves/aero)
 
 ## Guarantees
 
@@ -25,6 +25,8 @@ Cross-check helpers:
   `physics_engine_rs.canonical_collision_hash()`
 - Stage 3: `cargo run -p pe-hydro --bin aero_hydro_hash --release` /
   `physics_engine_rs.canonical_aero_hydro_hash()`
+- M5a soft-step: `cargo run -p pe-collision --bin soft_step_hash --release` /
+  `physics_engine_rs.canonical_soft_step_collision_hash()`
 - M7 space: `cargo run -p pe-space --bin space_hash --release` /
   `physics_engine_rs.canonical_space_hash()`
 - Blast: `cargo run -p pe-blast --bin blast_hash --release` /
@@ -63,6 +65,18 @@ Scenario:
 | Platform | Hash (hex) | Status |
 | --- | --- | --- |
 | Linux x86_64 (CI + local) | `50d52b2193aa528c` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+### Canonical M5a soft-step collision hash (locked)
+
+Scenario: same 10-box partial pyramid as stage-2, but `SolverMode::SoftStep`
+(default SoftStepParams: 4 substeps, Hertz 30, ζ 10, restitution threshold 1 m/s),
+sleep disabled, 600 steps @ `dt = 1/240`.
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `676d67a223120e34` | locked |
 | macOS (CI) | same expected | CI asserts equality |
 | Windows (CI) | same expected | CI asserts equality |
 
@@ -117,6 +131,23 @@ Scenario (must stay in sync in the binary, Rust scenario helper, and Python help
 | Linux x86_64 (CI + local) | `4633eb9e6412be18` | locked |
 | macOS (CI) | same expected | CI asserts equality |
 | Windows (CI) | same expected | CI asserts equality |
+
+### Canonical M7 IAS15 hash (locked)
+
+Scenario (must stay in sync in the binary, Rust scenario helper, and Python helper):
+
+- Earth-μ Kepler, `a = 1e7 m`, `e = 0.5`, `i = 0.2`, Ω = 0.1, ω = 0.3, ν = 0
+- Compensated positions on; IAS15 with `ε_b = 1e-9`, initial `dt = T/100`
+- **64 accepted** adaptive steps; hash FNV-1a 64 over packed `(x‖v)`
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `b918884ca264b70d` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+`cargo run -p pe-space --bin space_hash --release` prints figure-eight then IAS15
+(two lines).
 
 ### Canonical blast-pyramid hash (locked)
 

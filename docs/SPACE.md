@@ -42,11 +42,21 @@ Earth defaults used in tests:
 | Yoshida 4 (Yoshida 1990) | 4 | yes | no | shipped |
 | RK4 | 4 | no | no | shipped |
 | RKF78 (Fehlberg 7(8)) | 7(8) | no | yes | shipped (**DOP853 stand-in**) |
-| IAS15 (Rein & Spiegel 2015) | 15 | no | yes | **stub** (TODO) |
-| WHFast-style Wisdom–Holman | ~2 | yes | no | **stub** (TODO; Stumpff helpers exist) |
+| IAS15 (Rein & Spiegel 2015) | 15 | no | yes | shipped |
+| WHFast-style Wisdom–Holman | 2 | yes | no | shipped (Jacobi + democratic-heliocentric) |
 
-RKF78 was chosen instead of a full DOP853 tableau for coefficient size; the
-`Dop853` type alias documents the substitution.
+**DOP853 deferred.** The Hairer–Nørsett–Wanner DOP853 tableau was **not**
+reproduced and order-checked in this tree; `Dop853` remains a documented type
+alias to RKF78. Revisit only with an exact published tableau + numerical order
+tests.
+
+**IAS15.** Gauss–Radau nodes are derived from `P_8(x)+P_7(x)=0` on `[-1,1]`
+(mapped to `[0,1]`), verified to `1e-15` against the locked table. Adaptive
+control uses `ε_b` (default `1e-9`) and Neumaier-compensated position updates.
+
+**WHFast.** Second-order DKD Wisdom–Holman map with universal-variable Kepler
+drift (`propagate_universal` / Stumpff). Jacobi (Rein & Tamayo 2015) or
+democratic-heliocentric (Duncan et al. 1998). Symplectic correctors deferred.
 
 Compensated (Neumaier) position updates and COM origin rebasing are optional on
 [`NBodyState`](../crates/pe-space/src/state.rs).
@@ -70,7 +80,7 @@ Compensated (Neumaier) position updates and COM origin rebasing are optional on
 
 - Translational DOF only (no attitude / SRP torque).
 - No SPICE ephemerides, no Earth rotation, no higher geopotential (J₃…).
-- IAS15 / WHFast are interface stubs until a follow-up milestone.
+- DOP853 tableau not shipped (RKF78 stand-in); WHFast symplectic correctors deferred.
 - ISA drag is invalid above 20 km (falls back to exponential).
 - Determinism: `f64`, portable `libm`, no FMA, no `HashMap` iteration
   ([`DETERMINISM.md`](DETERMINISM.md)).
@@ -82,7 +92,15 @@ See `crates/pe-space/tests/space_analytic.rs` and Python `tests/test_space_rust.
 - LEO `r=7000 km`: `T≈5828.5 s`, `v≈7.5460 km/s`
 - GEO `r=42164.17 km`: `T≈86164.09 s`
 - `e=0.9` Yoshida4 over 1000 orbits: relative energy error `<1e-10` (per-orbit samples)
-- J₂ nodal rate vs `−1.5 n J₂ (R/p)² cos i` (~5 % for `a=6778 km`, `i=51.6°`)
+- `e=0.9` IAS15 over 1000 orbits: relative energy error `<1e-12` (machine-precision regime)
+- J₂ nodal rate vs `−1.5 n J₂ (R/p)² cos i` (`a=6778 km`, `i=51.6°`):
+  **~0.43 %** using ascending-node orbit averages over ~400 orbits (under 0.5 %).
+  Osculating-only end-point Ω (previous M7) was ~5 % because of J₂ short-period
+  terms; mean/orbit-averaged sampling removes most of that.
 - Sun-synchronous `+0.9856 deg/day` at ~800 km → `i≈98.6°`
-- Chenciner–Montgomery figure-eight returns within `5×10⁻³` after one period
-- Pythagorean 3-body: energy conservation with RKF78 (IC labelled UNVERIFIED)
+- Chenciner–Montgomery figure-eight: IAS15 return `<1e-8` over one refined period
+  (`FIGURE_EIGHT_PERIOD_RETURN`; 8-digit IC + published `T` alone leaves ~4e-8)
+- Pythagorean 3-body (masses 3,4,5): IAS15 energy relative drift `<1e-10` through
+  close encounters (`t=10`)
+- WHFast synthetic 5-body: energy bounded over `1e6` time units; order-2
+  convergence; reversibility

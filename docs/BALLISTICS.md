@@ -18,10 +18,13 @@ studio work. Uses `pe-aero` ISA density / speed of sound and Dryden wind,
 
 ## Models
 
-- **AmmoProfile** — versioned JSON/TOML; see [`AMMO.md`](AMMO.md).
+- **AmmoProfile** — versioned JSON/TOML; see [`AMMO.md`](AMMO.md). Bundled
+  profiles are **nominal and unverified** (`verified: false`).
 - **Drag** — generic Mach–`C_D` table (linear / monotone API) + analytic
-  `C_D(M)` stand-in. Tags `G1StandIn` / `G7StandIn` scale that model; they are
-  **not** verified BRL G1/G7 tables (see skipped items below).
+  `C_D(M)` stand-in. Tags `G1StandIn` / `G7StandIn` are **analytic stand-ins**
+  that scale that model; they are **not** verified BRL/McCoy G1/G7 tables, and
+  BC = 1 does **not** claim the official G1/G7 deceleration scale (see skipped
+  items below).
 - **Atmosphere / wind** — ISA `ρ`, `a`; steady + Dryden (`pe-aero`).
 - **Earth** — Coriolis, Eötvös, `g(h)=g₀(R/(R+h))²`.
 - **Spin** — documented spin-drift and Magnus engineering accelerations.
@@ -35,8 +38,10 @@ studio work. Uses `pe-aero` ISA density / speed of sound and Dryden wind,
 ## Limits
 
 - Point-mass (not 6-DOF aeroballistics).
-- G1/G7 standard drag functions **not** shipped from a verified primary table.
-- Bundled ammo figures are nominal class ballpark values (`verified: false`).
+- **G1/G7 are analytic stand-ins** — standard drag functions are **not**
+  shipped from a verified primary table.
+- Bundled ammo profiles are **nominal / unverified** class ballpark values
+  (`verified: false`).
 - Parallel stepping is not enabled (would require bit-identical reduction).
 
 ## Validation highlights
@@ -49,6 +54,6 @@ studio work. Uses `pe-aero` ISA density / speed of sound and Dryden wind,
 ## Skipped / unverified
 
 - **G1/G7 drag coefficients** — not copied from McCoy / BRL primary tables in
-  this milestone; analytic stand-in documented instead.
-- Manufacturer-precise load data — intentionally omitted; only nominal class
-  profiles.
+  this milestone; **analytic stand-ins only** (documented in `pe_ballistics::drag`).
+- Manufacturer-precise load data — intentionally omitted; only **nominal /
+  unverified** class profiles (`verified: false`).

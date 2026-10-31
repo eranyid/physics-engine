@@ -4,6 +4,12 @@ Versioned, serde-loadable ammunition descriptors for per-bullet simulation.
 Fields are **external-ballistics parameters only** — no design or manufacturing
 details.
 
+**Important:** Bundled ammo profiles are **nominal and unverified**
+(`verified: false`). The `G1StandIn` / `G7StandIn` drag tags are **analytic
+stand-ins** — they are **not** the published BRL/McCoy G1 or G7 standard drag
+functions, and a BC of 1 does **not** reproduce an official G1/G7 deceleration
+scale.
+
 ## Schema (`version = 1`)
 
 | Field | SI unit | Meaning |
@@ -31,8 +37,9 @@ primary source was fetched and checked.
 
 - **Analytic** — built-in `C_D(M)` (subsonic plateau, transonic rise, supersonic
   decay). Documented engineering model, not a published projectile law.
-- **G1StandIn / G7StandIn** — same analytic curve (G7 scaled ×0.85). **Not**
-  verified G1/G7 standard drag functions from BRL/McCoy tables.
+- **G1StandIn / G7StandIn** — **analytic stand-ins only** (same curve; G7
+  scaled ×0.85). They are **not** verified G1/G7 standard drag functions from
+  BRL/McCoy tables and must not be cited as such.
 - **CustomTable** — caller-supplied Mach→`C_D` knots with linear interpolation.
 
 ## Adding custom ammo
@@ -77,5 +84,7 @@ and `ammo_profile_json` for bundled names.
 `generic_battle_rifle`, `generic_sniper_long_range`,
 `generic_heavy_machine_gun`, `generic_shotgun_slug`, `generic_subsonic`.
 
-All use rounded public-domain / encyclopedia-class ballpark figures for game
-simulation. **Do not treat as manufacturer load data.**
+All are **nominal / approximate / unverified** (`verified: false`), using
+rounded public-domain / encyclopedia-class ballpark figures for game
+simulation. **Do not treat as manufacturer load data** or as verified ballistic
+coefficients.

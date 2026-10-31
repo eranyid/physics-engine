@@ -1,4 +1,4 @@
-# Integrator, contact, and aero/hydro hot-loop baselines (Criterion)
+# Integrator and contact hot-loop baselines (Criterion)
 
 Measured on the Cloud Agent host (Linux x86_64, release, Rust 1.99.1).
 Numbers are wall time for the named workload; re-run locally after numerical changes.
@@ -22,14 +22,53 @@ Default CI does **not** run Criterion (`cargo test` omits harness benches). Use
 | `projectile_verlet_1k` | 1 body + uniform g, 1000× Verlet | ~472 µs |
 | `nbody8_rk4_200_steps` | 8-body Newtonian, 200× RK4 @ dt=0.1 | ~454 µs |
 
-## Stage 2 — contacts (`pe-collision`)
+## Stage 2 / M5a — contacts (`pe-collision`)
 
 | Benchmark | Workload | Median time |
 | --- | --- | --- |
-| `pyramid_10_rows_60_steps` | 55 boxes (10 rows) + ground, 60× contact @ 1/240 | ~39.3 ms |
-| `pyramid_20_rows_60_steps` | 210 boxes (20 rows) + ground, 60× contact @ 1/240 | ~180 ms |
+| `pyramid_10_rows_60_steps_pgs` | 55 boxes, 60× PGS @ 1/240 | ~39.0 ms |
+| `pyramid_10_rows_60_steps_soft` | 55 boxes, 60× soft-step @ 1/240 | ~126 ms |
+| `pyramid_20_rows_60_steps_pgs` | 210 boxes, 60× PGS | ~171 ms |
+| `pyramid_20_rows_60_steps_soft` | 210 boxes, 60× soft-step | ~596 ms |
+| `pyramid_10_sap` | 10-row pyramid, SAP broad phase | ~36.4 ms |
+| `pyramid_10_tree` | 10-row pyramid, dynamic AABB tree | ~39.2 ms |
 
-## Stage 3 — aero / hydro (`pe-aero`, `pe-hydro`)
+## M5a — broad phase only
+
+| Benchmark | Workload | Median time |
+| --- | --- | --- |
+| `broadphase/sap/1000` | 1k random AABBs | ~140 µs |
+| `broadphase/tree/1000` | 1k random AABBs | ~511 µs |
+| `broadphase/brute/1000` | 1k random AABBs | ~2.34 ms |
+| `broadphase/sap/10000` | 10k random AABBs | ~11.4 ms |
+| `broadphase/tree/10000` | 10k random AABBs | ~9.27 ms |
+
+Tree rebuild-from-scratch is slower than SAP at 1k (query overhead) but wins at 10k.
+
+## M5a — soft-step vs PGS quality comparison
+
+5-row pyramid, 1 s @ dt=1/240, sleep off, SAP (from
+`m5a_oracles::soft_step_vs_pgs_comparison_metrics`):
+
+| Solver | Max contact depth [m] | Kinetic energy [J] |
+| --- | --- | --- |
+| PGS (20 iter) | ~0.30 mm (3.0e-4 m) | ~4.37 J |
+| Soft-step (4 sub, Hertz 30, ζ 10) | ~2.29 mm (2.3e-3 m) | ~4.00 J |
+
+Soft-step 1000:1 sphere stack penetration ~1.7 mm (under 5 mm + 5 mm slop;
+PGS meets the 5 mm oracle). Soft-step KE is at or below PGS on this pyramid.
+
+**Known limitation:** soft-step max contact depth on the 5-row pyramid remains
+~2.29 mm vs PGS ~0.30 mm (~7.6× deeper). Soft-step recovers mass-ratio stacks and
+matches/beats PGS on kinetic energy, but equal-mass pyramid residual penetration
+is still larger than sequential-impulse PGS with 20 iterations. Values are
+comparative / engineering bounds — not closed-form oracles.
+
+Soft-step integrates forces per sub-step with `h`, warm-starts each sub-step, and
+hard-holds high mass-ratio / heavy-static / single-body static contacts within
+linear slop so soft spring equilibrium cannot park under a 1000:1 stack.
+
+## M9 — aero / hydro / waves (`pe-aero`, `pe-hydro`)
 
 | Benchmark | Workload | Median time |
 | --- | --- | --- |
@@ -49,10 +88,12 @@ Default CI does **not** run Criterion (`cargo test` omits harness benches). Use
 
 | Benchmark | Workload | Median time |
 | --- | --- | --- |
-| `leo_leapfrog_2k_steps` | circular LEO, 2000× leapfrog | ~101 µs |
-| `leo_yoshida4_2k_steps` | same, Yoshida4 | ~312 µs |
-| `leo_rk4_2k_steps` | same, RK4 | ~1.68 ms |
-| `figure8_leapfrog_2k_steps` | figure-eight, 2000× leapfrog | ~162 µs |
+| `leo_leapfrog_2k_steps` | circular LEO, 2000× leapfrog | ~105 µs |
+| `leo_yoshida4_2k_steps` | same, Yoshida4 | ~337 µs |
+| `leo_rk4_2k_steps` | same, RK4 | ~1.48 ms |
+| `figure8_leapfrog_2k_steps` | figure-eight, 2000× leapfrog | ~141 µs |
+| `ias15_e09_one_orbit` | `e=0.9` Kepler, IAS15 one period | ~1.12 ms |
+| `whfast_5body_10k_steps` | synthetic 5-body WHFast Jacobi, 10k steps | ~14.2 ms |
 
 ## Blast / ballistics (`pe-blast`, `pe-ballistics`)
 
@@ -67,6 +108,7 @@ Default CI does **not** run Criterion (`cargo test` omits harness benches). Use
 | `step_10k_bullets` | one ProjectileSystem step, 10k bullets | ~15.1 ms |
 | `volley_hash` | canonical 100-bullet hash scenario | ~14.5 ms |
 
-These are foundation baselines for M2–M7 + blast/ballistics — not throughput
+These are foundation baselines for M2–M9 + blast/ballistics — not throughput
 targets. Re-record when changing `libm` usage, SoA layout, integrator math, the
-contact solver, aero/hydro force models, space integrators, or blast/ballistics.
+contact solver, aero/hydro force models, waves, space integrators, or
+blast/ballistics.

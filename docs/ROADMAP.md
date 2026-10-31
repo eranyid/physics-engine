@@ -164,7 +164,7 @@ Sizes are relative engineering scope, not calendar schedules.
 
 - **Models:** point-mass n-body; optional central + J2; Kepler/Lambert helpers;
   SRP / drag / third-body; non-inertial frames later. (**M7 shipped** in `pe-space` —
-  IAS15/WHFast stubs remain.)
+  IAS15 + WHFast landed; DOP853 still RKF78 stand-in.)
 - **Validation:** Kepler two-body; figure-eight / Pythagorean conservation; J₂ nodal
   rate; sun-synchronous inclination; energy/L property tests. SPICE ephemeris later.
 - **Effort:** M.
@@ -214,7 +214,7 @@ ported early because the Python oracle already exists.
 | **M2** | Port stage 1 | Rust matches Python oracle on stage-1 analytic tests (tolerances documented); bit-stable deterministic mode | **done** |
 | **M3** | Port stage 2 | Contacts/friction/stacks cross-validated; missing narrow pairs tracked; SAP≡brute in Rust | **done** |
 | **M4** | Port stage 3 | ISA/aero/hydro parity with Python suite | **done** (this PR) |
-| **M5** | Joints + islands + sleep | Pendulum/motor tests; large resting scene sleeps; Python may gain thin joint oracle or shared fixtures | planned |
+| **M5** | Joints + islands + sleep | Pendulum/motor tests; large resting scene sleeps; Python may gain thin joint oracle or shared fixtures | **M5a done** (soft-step / tree / islands / sleep); joints + CCD later |
 | **M6** | CCD + convex | TOI tests (no tunnel at configured speeds); GJK/EPA convex; capsule–box | planned |
 | **M7** | Space module | Kepler + n-body conservation suite in Rust (+ Python helpers as needed) | **done** (this PR) |
 | **M8** | Scene I/O + C ABI | Round-trip serialization; `pe-ffi` headers; smoke GDExtension optional | planned |
@@ -245,6 +245,17 @@ ported early because the Python oracle already exists.
   `tests/test_oracle_contacts_rust.py` (near bit-exact). Criterion pyramid benches in
   `docs/BENCHMARKS.md`. Default CI stays fast (no Criterion; slow pytest marker unchanged).
 
+### M5a as built (summary)
+
+- Soft-step solver (Box2D v3 / Solver2D clean-room): sub-steps (default 4), soft constraints
+  (contact Hertz 30, ζ 10, capped to 0.25×substep rate), per-substep warm start, relax without
+  bias, restitution from pre-solve relative velocity (~1 m/s threshold). **PGS remains the
+  default** (oracle-compatible).
+- Dynamic AABB tree broad phase (SAH insert, fat AABBs, rotations) ≡ SAP ≡ brute; sleeping
+  islands (0.05 m/s, 2°/s, 0.5 s) with wake on new contact / non-gravity force.
+- Out of scope (later PR): joints, CCD. Do not touch `pe-space`.
+- Determinism: soft-step pyramid hash CI; Criterion benches for soft-step vs PGS and tree vs SAP.
+
 ### M4 as built (summary)
 
 - New crates `crates/pe-aero` (ISA through 20 km, `WingPolar` + stall, Fixed/Propeller/Jet
@@ -263,15 +274,18 @@ ported early because the Python oracle already exists.
 ### M7 as built (summary)
 
 - New crate `crates/pe-space`: `GravityField` + N-body `Integrator` traits (SI; μ used
-  directly); Leapfrog, Yoshida4, RK4, adaptive **RKF78** (DOP853 stand-in); compensated
-  Neumaier positions + origin rebase; Kepler elements ↔ state, Stumpff / universal
-  propagation, Lambert (Izzo 2015 geometry); J₂, cannonball SRP, third-body, ISA/exponential
-  drag. **IAS15** and **WHFast** are documented stubs (TODO follow-up).
+  directly); Leapfrog, Yoshida4, RK4, adaptive **RKF78** (DOP853 stand-in), **IAS15**
+  (Rein & Spiegel 2015), **WHFast**-style Wisdom–Holman (Jacobi / democratic-heliocentric);
+  compensated Neumaier positions + origin rebase; Kepler elements ↔ state, Stumpff /
+  universal propagation, Lambert (Izzo 2015 geometry); J₂, cannonball SRP, third-body,
+  ISA/exponential drag.
 - Clean-room from published papers only — no REBOUND / nyx-space / JSBSim code
   (`docs/SPACE.md`, `THIRD_PARTY.md`).
-- Determinism: portable `libm`, no FMA / `HashMap` iteration; cross-OS figure-eight hash CI.
+- Determinism: portable `libm`, no FMA / `HashMap` iteration; cross-OS figure-eight +
+  IAS15 hash CI.
 - Tests: Rust analytic + proptest; Python `tests/test_space_rust.py`. Criterion benches in
   `docs/BENCHMARKS.md`.
+- Follow-up (deferred): Hairer DOP853 tableau + order tests; WHFast symplectic correctors.
 
 ### Blast / ballistics track (this PR)
 
