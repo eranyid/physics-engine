@@ -93,6 +93,23 @@ struct WarmEntry {
     point: Vec3,
 }
 
+/// Public warm-cache row for scene I/O (`pe-scene` / `pe-ffi`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WarmCacheRow {
+    /// Body / collider index A.
+    pub a: usize,
+    /// Body / collider index B.
+    pub b: usize,
+    /// Feature id.
+    pub feature: u32,
+    /// Accumulated normal impulse.
+    pub normal_impulse: f64,
+    /// Accumulated tangent impulse [3].
+    pub tangent_impulse: [f64; 3],
+    /// Contact point [m].
+    pub point: [f64; 3],
+}
+
 /// Broad-phase backend selection (deterministic pair order for all variants).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum BroadPhaseKind {
@@ -873,6 +890,117 @@ impl ContactWorld {
             out.push(record(self));
         }
         out
+    }
+
+    // --- M8 / pe-scene / pe-ffi additive hooks (do not reorder private fields) ---
+
+    /// Append a dynamic rigid body with shape and material. Returns the new body index.
+    ///
+    /// Rebuilds the static-flag table so broad-phase indices stay consistent.
+    pub fn add_dynamic_body(
+        &mut self,
+        body: pe_core::RigidBody,
+        shape: Shape,
+        material: Material,
+    ) -> usize {
+        use pe_core::body::{invert3, mat_mul, mat_transpose, mat_vec};
+        let i = self.world.n;
+        let qq = body.orientation.normalize();
+        let r = qq.to_matrix();
+        let i_w = mat_mul(&mat_mul(&r, &body.inertia_body), &mat_transpose(&r));
+        self.world.mass.push(body.mass);
+        self.world.inertia_body.push(body.inertia_body);
+        self.world
+            .inv_inertia_body
+            .push(invert3(&body.inertia_body));
+        self.world.state.x.push(body.position);
+        self.world.state.q.push(qq);
+        self.world.state.v.push(body.velocity);
+        self.world
+            .state
+            .l
+            .push(mat_vec(&i_w, body.angular_velocity));
+        self.world.n += 1;
+        self.shapes.push(shape);
+        self.materials.push(material);
+        self.bullet.push(false);
+        self.sleep.resize(self.world.n);
+        self.rebuild_static_tables();
+        i
+    }
+
+    /// Append a static collider and refresh static pose caches.
+    pub fn add_static(&mut self, collider: StaticCollider) -> usize {
+        let id = self.statics.len();
+        self.statics.push(collider);
+        self.rebuild_static_tables();
+        id
+    }
+
+    /// Rebuild `is_static` / static pose caches after body or static mutations.
+    pub fn rebuild_static_tables(&mut self) {
+        let n = self.world.n;
+        let s = self.statics.len();
+        self.is_static = vec![false; n];
+        self.is_static.extend(std::iter::repeat_n(true, s));
+        self.static_x = self.statics.iter().map(|c| c.position).collect();
+        self.static_r = self
+            .statics
+            .iter()
+            .map(|c| c.orientation.to_matrix())
+            .collect();
+    }
+
+    /// Export warm-start cache entries in deterministic `(a,b,feature)` order.
+    ///
+    /// Tuple layout: `(a, b, feature, λn, jt[3], point[3])`.
+    pub fn warm_cache_entries(&self) -> Vec<WarmCacheRow> {
+        self.cache
+            .iter()
+            .map(|(&(a, b, f), e)| WarmCacheRow {
+                a,
+                b,
+                feature: f,
+                normal_impulse: e.normal_impulse,
+                tangent_impulse: e.tangent_impulse.to_array(),
+                point: e.point.to_array(),
+            })
+            .collect()
+    }
+
+    /// Replace the warm-start cache (clears first). Used by scene restore.
+    pub fn set_warm_cache_entries(&mut self, entries: &[WarmCacheRow]) {
+        self.cache.clear();
+        for e in entries {
+            self.cache.insert(
+                (e.a, e.b, e.feature),
+                WarmEntry {
+                    normal_impulse: e.normal_impulse,
+                    tangent_impulse: Vec3::from_slice(&e.tangent_impulse),
+                    point: Vec3::from_slice(&e.point),
+                },
+            );
+        }
+    }
+
+    /// Soft-step warm impulses in contact order.
+    pub fn soft_warm_entries(&self) -> &[(usize, usize, f64, Vec3)] {
+        &self.soft_warm
+    }
+
+    /// Replace soft-step warm impulses.
+    pub fn set_soft_warm_entries(&mut self, entries: Vec<(usize, usize, f64, Vec3)>) {
+        self.soft_warm = entries;
+    }
+
+    /// Previous-step broad-phase pairs (wake-on-new-contact).
+    pub fn prev_pairs(&self) -> &[(usize, usize)] {
+        &self.prev_pairs
+    }
+
+    /// Replace previous-step broad-phase pairs.
+    pub fn set_prev_pairs(&mut self, pairs: Vec<(usize, usize)>) {
+        self.prev_pairs = pairs;
     }
 }
 

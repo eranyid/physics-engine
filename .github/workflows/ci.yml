@@ -68,7 +68,40 @@ jobs:
 
       - name: cargo test
         # Omit --all-targets so Criterion benches are not executed in default CI.
-        run: cargo test --workspace
+        # Skip pe-godot in default test (cdylib / no unit tests); build checked separately.
+        run: cargo test --workspace --exclude pe-godot
+
+  pe-ffi-c:
+    name: pe-ffi C smoke + header drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.99.1"
+
+      - name: Install cbindgen
+        run: cargo install cbindgen --version 0.28.0 --locked
+
+      - name: Build lib + run C test + header drift
+        run: ./crates/pe-ffi/c_tests/run_c_test.sh
+
+  pe-godot-build:
+    name: pe-godot compile check (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.99.1"
+
+      - name: cargo build -p pe-godot
+        run: cargo build -p pe-godot
+        # Godot editor / headless is NOT run here — see docs/GODOT.md.
 
   maturin-pytest:
     name: maturin wheel + oracle pytest
@@ -138,6 +171,19 @@ jobs:
           EXPECTED=50d52b2193aa528c
           if [ "$HASH" != "$EXPECTED" ]; then
             echo "::error::Collision determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+
+      - name: Compute canonical scene save/load/continue hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-scene --bin scene_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical scene round-trip hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=50d52b2193aa528c
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::Scene round-trip hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
             echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
             exit 1
           fi

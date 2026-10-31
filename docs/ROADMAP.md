@@ -217,7 +217,7 @@ ported early because the Python oracle already exists.
 | **M5** | Joints + islands + sleep | Pendulum/motor tests; large resting scene sleeps; Python may gain thin joint oracle or shared fixtures | **M5a done**; **M5b done** (joints + speculative/TOI CCD; convex GJK remains M6) |
 | **M6** | CCD + convex | TOI tests (no tunnel at configured speeds); GJK/EPA convex; capsule–box | **partial** (M5b speculative + bullet TOI vs static); GJK/EPA + capsule–box remain |
 | **M7** | Space module | Kepler + n-body conservation suite in Rust (+ Python helpers as needed) | **done** (this PR) |
-| **M8** | Scene I/O + C ABI | Round-trip serialization; `pe-ffi` headers; smoke GDExtension optional | planned |
+| **M8** | Scene I/O + C ABI | Round-trip serialization; `pe-ffi` headers; smoke GDExtension optional | **done** (pe-scene + pe-ffi + godot/ compile check; see docs/SCENE.md, FFI.md, GODOT.md) |
 | **M9** | Waves / hydrodynamics v1 | Airy + Stokes/Gerstner/spectra + buoyancy coupling (Morison later) | **done** (this PR; Morison deferred) |
 | **M10** | Materials + soft v1 | Elastic validation; one soft demo with analytic check | planned |
 | **M11** | Fluids / blast v1 | Particle hydrostatic + one blast engineering model vs scaling law | planned (blast engineering track shipped early — see below) |
@@ -281,6 +281,17 @@ ported early because the Python oracle already exists.
   Default CI stays fast (no Criterion; slow pytest marker unchanged).
 - **Out of scope (M4):** waves, 6-DOF aero check-cases, blade element, compressibility
   — **waves + check-cases + compressibility + Dryden shipped in M9 follow-on** (this PR).
+
+### M8 as built (summary)
+
+- New crates `pe-scene` (JSON/RON/`PESC` binary; bit-exact state+warm-cache restore)
+  and `pe-ffi` (opaque `PeWorld*`, SoA transforms, raycast/overlap, contacts,
+  `catch_unwind`, cbindgen header + C smoke in CI).
+- `godot/` GDExtension (`godot` / gdext, MPL-2.0 dependency): `PePhysicsWorld` /
+  `PeRigidBody3D`; Linux **compile check** in CI. Godot editor/headless **not** run
+  (`docs/GODOT.md`).
+- Docs: [`SCENE.md`](SCENE.md), [`FFI.md`](FFI.md), [`GODOT.md`](GODOT.md).
+- Determinism: scene save/load/continue hash locked (= collision pyramid hash).
 
 ### M7 as built (summary)
 

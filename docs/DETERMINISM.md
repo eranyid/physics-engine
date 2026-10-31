@@ -55,6 +55,26 @@ Scenario (must stay in sync in the binary, Rust test, and Python helper):
 | macOS (CI) | same expected | CI asserts equality |
 | Windows (CI) | same expected | CI asserts equality |
 
+### Canonical scene save/load/continue hash (locked)
+
+Scenario (must stay in sync with `pe_scene::canonical_scene_roundtrip_hash` /
+`scene_hash` binary):
+
+- Same 10-box pyramid as the stage-2 collision hash.
+- Run **300** contact steps @ `dt = 1/240`, capture scene (state + warm cache) to
+  binary, load, run **300** more.
+- Must match an uninterrupted **600**-step run bit-exactly.
+- Hash: FNV-1a 64 over packed dynamic state (equals stage-2 collision hash when
+  restore is correct).
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `50d52b2193aa528c` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+Helper: `cargo run -p pe-scene --bin scene_hash --release`.
+
 ### Canonical stage-2 collision hash (locked)
 
 Scenario:
