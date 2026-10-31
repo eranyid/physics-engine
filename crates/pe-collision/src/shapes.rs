@@ -5,6 +5,9 @@ use core::f64::consts::PI;
 use pe_math::libm_ops::fabs;
 use pe_math::Vec3;
 
+use crate::hull::ConvexHull;
+use crate::support::RoundedShape;
+
 /// Axis-aligned bounding box in world frame [m].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Aabb {
@@ -244,7 +247,11 @@ impl Default for Material {
 }
 
 /// Tagged collision shape.
-#[derive(Clone, Copy, Debug, PartialEq)]
+///
+/// New M6 variants ([`Shape::Convex`], [`Shape::Rounded`]) are append-only so
+/// existing `order_index` values for sphere/capsule/box/plane stay unchanged
+/// (locked collision hashes).
+#[derive(Clone, Debug, PartialEq)]
 pub enum Shape {
     /// Sphere.
     Sphere(Sphere),
@@ -254,47 +261,77 @@ pub enum Shape {
     Capsule(Capsule),
     /// Infinite plane (typically static).
     Plane(Plane),
+    /// Convex polyhedron (optional Minkowski radius on the hull).
+    Convex(ConvexHull),
+    /// Minkowski sum of an inner convex shape with a sphere.
+    Rounded(RoundedShape),
 }
 
 impl Shape {
     /// Volume [m³]; planes return 0.
-    pub fn volume(self) -> f64 {
+    pub fn volume(&self) -> f64 {
         match self {
             Self::Sphere(s) => s.volume(),
             Self::Box(b) => b.volume(),
             Self::Capsule(c) => c.volume(),
             Self::Plane(_) => 0.0,
+            Self::Convex(h) => {
+                // Sharp volume; rounded margin ignored (same note as hull inertia).
+                h.volume()
+            }
+            Self::Rounded(rd) => {
+                // Lower bound: core volume (exact sphere-swept volume not required for M6).
+                rd.inner.volume()
+            }
         }
     }
 
     /// Inertia about COM [kg m²] for the given mass; planes return zero.
-    pub fn inertia(self, mass: f64) -> [[f64; 3]; 3] {
+    pub fn inertia(&self, mass: f64) -> [[f64; 3]; 3] {
         match self {
             Self::Sphere(s) => s.inertia(mass),
             Self::Box(b) => b.inertia(mass),
             Self::Capsule(c) => c.inertia(mass),
             Self::Plane(_) => [[0.0; 3]; 3],
+            Self::Convex(h) => h.inertia(mass),
+            Self::Rounded(rd) => rd.inner.inertia(mass),
         }
     }
 
     /// World AABB at pose `(x, R)`.
-    pub fn aabb(self, x: Vec3, r: &[[f64; 3]; 3]) -> Aabb {
+    pub fn aabb(&self, x: Vec3, r: &[[f64; 3]; 3]) -> Aabb {
         match self {
             Self::Sphere(s) => s.aabb(x, r),
             Self::Box(b) => b.aabb(x, r),
             Self::Capsule(c) => c.aabb(x, r),
             Self::Plane(p) => p.aabb(x, r),
+            Self::Convex(h) => h.aabb(x, r),
+            Self::Rounded(rd) => {
+                let mut a = rd.inner.aabb(x, r);
+                let m = Vec3::new(rd.radius, rd.radius, rd.radius);
+                a.lo -= m;
+                a.hi += m;
+                a
+            }
         }
     }
 
-    /// Dispatch order index matching the Python oracle (`Sphere < Capsule < Box < Plane`).
-    pub fn order_index(self) -> u8 {
+    /// Dispatch order index matching the Python oracle
+    /// (`Sphere < Capsule < Box < Plane < Convex < Rounded`).
+    pub fn order_index(&self) -> u8 {
         match self {
             Self::Sphere(_) => 0,
             Self::Capsule(_) => 1,
             Self::Box(_) => 2,
             Self::Plane(_) => 3,
+            Self::Convex(_) => 4,
+            Self::Rounded(_) => 5,
         }
+    }
+
+    /// True if this shape should use the GJK/EPA convex path against another convex.
+    pub fn is_general_convex(&self) -> bool {
+        matches!(self, Self::Convex(_) | Self::Rounded(_))
     }
 }
 

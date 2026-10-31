@@ -1,10 +1,12 @@
-//! Stage-2 collision and contact dynamics (M3) plus M5a/M5b soft-step / joints / CCD.
+//! Stage-2 collision and contact dynamics (M3) plus M5a/M5b soft-step / joints / CCD
+//! and M6 general convex (GJK/EPA) collision.
 //!
 //! Port of the Python reference (`shapes` / `broadphase` / `narrowphase` / `contact`)
 //! with behavioral parity as the first goal (same algorithms, sorted pair order).
 //!
 //! M5a: soft-step, dynamic AABB tree, islands/sleeping.
 //! M5b: maximal-coordinate joints + speculative / TOI CCD.
+//! M6: GJK/EPA, convex hulls, capsule–box, convex–convex CCD.
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
@@ -14,6 +16,10 @@ pub mod aabb_tree;
 pub mod broadphase;
 pub mod ccd;
 pub mod contact;
+pub mod convex_manifold;
+pub mod epa;
+pub mod gjk;
+pub mod hull;
 pub mod islands;
 pub mod joints;
 pub mod manifold;
@@ -21,11 +27,15 @@ pub mod narrowphase;
 pub mod shapes;
 pub mod soft_step;
 pub mod softness;
+pub mod support;
 
 pub use aabb_tree::{dynamic_tree_pairs, DynamicAabbTree, DEFAULT_FAT_MARGIN};
 pub use broadphase::{brute_force_pairs, sweep_and_prune, BroadPhase, BruteForce, SweepAndPrune};
 pub use ccd::{CcdParams, DEFAULT_SPECULATIVE_DISTANCE};
 pub use contact::{BroadPhaseKind, ContactWorld, StaticCollider, WarmCacheRow};
+pub use epa::{epa, EpaResult, EpaTol};
+pub use gjk::{gjk, gjk_intersect, GjkResult, GjkTol};
+pub use hull::{ConvexHull, HullError, HullFace, HULL_EPS};
 pub use islands::{SleepState, DEFAULT_ANGULAR_SLEEP, DEFAULT_LINEAR_SLEEP, DEFAULT_TIME_TO_SLEEP};
 pub use joints::{
     Joint, JointBreak, JointKind, JointLimit, JointMotor, JointSoftParams, DEFAULT_JOINT_HERTZ,
@@ -35,6 +45,7 @@ pub use manifold::{Contact, ContactPoint, FeatureId, ManifoldPoint};
 pub use narrowphase::{collide, DedicatedNarrowPhase, NarrowPhase};
 pub use shapes::{Aabb, BoxShape, Capsule, Material, Plane, Shape, Sphere};
 pub use softness::{SoftStepParams, Softness, SolverMode};
+pub use support::{bounding_radius, support_world, RoundedShape};
 
 use pe_core::diagnostics::state_hash64;
 use pe_core::forces::UniformGravity;
@@ -169,6 +180,59 @@ pub fn canonical_joints_hash() -> u64 {
 /// Locked cross-OS joints hash (Linux x86_64 release). See `docs/DETERMINISM.md`.
 pub const CANONICAL_JOINTS_HASH: u64 = 0x6215_6ada_3fa7_70ad;
 
+/// Build the locked M6 convex scene (hull + capsule vs box + rounded).
+///
+/// Uses only new M6 shapes so the legacy pyramid hash stays untouched.
+pub fn canonical_convex_world() -> ContactWorld {
+    use crate::hull::ConvexHull;
+    use crate::support::RoundedShape;
+
+    let hull = ConvexHull::from_box(0.25, 0.25, 0.25, 0.0).expect("box hull");
+    let rounded = RoundedShape::new(Shape::Box(BoxShape::new(0.2, 0.2, 0.2)), 0.05);
+    let b0 = RigidBody::new(1.0)
+        .with_inertia(BoxShape::new(0.25, 0.25, 0.25).inertia(1.0))
+        .with_position(Vec3::new(0.0, 0.0, 0.6));
+    let b1 = RigidBody::new(1.0)
+        .with_inertia(Capsule::new(0.1, 0.2).inertia(1.0))
+        .with_position(Vec3::new(0.5, 0.0, 0.8));
+    let b2 = RigidBody::new(1.0)
+        .with_inertia(BoxShape::new(0.25, 0.25, 0.25).inertia(1.0))
+        .with_position(Vec3::new(-0.5, 0.0, 0.7));
+    let mut cw = ContactWorld::new(
+        World::new(vec![b0, b1, b2], vec![Box::new(UniformGravity::earth())]),
+        vec![
+            Shape::Convex(hull),
+            Shape::Capsule(Capsule::new(0.1, 0.2)),
+            Shape::Rounded(rounded),
+        ],
+        vec![
+            StaticCollider::new(Shape::Box(BoxShape::new(2.0, 2.0, 0.1)))
+                .with_position(Vec3::new(0.0, 0.0, -0.1))
+                .with_material(Material::new(0.0, 0.8)),
+        ],
+        Some(vec![
+            Material::new(0.0, 0.4),
+            Material::new(0.0, 0.4),
+            Material::new(0.0, 0.4),
+        ]),
+    );
+    cw.iterations = 20;
+    cw.set_allow_sleep(false);
+    cw
+}
+
+/// Run the canonical M6 convex scene for 600 steps @ 1/240; FNV-1a state hash.
+pub fn canonical_convex_hash() -> u64 {
+    let mut cw = canonical_convex_world();
+    for _ in 0..600 {
+        cw.step(1.0 / 240.0);
+    }
+    state_hash64(&cw.world.state)
+}
+
+/// Locked cross-OS M6 convex hash (Linux x86_64 release). See `docs/DETERMINISM.md`.
+pub const CANONICAL_CONVEX_HASH: u64 = 0x4ca9_8009_6c03_6ade;
+
 #[cfg(test)]
 mod hash_tests {
     use super::*;
@@ -207,5 +271,15 @@ mod hash_tests {
     #[test]
     fn joints_hash_is_bit_stable_on_repeat() {
         assert_eq!(canonical_joints_hash(), canonical_joints_hash());
+    }
+
+    #[test]
+    fn convex_hash_is_bit_stable_on_repeat() {
+        assert_eq!(canonical_convex_hash(), canonical_convex_hash());
+    }
+
+    #[test]
+    fn convex_hash_matches_locked_value() {
+        assert_eq!(canonical_convex_hash(), CANONICAL_CONVEX_HASH);
     }
 }

@@ -106,7 +106,7 @@ fn ray_aabb(origin: Vec3, dir: Vec3, aabb: Aabb, tmin: f64, tmax: f64) -> Option
 fn ray_shape(
     origin: Vec3,
     dir: Vec3,
-    shape: Shape,
+    shape: &Shape,
     x: Vec3,
     q: Quat,
     tmin: f64,
@@ -116,7 +116,7 @@ fn ray_shape(
     match shape {
         Shape::Sphere(s) => ray_sphere(origin, dir, x, s.radius, tmin, tmax),
         Shape::Plane(p) => ray_plane(origin, dir, p.normal, p.offset, tmin, tmax),
-        Shape::Box(_) | Shape::Capsule(_) => {
+        Shape::Box(_) | Shape::Capsule(_) | Shape::Convex(_) | Shape::Rounded(_) => {
             // Conservative AABB hit; normal from AABB face (unverified exact OBB).
             let aabb = shape.aabb(x, &r);
             let t = ray_aabb(origin, dir, aabb, tmin, tmax)?;
@@ -165,7 +165,7 @@ pub(crate) fn raycast(cw: &ContactWorld, origin: Vec3, dir: Vec3, tmax: f64) -> 
         if let Some((t, n)) = ray_shape(
             origin,
             dir,
-            cw.shapes[i],
+            &cw.shapes[i],
             cw.world.state.x[i],
             cw.world.state.q[i],
             0.0,
@@ -175,7 +175,7 @@ pub(crate) fn raycast(cw: &ContactWorld, origin: Vec3, dir: Vec3, tmax: f64) -> 
         }
     }
     for (si, s) in cw.statics.iter().enumerate() {
-        if let Some((t, n)) = ray_shape(origin, dir, s.shape, s.position, s.orientation, 0.0, tmax)
+        if let Some((t, n)) = ray_shape(origin, dir, &s.shape, s.position, s.orientation, 0.0, tmax)
         {
             update(&mut best, cw.world.n + si, t, n);
         }

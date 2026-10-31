@@ -110,8 +110,8 @@ pub(crate) fn shape_from_desc(d: &ShapeDesc) -> Result<Shape, SceneError> {
     })
 }
 
-pub(crate) fn shape_to_desc(s: Shape) -> ShapeDesc {
-    match s {
+pub(crate) fn shape_to_desc(s: &Shape) -> Result<ShapeDesc, SceneError> {
+    Ok(match s {
         Shape::Sphere(sp) => ShapeDesc::Sphere { radius: sp.radius },
         Shape::Box(b) => ShapeDesc::Box {
             half_extents: b.half_extents.to_array(),
@@ -124,7 +124,13 @@ pub(crate) fn shape_to_desc(s: Shape) -> ShapeDesc {
             normal: p.normal.to_array(),
             offset: p.offset,
         },
-    }
+        // M6 convex/rounded assets stay out of schema v1 (see docs/SCENE.md).
+        Shape::Convex(_) | Shape::Rounded(_) => {
+            return Err(SceneError::Invalid {
+                detail: "convex/rounded shapes are not in scene schema v1".into(),
+            });
+        }
+    })
 }
 
 pub(crate) fn material_from_desc(m: &MaterialDesc) -> Material {
@@ -147,13 +153,13 @@ pub(crate) fn static_from_desc(d: &StaticDesc) -> Result<StaticCollider, SceneEr
     })
 }
 
-pub(crate) fn static_to_desc(s: &StaticCollider) -> StaticDesc {
-    StaticDesc {
-        shape: shape_to_desc(s.shape),
+pub(crate) fn static_to_desc(s: &StaticCollider) -> Result<StaticDesc, SceneError> {
+    Ok(StaticDesc {
+        shape: shape_to_desc(&s.shape)?,
         position: s.position.to_array(),
         orientation: s.orientation.to_array(),
         material: material_to_desc(s.material),
-    }
+    })
 }
 
 /// Build a boxed force generator from a serializable descriptor.

@@ -2,16 +2,18 @@
 //! meaning penetration [m].
 //!
 //! [`NarrowPhase`] is the extension hook for GJK/EPA or SAT-with-feature-caching;
-//! [`DedicatedNarrowPhase`] ports the Python dedicated primitive pairs.
+//! [`DedicatedNarrowPhase`] ports the Python dedicated primitive pairs and routes
+//! general convex pairs through GJK/EPA (`convex_manifold`).
 
 use pe_math::libm_ops::fabs;
 use pe_math::{Quat, Vec3};
 
+use crate::convex_manifold::{capsule_box, capsule_capsule_manifold, convex_convex_contacts};
 use crate::manifold::{Contact, FeatureId};
 use crate::shapes::{clamp, col, sign_np, support_extent, BoxShape, Capsule, Plane, Shape};
 
 /// Pose of a collider in world frame.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct ColliderPose {
     /// Shape.
     pub shape: Shape,
@@ -50,10 +52,10 @@ pub struct DedicatedNarrowPhase;
 impl NarrowPhase for DedicatedNarrowPhase {
     fn collide(&self, a: &ColliderPose, b: &ColliderPose) -> Vec<Contact> {
         collide(
-            a.shape,
+            &a.shape,
             a.position,
             &a.rotation,
-            b.shape,
+            &b.shape,
             b.position,
             &b.rotation,
         )
@@ -476,12 +478,15 @@ pub fn box_box(
     keep.into_iter().map(|i| mk(pts[i], n, deps[i])).collect()
 }
 
-/// Dispatch on shape types; normal always A→B. Capsule–box is not implemented.
+/// Dispatch on shape types; normal always A→B.
+///
+/// Capsule–box and general convex pairs use GJK/EPA manifolds (M6). Existing
+/// dedicated sphere/box/capsule/plane pairs are unchanged for hash stability.
 pub fn collide(
-    sa: Shape,
+    sa: &Shape,
     xa: Vec3,
     ra: &[[f64; 3]; 3],
-    sb: Shape,
+    sb: &Shape,
     xb: Vec3,
     rb: &[[f64; 3]; 3],
 ) -> Vec<Contact> {
@@ -493,23 +498,35 @@ pub fn collide(
     }
     match (sa, sb) {
         (Shape::Sphere(a), Shape::Sphere(b)) => sphere_sphere(xa, a.radius, xb, b.radius),
-        (Shape::Sphere(a), Shape::Capsule(b)) => capsule_sphere(xb, rb, b, xa, a.radius)
+        (Shape::Sphere(a), Shape::Capsule(b)) => capsule_sphere(xb, rb, *b, xa, a.radius)
             .into_iter()
             .map(Contact::flipped)
             .collect(),
-        (Shape::Sphere(a), Shape::Box(b)) => sphere_box(xa, a.radius, xb, rb, b),
-        (Shape::Sphere(a), Shape::Plane(b)) => sphere_plane(xa, a.radius, b),
-        (Shape::Capsule(a), Shape::Capsule(b)) => capsule_capsule(xa, ra, a, xb, rb, b),
-        (Shape::Capsule(a), Shape::Plane(b)) => capsule_plane(xa, ra, a, b),
-        (Shape::Capsule(_), Shape::Box(_)) => {
-            panic!("capsule-box collision is not implemented");
-        }
-        (Shape::Box(a), Shape::Box(b)) => box_box(xa, ra, a, xb, rb, b),
-        (Shape::Box(a), Shape::Plane(b)) => box_plane(xa, ra, a, b),
+        (Shape::Sphere(a), Shape::Box(b)) => sphere_box(xa, a.radius, xb, rb, *b),
+        (Shape::Sphere(a), Shape::Plane(b)) => sphere_plane(xa, a.radius, *b),
+        (Shape::Capsule(a), Shape::Capsule(b)) => capsule_capsule_manifold(xa, ra, *a, xb, rb, *b),
+        (Shape::Capsule(a), Shape::Plane(b)) => capsule_plane(xa, ra, *a, *b),
+        (Shape::Capsule(a), Shape::Box(b)) => capsule_box(xa, ra, *a, xb, rb, *b),
+        (Shape::Box(a), Shape::Box(b)) => box_box(xa, ra, *a, xb, rb, *b),
+        (Shape::Box(a), Shape::Plane(b)) => box_plane(xa, ra, *a, *b),
         (Shape::Plane(_), Shape::Plane(_)) => Vec::new(),
-        // Remaining orderings are handled by the swap above.
-        _ => unreachable!("shape order swap should have handled this pair"),
+        (Shape::Plane(p), other) => plane_vs_convex(*p, other, xb, rb),
+        // Any remaining pair involves Convex / Rounded (possibly vs primitives).
+        _ => convex_convex_contacts(sa, xa, ra, sb, xb, rb),
     }
+}
+
+fn plane_vs_convex(plane: Plane, shape: &Shape, x: Vec3, r: &[[f64; 3]; 3]) -> Vec<Contact> {
+    use crate::support::support_world;
+    // Plane is A, shape is B. Outward plane normal `n` points A→B when the
+    // solid is behind the plane (same convention as flipping sphere–plane).
+    let n = plane.n();
+    let p = support_world(shape, x, r, -n);
+    let dist = n.dot(p) - plane.offset;
+    if dist >= 0.0 {
+        return Vec::new();
+    }
+    vec![Contact::new(p - n * (0.5 * dist), n, -dist)]
 }
 
 /// Assign sequential feature ids within a contact list (warm-start key component).
@@ -539,10 +556,10 @@ mod tests {
     #[test]
     fn sphere_sphere_depth_and_normal() {
         let c = collide(
-            Shape::Sphere(Sphere::new(1.0)),
+            &Shape::Sphere(Sphere::new(1.0)),
             Vec3::zero(),
             &eye(),
-            Shape::Sphere(Sphere::new(0.5)),
+            &Shape::Sphere(Sphere::new(0.5)),
             Vec3::new(1.2, 0.0, 0.0),
             &eye(),
         );
@@ -550,10 +567,10 @@ mod tests {
         assert_abs_diff_eq!(c[0].depth, 0.3, epsilon = 1e-15);
         assert_abs_diff_eq!(c[0].normal.x, 1.0, epsilon = 1e-15);
         assert!(collide(
-            Shape::Sphere(Sphere::new(1.0)),
+            &Shape::Sphere(Sphere::new(1.0)),
             Vec3::zero(),
             &eye(),
-            Shape::Sphere(Sphere::new(0.5)),
+            &Shape::Sphere(Sphere::new(0.5)),
             Vec3::new(1.51, 0.0, 0.0),
             &eye(),
         )
@@ -564,20 +581,20 @@ mod tests {
     fn sphere_plane_and_symmetry() {
         let pl = Plane::new(Vec3::unit_z(), 0.0);
         let c = collide(
-            Shape::Sphere(Sphere::new(0.5)),
+            &Shape::Sphere(Sphere::new(0.5)),
             Vec3::new(0.0, 0.0, 0.4),
             &eye(),
-            Shape::Plane(pl),
+            &Shape::Plane(pl),
             Vec3::zero(),
             &eye(),
         );
         assert_abs_diff_eq!(c[0].depth, 0.1, epsilon = 1e-15);
         assert_abs_diff_eq!(c[0].normal.z, -1.0, epsilon = 1e-15);
         let c2 = collide(
-            Shape::Plane(pl),
+            &Shape::Plane(pl),
             Vec3::zero(),
             &eye(),
-            Shape::Sphere(Sphere::new(0.5)),
+            &Shape::Sphere(Sphere::new(0.5)),
             Vec3::new(0.0, 0.0, 0.4),
             &eye(),
         );
@@ -588,10 +605,10 @@ mod tests {
     fn box_plane_four_corners_and_tilted() {
         let pl = Plane::new(Vec3::unit_z(), 0.0);
         let c = collide(
-            Shape::Box(BoxShape::new(1.0, 1.0, 1.0)),
+            &Shape::Box(BoxShape::new(1.0, 1.0, 1.0)),
             Vec3::new(0.0, 0.0, 0.99),
             &eye(),
-            Shape::Plane(pl),
+            &Shape::Plane(pl),
             Vec3::zero(),
             &eye(),
         );
@@ -601,10 +618,10 @@ mod tests {
         }
         let r = rot(Vec3::unit_y(), PI / 4.0);
         let c = collide(
-            Shape::Box(BoxShape::new(1.0, 1.0, 1.0)),
+            &Shape::Box(BoxShape::new(1.0, 1.0, 1.0)),
             Vec3::new(0.0, 0.0, 1.4),
             &r,
-            Shape::Plane(pl),
+            &Shape::Plane(pl),
             Vec3::zero(),
             &eye(),
         );
@@ -617,10 +634,10 @@ mod tests {
         let b = BoxShape::new(1.0, 1.0, 1.0);
         let x = Vec3::new(1.3, 1.3, 0.0);
         let c = collide(
-            Shape::Sphere(Sphere::new(0.5)),
+            &Shape::Sphere(Sphere::new(0.5)),
             x,
             &eye(),
-            Shape::Box(b),
+            &Shape::Box(b),
             Vec3::zero(),
             &eye(),
         );
@@ -629,20 +646,20 @@ mod tests {
         assert_abs_diff_eq!(c[0].normal.x, n_exp.x, epsilon = 1e-12);
         assert_abs_diff_eq!(c[0].normal.y, n_exp.y, epsilon = 1e-12);
         let c = collide(
-            Shape::Sphere(Sphere::new(0.2)),
+            &Shape::Sphere(Sphere::new(0.2)),
             Vec3::new(0.9, 0.0, 0.0),
             &eye(),
-            Shape::Box(b),
+            &Shape::Box(b),
             Vec3::zero(),
             &eye(),
         );
         assert_abs_diff_eq!(c[0].depth, 0.3, epsilon = 1e-12);
         assert_abs_diff_eq!(c[0].normal.x, -1.0, epsilon = 1e-12);
         assert!(collide(
-            Shape::Sphere(Sphere::new(0.2)),
+            &Shape::Sphere(Sphere::new(0.2)),
             Vec3::new(1.3, 0.0, 0.0),
             &eye(),
-            Shape::Box(b),
+            &Shape::Box(b),
             Vec3::zero(),
             &eye(),
         )
@@ -654,10 +671,10 @@ mod tests {
         let a = BoxShape::new(1.0, 1.0, 1.0);
         let b = BoxShape::new(0.5, 0.5, 0.5);
         let c = collide(
-            Shape::Box(a),
+            &Shape::Box(a),
             Vec3::zero(),
             &eye(),
-            Shape::Box(b),
+            &Shape::Box(b),
             Vec3::new(0.2, 0.1, 1.45),
             &rot(Vec3::unit_z(), 0.3),
         );
@@ -675,10 +692,10 @@ mod tests {
     fn box_box_offset_manifold_is_clipped() {
         let a = BoxShape::new(1.0, 1.0, 1.0);
         let c = collide(
-            Shape::Box(a),
+            &Shape::Box(a),
             Vec3::zero(),
             &eye(),
-            Shape::Box(a),
+            &Shape::Box(a),
             Vec3::new(1.5, 0.0, 1.9),
             &eye(),
         );
@@ -699,10 +716,10 @@ mod tests {
         let rb = rot(Vec3::unit_y(), FRAC_PI_4);
         let h = 2.0 * 2.0_f64.sqrt() - 0.1;
         let c = collide(
-            Shape::Box(a),
+            &Shape::Box(a),
             Vec3::zero(),
             &ra,
-            Shape::Box(a),
+            &Shape::Box(a),
             Vec3::new(0.0, 0.0, h),
             &rb,
         );
@@ -720,10 +737,10 @@ mod tests {
         let ra = rot(Vec3::unit_x(), FRAC_PI_4);
         let rb = rot(Vec3::unit_y(), FRAC_PI_4);
         assert!(collide(
-            Shape::Box(a),
+            &Shape::Box(a),
             Vec3::zero(),
             &ra,
-            Shape::Box(a),
+            &Shape::Box(a),
             Vec3::new(0.0, 0.0, 2.0 * 2.0_f64.sqrt() + 0.01),
             &rb,
         )
@@ -735,10 +752,10 @@ mod tests {
         let cap = Capsule::new(0.2, 0.5);
         let r = rot(Vec3::unit_y(), FRAC_PI_2);
         let c = collide(
-            Shape::Capsule(cap),
+            &Shape::Capsule(cap),
             Vec3::new(0.0, 0.0, 0.19),
             &r,
-            Shape::Plane(Plane::new(Vec3::unit_z(), 0.0)),
+            &Shape::Plane(Plane::new(Vec3::unit_z(), 0.0)),
             Vec3::zero(),
             &eye(),
         );
@@ -747,19 +764,19 @@ mod tests {
             assert_abs_diff_eq!(k.depth, 0.01, epsilon = 1e-12);
         }
         let c = collide(
-            Shape::Capsule(cap),
+            &Shape::Capsule(cap),
             Vec3::zero(),
             &r,
-            Shape::Sphere(Sphere::new(0.3)),
+            &Shape::Sphere(Sphere::new(0.3)),
             Vec3::new(0.3, 0.0, 0.45),
             &eye(),
         );
         assert_abs_diff_eq!(c[0].depth, 0.05, epsilon = 1e-12);
         let c = collide(
-            Shape::Capsule(cap),
+            &Shape::Capsule(cap),
             Vec3::zero(),
             &r,
-            Shape::Capsule(cap),
+            &Shape::Capsule(cap),
             Vec3::new(0.1, 0.0, 0.85),
             &eye(),
         );
@@ -780,8 +797,8 @@ mod tests {
             let sb = Shape::Sphere(Sphere::new(rb));
             let xa = Vec3::new(ax, ay, az);
             let xb = Vec3::new(bx, by, bz);
-            let ab = collide(sa, xa, &eye(), sb, xb, &eye());
-            let ba = collide(sb, xb, &eye(), sa, xa, &eye());
+            let ab = collide(&sa, xa, &eye(), &sb, xb, &eye());
+            let ba = collide(&sb, xb, &eye(), &sa, xa, &eye());
             prop_assert_eq!(ab.len(), ba.len());
             for (a, b) in ab.iter().zip(ba.iter()) {
                 prop_assert!((a.depth - b.depth).abs() < 1e-12);
@@ -802,10 +819,10 @@ mod tests {
             let pl = Plane::new(Vec3::unit_z(), 0.0);
             let r = rot(Vec3::new(1.0, 0.2, 0.0).normalize(), ang);
             let c = collide(
-                Shape::Box(BoxShape::new(0.3, 0.3, 0.3)),
+                &Shape::Box(BoxShape::new(0.3, 0.3, 0.3)),
                 Vec3::new(0.0, 0.0, zx),
                 &r,
-                Shape::Plane(pl),
+                &Shape::Plane(pl),
                 Vec3::zero(),
                 &eye(),
             );

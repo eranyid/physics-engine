@@ -12,9 +12,9 @@ mod space;
 
 use numpy::{PyArray1, PyArray2, PyArrayMethods};
 use pe_collision::{
-    BoxShape, BroadPhaseKind, Capsule, CcdParams, ContactWorld, Joint, JointBreak, JointLimit,
-    JointMotor, JointSoftParams, Material, Plane, Shape, SoftStepParams, SolverMode, Sphere,
-    StaticCollider, WORLD_BODY,
+    BoxShape, BroadPhaseKind, Capsule, CcdParams, ContactWorld, ConvexHull, Joint, JointBreak,
+    JointLimit, JointMotor, JointSoftParams, Material, Plane, RoundedShape, Shape, SoftStepParams,
+    SolverMode, Sphere, StaticCollider, WORLD_BODY,
 };
 use pe_core::diagnostics::{
     angular_momentum as ang_mom, kinetic_energy, linear_momentum, potential_energy, state_hash64,
@@ -522,6 +522,12 @@ fn canonical_joints_hash() -> u64 {
     pe_collision::canonical_joints_hash()
 }
 
+/// Canonical M6 convex hash (hull + capsule + rounded vs static box).
+#[pyfunction]
+fn canonical_convex_hash() -> u64 {
+    pe_collision::canonical_convex_hash()
+}
+
 // --- Stage 2 shapes / contact ------------------------------------------------
 
 /// Sphere shape [m].
@@ -656,6 +662,90 @@ impl PyMaterial {
     }
 }
 
+/// Convex polyhedron from points (body frame), optional Minkowski radius [m].
+#[pyclass(name = "ConvexHull", module = "physics_engine_rs")]
+#[derive(Clone)]
+struct PyConvexHull {
+    inner: ConvexHull,
+}
+
+#[pymethods]
+impl PyConvexHull {
+    #[new]
+    #[pyo3(signature = (points, radius=0.0))]
+    fn new(points: &Bound<'_, PyAny>, radius: f64) -> PyResult<Self> {
+        let raw: Vec<Vec<f64>> = points.extract()?;
+        let mut pts = Vec::with_capacity(raw.len());
+        for p in raw {
+            if p.len() != 3 {
+                return Err(PyValueError::new_err("each point must be [x,y,z]"));
+            }
+            pts.push(Vec3::new(p[0], p[1], p[2]));
+        }
+        let h = ConvexHull::from_points_with_radius(&pts, radius)
+            .map_err(|e| PyValueError::new_err(format!("convex hull failed: {e:?}")))?;
+        Ok(Self { inner: h })
+    }
+
+    #[staticmethod]
+    #[pyo3(signature = (hx, hy, hz, radius=0.0))]
+    fn from_box(hx: f64, hy: f64, hz: f64, radius: f64) -> PyResult<Self> {
+        let h = ConvexHull::from_box(hx, hy, hz, radius)
+            .map_err(|e| PyValueError::new_err(format!("convex hull failed: {e:?}")))?;
+        Ok(Self { inner: h })
+    }
+
+    fn volume(&self) -> f64 {
+        self.inner.volume()
+    }
+
+    fn validate(&self) -> PyResult<()> {
+        self.inner
+            .validate()
+            .map_err(|e| PyValueError::new_err(format!("invalid hull: {e:?}")))
+    }
+
+    #[getter]
+    fn n_vertices(&self) -> usize {
+        self.inner.vertices.len()
+    }
+
+    #[getter]
+    fn n_faces(&self) -> usize {
+        self.inner.faces.len()
+    }
+
+    #[getter]
+    fn radius(&self) -> f64 {
+        self.inner.radius
+    }
+}
+
+/// Minkowski sum of an inner shape with a sphere of `radius` [m].
+#[pyclass(name = "Rounded", module = "physics_engine_rs")]
+#[derive(Clone)]
+struct PyRounded {
+    inner: RoundedShape,
+}
+
+#[pymethods]
+impl PyRounded {
+    #[new]
+    fn new(inner: &Bound<'_, PyAny>, radius: f64) -> PyResult<Self> {
+        if radius < 0.0 {
+            return Err(PyValueError::new_err("radius must be >= 0"));
+        }
+        Ok(Self {
+            inner: RoundedShape::new(shape_from_py(inner)?, radius),
+        })
+    }
+
+    #[getter]
+    fn radius(&self) -> f64 {
+        self.inner.radius
+    }
+}
+
 fn shape_from_py(obj: &Bound<'_, PyAny>) -> PyResult<Shape> {
     if let Ok(s) = obj.extract::<PyRef<PySphere>>() {
         return Ok(Shape::Sphere(s.inner));
@@ -669,8 +759,14 @@ fn shape_from_py(obj: &Bound<'_, PyAny>) -> PyResult<Shape> {
     if let Ok(s) = obj.extract::<PyRef<PyPlane>>() {
         return Ok(Shape::Plane(s.inner));
     }
+    if let Ok(s) = obj.extract::<PyRef<PyConvexHull>>() {
+        return Ok(Shape::Convex(s.inner.clone()));
+    }
+    if let Ok(s) = obj.extract::<PyRef<PyRounded>>() {
+        return Ok(Shape::Rounded(s.inner.clone()));
+    }
     Err(PyTypeError::new_err(
-        "shape must be Sphere|Box|Capsule|Plane",
+        "shape must be Sphere|Box|Capsule|Plane|ConvexHull|Rounded",
     ))
 }
 
@@ -1053,6 +1149,8 @@ fn physics_engine_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyBox>()?;
     m.add_class::<PyCapsule>()?;
     m.add_class::<PyPlane>()?;
+    m.add_class::<PyConvexHull>()?;
+    m.add_class::<PyRounded>()?;
     m.add_class::<PyMaterial>()?;
     m.add_class::<PyStaticCollider>()?;
     m.add_class::<PyContactWorld>()?;
@@ -1063,6 +1161,7 @@ fn physics_engine_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(canonical_collision_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_soft_step_collision_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_joints_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(canonical_convex_hash, m)?)?;
     aero_hydro::register(m)?;
     space::register(m)?;
     blast_ballistics::register(m)?;

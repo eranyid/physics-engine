@@ -215,7 +215,7 @@ ported early because the Python oracle already exists.
 | **M3** | Port stage 2 | Contacts/friction/stacks cross-validated; missing narrow pairs tracked; SAP≡brute in Rust | **done** |
 | **M4** | Port stage 3 | ISA/aero/hydro parity with Python suite | **done** (this PR) |
 | **M5** | Joints + islands + sleep | Pendulum/motor tests; large resting scene sleeps; Python may gain thin joint oracle or shared fixtures | **M5a done**; **M5b done** (joints + speculative/TOI CCD; convex GJK remains M6) |
-| **M6** | CCD + convex | TOI tests (no tunnel at configured speeds); GJK/EPA convex; capsule–box | **partial** (M5b speculative + bullet TOI vs static); GJK/EPA + capsule–box remain |
+| **M6** | CCD + convex | TOI tests (no tunnel at configured speeds); GJK/EPA convex; capsule–box | **done** (GJK/EPA, hulls, capsule–box, convex CA CCD; see `docs/COLLISION.md`) |
 | **M7** | Space module | Kepler + n-body conservation suite in Rust (+ Python helpers as needed) | **done** (this PR) |
 | **M8** | Scene I/O + C ABI | Round-trip serialization; `pe-ffi` headers; smoke GDExtension optional | **done** (pe-scene + pe-ffi + godot/; soft-body track also shipped as **M8 soft** / `pe-soft`) |
 | **M9** | Waves / hydrodynamics v1 | Airy + Stokes/Gerstner/spectra + buoyancy coupling (Morison later) | **done** (Morison deferred) |
@@ -265,7 +265,9 @@ ported early because the Python oracle already exists.
   (analytic sphere–plane; support binary search for box/capsule). No tunnel at 1000 m/s vs
   plane at 60 Hz (tested).
 - Docs: [`docs/JOINTS.md`](JOINTS.md). Determinism: joints double-pendulum hash CI.
-- **Deferred:** full convex–convex GJK CCD, capsule–box, gear/pulley, hard XPBD joints.
+- **Deferred (M5b):** gear/pulley, hard XPBD joints.
+- **M6 done:** GJK/EPA, convex hulls, capsule–box, convex–convex CA CCD
+  (`docs/COLLISION.md`). Remaining CCD gap: angular CA bounds.
 
 ### M4 as built (summary)
 
