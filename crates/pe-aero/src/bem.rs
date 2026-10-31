@@ -250,12 +250,9 @@ impl BemRotor {
     pub fn evaluate(&self, omega: f64, v_inf: f64, rho: f64) -> BemResult {
         assert!(omega > 0.0 && rho > 0.0);
         let n = self.geom.stations.len();
-        // Seed near freestream / mild hover guess (caller twist often assumes a design vi).
-        let v_seed = if libm_ops::fabs(v_inf) > 1e-6 {
-            libm_ops::fabs(v_inf) * 0.1
-        } else {
-            1.0
-        };
+        // Mild positive seed (hover / climb). Keep fixed so the locked M11 hash
+        // stays bit-stable across solver refactors; ideal oracles still converge.
+        let v_seed = libm_ops::fabs(v_inf).max(1.0) * 0.05;
         let mut vi = vec![v_seed; n];
         let mut drs = vec![0.0; n];
         for i in 0..n {
