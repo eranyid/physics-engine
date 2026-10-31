@@ -167,3 +167,16 @@ jobs:
             echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
             exit 1
           fi
+
+      - name: Compute canonical wave-body hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-hydro --bin wave_body_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical wave-body hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=3f1f6102a4606fbe
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::Wave-body determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi

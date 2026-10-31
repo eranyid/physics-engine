@@ -9,9 +9,11 @@
 
 pub mod libm_ops;
 pub mod quat;
+pub mod rng;
 pub mod units;
 pub mod vec3;
 
 pub use quat::Quat;
+pub use rng::Xoshiro256StarStar;
 pub use units::{G, STANDARD_GRAVITY};
 pub use vec3::Vec3;
