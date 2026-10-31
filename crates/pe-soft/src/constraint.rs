@@ -510,14 +510,17 @@ pub fn project_tetra_fem(particles: &mut [Particle], c: &mut TetraFemConstraint,
             dt,
         );
     } else {
-        // StVK-like: C_green ≈ ½(I_C − 3), compliance from μ
+        // StVK-like small-strain match:
+        // C = ½(I_C − 3) ≈ ε_axial for uniaxial stretch; ∇C = ½ ∇I_C.
+        // Energy U = C²/(2α). For ν=0, μ=E/2 and continuum U=½ E V ε² ⇒ α = 1/(E V) = 1/(2μ V).
         let c_dev = 0.5 * (i_c - 3.0);
         let alpha_dev = if c.lame_mu > 0.0 && c.rest_volume > 0.0 {
-            1.0 / (c.lame_mu * c.rest_volume)
+            1.0 / (2.0 * c.lame_mu * c.rest_volume)
         } else {
             0.0
         };
-        let grads = fem_dev_grads(particles, c.indices, &c.dm_inv, &f, 1.0);
+        // scale=0.5 ⇒ fem_dev_grads returns ∂I_C/∂x * 0.5 = ∇C
+        let grads = fem_dev_grads(particles, c.indices, &c.dm_inv, &f, 0.5);
         solve_equality(
             particles,
             &c.indices,
@@ -530,6 +533,8 @@ pub fn project_tetra_fem(particles: &mut [Particle], c: &mut TetraFemConstraint,
         let f2 = deformation_gradient(particles, c.indices, &c.dm_inv);
         let j2 = det3(&f2);
         let c_vol = j2 - 1.0;
+        // Volumetric: U ≈ ½ K V (J−1)² with K = λ + 2μ/3 ≈ λ when λ ≫ μ;
+        // use α = 1/(λ V) as a first-order XPBD match (exact K deferred).
         let alpha_vol = if c.lame_lambda > 0.0 && c.rest_volume > 0.0 {
             1.0 / (c.lame_lambda * c.rest_volume)
         } else {

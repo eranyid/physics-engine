@@ -109,13 +109,14 @@ impl SoftWorld {
     fn substep(&mut self, h: f64) {
         let g = self.params.gravity;
         let damp = self.params.damping;
-        // Predict
+        // Predict: v ← v + h (g + F_ext/m), x ← x + h v
         for p in &mut self.particles {
             p.x_prev = p.x;
             if p.inv_mass == 0.0 {
                 continue;
             }
-            p.v += g * h;
+            let a = g + p.ext_force * p.inv_mass;
+            p.v += a * h;
             if damp > 0.0 {
                 p.v *= 1.0 / (1.0 + damp * h);
             }

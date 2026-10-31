@@ -13,6 +13,10 @@ pub struct Particle {
     pub x_prev: Vec3,
     /// Inverse mass [1/kg]; 0 = infinite mass (pinned).
     pub inv_mass: f64,
+    /// Persistent external force [N] applied during XPBD prediction (`a += F/m`).
+    ///
+    /// Not cleared automatically — callers set / clear as needed for quasistatic loads.
+    pub ext_force: Vec3,
 }
 
 impl Particle {
@@ -24,6 +28,7 @@ impl Particle {
             v: Vec3::zero(),
             x_prev: x,
             inv_mass: inv,
+            ext_force: Vec3::zero(),
         }
     }
 
@@ -34,6 +39,7 @@ impl Particle {
             v: Vec3::zero(),
             x_prev: x,
             inv_mass: 0.0,
+            ext_force: Vec3::zero(),
         }
     }
 

@@ -214,104 +214,153 @@ pub fn make_soft_cube(
     w
 }
 
-/// Single-cell-wide soft bar along +x for axial elongation tests (5 tets per segment).
+/// Axial bar along +x from a structured tet mesh (5 tets per cell).
+///
+/// - Face at `x = 0` is fully pinned (all DOFs) — lateral Poisson contraction is
+///   blocked at the root (Saint-Venant end effect).
+/// - Free face at `x = length` receives a distributed axial load in tests.
+/// - **No** edge-spring overlay (earlier double-counting with FEM made the bar too stiff).
+///
+/// `n_x`, `n_y`, `n_z` are cell counts along each axis (≥ 1).
 pub fn make_axial_bar_tets(
     length: f64,
     area_side: f64,
     n_seg: usize,
     material: &Material,
 ) -> SoftWorld {
-    let n_seg = n_seg.max(1);
+    make_axial_bar_grid(length, area_side, area_side, n_seg, 1, 1, material)
+}
+
+/// Structured rectangular bar with independent cell counts (`n_x`, `n_y`, `n_z`).
+pub fn make_axial_bar_grid(
+    length: f64,
+    width: f64,
+    height: f64,
+    n_x: usize,
+    n_y: usize,
+    n_z: usize,
+    material: &Material,
+) -> SoftWorld {
+    let n_x = n_x.max(1);
+    let n_y = n_y.max(1);
+    let n_z = n_z.max(1);
     let mut w = SoftWorld::new();
     w.params.substeps = 50;
+    w.params.iterations = 2;
     w.params.gravity = Vec3::zero();
-    let n = n_seg + 1;
-    let dx = length / n_seg as f64;
-    let hy = area_side;
-    let hz = area_side;
-    let vol = length * hy * hz;
-    let mass = material.density * vol;
-    let dm = mass / (n * 4) as f64;
 
-    let mut rings: Vec<[usize; 4]> = Vec::new();
-    for i in 0..n {
-        let x = i as f64 * dx;
-        let a = w.add_particle(Particle::dynamic(Vec3::new(x, 0.0, 0.0), dm));
-        let b = w.add_particle(Particle::dynamic(Vec3::new(x, hy, 0.0), dm));
-        let c = w.add_particle(Particle::dynamic(Vec3::new(x, hy, hz), dm));
-        let d = w.add_particle(Particle::dynamic(Vec3::new(x, 0.0, hz), dm));
-        rings.push([a, b, c, d]);
+    let nx = n_x + 1;
+    let ny = n_y + 1;
+    let nz = n_z + 1;
+    let dx = length / n_x as f64;
+    let dy = width / n_y as f64;
+    let dz = height / n_z as f64;
+    let vol = length * width * height;
+    let mass = material.density * vol;
+    let dm = mass / (nx * ny * nz) as f64;
+
+    let idx = |i: usize, j: usize, k: usize| -> usize { (k * ny + j) * nx + i };
+    for k in 0..nz {
+        for j in 0..ny {
+            for i in 0..nx {
+                let x = Vec3::new(i as f64 * dx, j as f64 * dy, k as f64 * dz);
+                w.add_particle(Particle::dynamic(x, dm));
+            }
+        }
     }
-    for &i in &rings[0] {
-        w.pin(i);
+    // Pin entire root face (blocks lateral Poisson contraction at x=0).
+    for k in 0..nz {
+        for j in 0..ny {
+            w.pin(idx(0, j, k));
+        }
     }
 
     let lambda = lame_lambda(material.youngs_modulus, material.poisson_ratio).unwrap_or(0.0);
     let mu = lame_mu(material.youngs_modulus, material.poisson_ratio).unwrap_or(0.0);
 
-    for s in 0..n_seg {
-        let r0 = rings[s];
-        let r1 = rings[s + 1];
-        // Consistent 5-tet cube decomposition between rings (p000..p111).
-        let p000 = r0[0];
-        let p010 = r0[1];
-        let p011 = r0[2];
-        let p001 = r0[3];
-        let p100 = r1[0];
-        let p110 = r1[1];
-        let p111 = r1[2];
-        let p101 = r1[3];
-        let tets = [
-            [p000, p100, p010, p001],
-            [p100, p110, p010, p111],
-            [p100, p010, p001, p111],
-            [p010, p001, p011, p111],
-            [p100, p001, p101, p111],
-        ];
-        for tet in tets {
-            // Ensure positive volume by swapping if needed.
-            let mut tet = tet;
-            let v = tetra_volume(
-                w.particles[tet[0]].x,
-                w.particles[tet[1]].x,
-                w.particles[tet[2]].x,
-                w.particles[tet[3]].x,
-            );
-            if v < 0.0 {
-                tet.swap(1, 2);
-            }
-            if let Some((dm_inv, vol)) = tetra_dm_inv(&w.particles, tet) {
-                if vol < 1e-18 {
-                    continue;
+    for k in 0..n_z {
+        for j in 0..n_y {
+            for i in 0..n_x {
+                let p000 = idx(i, j, k);
+                let p100 = idx(i + 1, j, k);
+                let p010 = idx(i, j + 1, k);
+                let p110 = idx(i + 1, j + 1, k);
+                let p001 = idx(i, j, k + 1);
+                let p101 = idx(i + 1, j, k + 1);
+                let p011 = idx(i, j + 1, k + 1);
+                let p111 = idx(i + 1, j + 1, k + 1);
+                let tets = [
+                    [p000, p100, p010, p001],
+                    [p100, p110, p010, p111],
+                    [p100, p010, p001, p111],
+                    [p010, p001, p011, p111],
+                    [p100, p001, p101, p111],
+                ];
+                for mut tet in tets {
+                    let v = tetra_volume(
+                        w.particles[tet[0]].x,
+                        w.particles[tet[1]].x,
+                        w.particles[tet[2]].x,
+                        w.particles[tet[3]].x,
+                    );
+                    if v < 0.0 {
+                        tet.swap(1, 2);
+                    }
+                    if let Some((dm_inv, vol)) = tetra_dm_inv(&w.particles, tet) {
+                        if vol < 1e-18 {
+                            continue;
+                        }
+                        w.constraints.tetra_fem.push(TetraFemConstraint {
+                            indices: tet,
+                            dm_inv,
+                            rest_volume: vol,
+                            lame_lambda: lambda,
+                            lame_mu: mu,
+                            neo_hookean: false,
+                            lambda_dev: Multiplier::default(),
+                            lambda_vol: Multiplier::default(),
+                        });
+                    }
                 }
-                w.constraints.tetra_fem.push(TetraFemConstraint {
-                    indices: tet,
-                    dm_inv,
-                    rest_volume: vol,
-                    lame_lambda: lambda,
-                    lame_mu: mu,
-                    neo_hookean: false,
-                    lambda_dev: Multiplier::default(),
-                    lambda_vol: Multiplier::default(),
-                });
-                // Explicit edge springs along the bar using E A / L segment compliance.
-                // (Supports the axial oracle when FEM projection is coarse.)
             }
         }
-        // Structural distance edges: segment axial stiffness k_seg = E A / dx,
-        // split across the four long edges of the prism (k_edge = k_seg / 4).
-        let k_seg = material.youngs_modulus * (hy * hz) / dx;
-        let k_edge = k_seg / 4.0;
-        let alpha = if k_edge > 0.0 { 1.0 / k_edge } else { 0.0 };
-        for &(i, j) in &[(p000, p100), (p010, p110), (p011, p111), (p001, p101)] {
-            w.constraints.distances.push(DistanceConstraint {
-                i,
-                j,
-                rest_length: dx,
-                compliance: alpha,
-                lambda: Multiplier::default(),
-            });
-        }
+    }
+    w
+}
+
+/// Uniaxial spring-chain bar with XPBD compliance `α = L₀/(E A)` per segment.
+///
+/// Exact continuum mapping for pure uniaxial response (no Poisson / end effects).
+pub fn make_axial_bar_springs(
+    length: f64,
+    area: f64,
+    n_seg: usize,
+    youngs_modulus: f64,
+    mass_total: f64,
+) -> SoftWorld {
+    let n_seg = n_seg.max(1);
+    let mut w = SoftWorld::new();
+    w.params.substeps = 40;
+    w.params.iterations = 2;
+    w.params.gravity = Vec3::zero();
+    let dx = length / n_seg as f64;
+    let n = n_seg + 1;
+    let dm = mass_total / n as f64;
+    // Axial stiffness of one segment: k = E A / dx ⇒ α = dx / (E A).
+    let alpha = dx / (youngs_modulus * area);
+    for i in 0..n {
+        let p = Particle::dynamic(Vec3::new(i as f64 * dx, 0.0, 0.0), dm);
+        w.add_particle(p);
+    }
+    w.pin(0);
+    for i in 0..n_seg {
+        w.constraints.distances.push(DistanceConstraint {
+            i,
+            j: i + 1,
+            rest_length: dx,
+            compliance: alpha,
+            lambda: Multiplier::default(),
+        });
     }
     w
 }
