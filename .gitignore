@@ -5,3 +5,11 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+/target/
+**/*.so
+**/*.dylib
+**/*.pyd
+.cargo/*
+!.cargo/config.toml
+*.whl
+.venv/

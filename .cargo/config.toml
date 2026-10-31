@@ -1,0 +1,3 @@
+# Determinism policy: never enable target-cpu=native or target-feature=+fma here.
+# The step path uses the pure-Rust `libm` crate for elementary functions.
+# See docs/DETERMINISM.md.

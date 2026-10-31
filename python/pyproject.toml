@@ -1,0 +1,23 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "physics_engine_rs"
+version = "0.1.0"
+description = "Rust stage-1 core for physics-engine (PyO3 / abi3)"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+]
+dependencies = ["numpy>=1.24"]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[tool.maturin]
+manifest-path = "Cargo.toml"
+module-name = "physics_engine_rs"
+# abi3 is enabled via pyo3 feature abi3-py310 in Cargo.toml
+bindings = "pyo3"

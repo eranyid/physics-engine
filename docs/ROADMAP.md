@@ -204,20 +204,29 @@ ported early because the Python oracle already exists.
 
 ## 3. Phased milestones (each shippable & testable)
 
-| ID | Milestone | Exit criteria |
-| --- | --- | --- |
-| **M0** | Docs & policy | This roadmap + DESIGN dual-track; `THIRD_PARTY.md` policy; CI still green on Python |
-| **M1** | Rust skeleton | Workspace builds; `pe-math` + empty `World`; maturin hello-world; CI: `cargo test` + pytest |
-| **M2** | Port stage 1 | Rust matches Python oracle on stage-1 analytic tests (tolerances documented); bit-stable deterministic mode |
-| **M3** | Port stage 2 | Contacts/friction/stacks cross-validated; missing narrow pairs tracked; SAP≡brute in Rust |
-| **M4** | Port stage 3 | ISA/aero/hydro parity with Python suite |
-| **M5** | Joints + islands + sleep | Pendulum/motor tests; large resting scene sleeps; Python may gain thin joint oracle or shared fixtures |
-| **M6** | CCD + convex | TOI tests (no tunnel at configured speeds); GJK/EPA convex; capsule–box |
-| **M7** | Space module | Kepler + n-body conservation suite in Rust (+ Python helpers as needed) |
-| **M8** | Scene I/O + C ABI | Round-trip serialization; `pe-ffi` headers; smoke GDExtension optional |
-| **M9** | Waves / hydrodynamics v1 | Airy + Morison validated |
-| **M10** | Materials + soft v1 | Elastic validation; one soft demo with analytic check |
-| **M11** | Fluids / blast v1 | Particle hydrostatic + one blast engineering model vs scaling law |
+| ID | Milestone | Exit criteria | Status |
+| --- | --- | --- | --- |
+| **M0** | Docs & policy | This roadmap + DESIGN dual-track; `THIRD_PARTY.md` policy; CI still green on Python | **done** |
+| **M1** | Rust skeleton | Workspace builds; `pe-math` + `pe-core`; maturin abi3 wheel; CI: `cargo test`/`clippy`/`fmt` + pytest | **done** (this PR) |
+| **M2** | Port stage 1 | Rust matches Python oracle on stage-1 analytic tests (tolerances documented); bit-stable deterministic mode | **done** (this PR) |
+| **M3** | Port stage 2 | Contacts/friction/stacks cross-validated; missing narrow pairs tracked; SAP≡brute in Rust | planned |
+| **M4** | Port stage 3 | ISA/aero/hydro parity with Python suite | planned |
+| **M5** | Joints + islands + sleep | Pendulum/motor tests; large resting scene sleeps; Python may gain thin joint oracle or shared fixtures | planned |
+| **M6** | CCD + convex | TOI tests (no tunnel at configured speeds); GJK/EPA convex; capsule–box | planned |
+| **M7** | Space module | Kepler + n-body conservation suite in Rust (+ Python helpers as needed) | planned |
+| **M8** | Scene I/O + C ABI | Round-trip serialization; `pe-ffi` headers; smoke GDExtension optional | planned |
+| **M9** | Waves / hydrodynamics v1 | Airy + Morison validated | planned |
+| **M10** | Materials + soft v1 | Elastic validation; one soft demo with analytic check | planned |
+| **M11** | Fluids / blast v1 | Particle hydrostatic + one blast engineering model vs scaling law | planned |
+
+### M1–M2 as built (summary)
+
+- Workspace: `crates/pe-math`, `crates/pe-core`, `python/` → `physics_engine_rs` (PyO3 **abi3-py310**).
+- Determinism: pure-Rust `libm`, no `target-cpu=native` / FMA, fixed generator order; cross-OS
+  hash CI on Linux/macOS/Windows (`docs/DETERMINISM.md`).
+- Bindings: GIL released in `step`/`run`; state moved into NumPy via contiguous pack.
+- Tests: Rust analytic suite + Python oracle (`tests/test_oracle_rust.py`); Criterion baselines in
+  `docs/BENCHMARKS.md`. Collision port (M3) not started.
 
 **Rule.** No milestone merges without: (1) analytic or published benchmark tests,
 (2) oracle or cross-impl diff where a Python reference exists, (3) CI green.

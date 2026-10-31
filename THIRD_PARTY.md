@@ -7,7 +7,13 @@ not require an entry; **copied or substantially derived code does**.
 Policy: see [docs/ROADMAP.md](docs/ROADMAP.md) § Reference project survey.
 This project is distributed under the MIT License (`LICENSE`).
 
-## Entries
+Normal Cargo/PyPI dependencies (declared in `Cargo.toml` / `pyproject.toml` and
+fetched by the package manager) are **not** vendored here. Notable intentional
+choice for determinism: the pure-Rust [`libm`](https://crates.io/crates/libm)
+crate (MIT) supplies sin/cos/sqrt/exp on the step path — used as a dependency,
+not copied into this tree.
+
+## Entries (vendored / derived source)
 
 _None yet. No third-party simulation source has been vendored or derived into
-this tree as of the Rust-core roadmap documentation._
+this tree._

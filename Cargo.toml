@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/pe-math",
+    "crates/pe-core",
+    "python",
+]
+default-members = [
+    "crates/pe-math",
+    "crates/pe-core",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/eranyid/physics-engine"
+rust-version = "1.85"
+
+[workspace.dependencies]
+pe-math = { path = "crates/pe-math" }
+pe-core = { path = "crates/pe-core" }
+libm = "0.2"
+approx = "0.5"
+proptest = "1.5"
+criterion = { version = "0.5", features = ["html_reports"] }
+numpy = "0.23"
+# abi3: build once, run on CPython 3.10+
+pyo3 = { version = "0.23", features = ["extension-module", "abi3-py310"] }
