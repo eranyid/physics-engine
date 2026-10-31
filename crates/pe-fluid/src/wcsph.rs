@@ -16,6 +16,7 @@ use crate::eos::{ensure_sound_speed, TaitEos};
 use crate::grid::UniformGrid;
 use crate::kernels::{grad_w, support_radius, w, KernelKind};
 use crate::particles::{ParticleKind, Particles};
+use crate::surface_tension::{surface_tension_accel, SurfaceTensionParams};
 use crate::viscosity::{max_speed, pi_ij, MonaghanViscosity, Xsph};
 
 /// WCSPH simulation parameters.
@@ -33,6 +34,8 @@ pub struct WcsphParams {
     pub gravity: Vec3,
     /// Clamp sound speed with `c ≥ 10 v_max` each step when true.
     pub adapt_sound_speed: bool,
+    /// Optional surface tension (disabled by default).
+    pub surface_tension: SurfaceTensionParams,
 }
 
 impl WcsphParams {
@@ -45,6 +48,7 @@ impl WcsphParams {
             xsph: Xsph::default(),
             gravity,
             adapt_sound_speed: true,
+            surface_tension: SurfaceTensionParams::disabled(),
         }
     }
 }
@@ -62,8 +66,14 @@ pub struct WcsphWorld {
     pub t: f64,
     /// Scratch neighbour list.
     neigh: Vec<usize>,
+    /// Per-particle neighbour lists (for surface tension).
+    neigh_lists: Vec<Vec<usize>>,
     /// Scratch XSPH delta-v.
     xsph_dv: Vec<Vec3>,
+    /// Scratch colour-field normals.
+    normals: Vec<Vec3>,
+    /// Scratch surface-tension accel.
+    st_a: Vec<Vec3>,
 }
 
 impl WcsphWorld {
@@ -71,19 +81,33 @@ impl WcsphWorld {
     pub fn new(particles: Particles, params: WcsphParams) -> Self {
         let support = support_radius(params.density_kernel, particles.h);
         let grid = UniformGrid::new(support, particles.dim);
+        let n = particles.len();
         Self {
             particles,
             grid,
             params,
             t: 0.0,
             neigh: Vec::new(),
+            neigh_lists: vec![Vec::new(); n],
             xsph_dv: Vec::new(),
+            normals: vec![Vec3::zero(); n],
+            st_a: vec![Vec3::zero(); n],
         }
     }
 
     /// Rebuild the neighbour grid from current positions.
     pub fn rebuild_grid(&mut self) {
         self.grid.rebuild(&self.particles.x);
+        let n = self.particles.len();
+        if self.neigh_lists.len() != n {
+            self.neigh_lists.resize(n, Vec::new());
+        }
+        for i in 0..n {
+            self.neigh_lists[i].clear();
+            if self.particles.kind[i] == ParticleKind::Fluid {
+                self.grid.neighbours(i, &mut self.neigh_lists[i]);
+            }
+        }
     }
 
     /// Density summation (fluid + Akinci boundary contribution).
@@ -216,6 +240,26 @@ impl WcsphWorld {
                 }
             }
             self.particles.a[i] += g;
+        }
+
+        // Optional surface tension (Akinci / colour-field).
+        if self.params.surface_tension.sigma != 0.0 {
+            let n = self.particles.len();
+            self.normals.resize(n, Vec3::zero());
+            self.st_a.resize(n, Vec3::zero());
+            surface_tension_accel(
+                &self.particles,
+                &self.neigh_lists,
+                self.params.density_kernel,
+                &self.params.surface_tension,
+                &mut self.normals,
+                &mut self.st_a,
+            );
+            for i in 0..n {
+                if self.particles.kind[i] == ParticleKind::Fluid {
+                    self.particles.a[i] += self.st_a[i];
+                }
+            }
         }
     }
 

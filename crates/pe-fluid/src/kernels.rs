@@ -332,6 +332,311 @@ pub fn gradient_consistency_error(kind: KernelKind, h: f64, dim: Dim, dx: f64) -
     err
 }
 
+/// Kernel correction / renormalisation mode (Bonet–Lok / CSPM family).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum KernelCorrection {
+    /// No correction (default).
+    #[default]
+    None,
+    /// Shepard filter: `W̃ = W / Σ_j V_j W_ij` (zeroth-order / partition of unity).
+    Shepard,
+    /// First-order gradient correction: `∇̃W = L_i ∇W` with
+    /// `L_i = (Σ_j V_j (x_j−x_i) ⊗ ∇_i W)^{−1}` (Bonet–Lok / CSPM).
+    Gradient,
+}
+
+/// Invert a 2×2 matrix stored row-major; returns `None` if singular.
+fn invert2(m: [[f64; 2]; 2]) -> Option<[[f64; 2]; 2]> {
+    let det = m[0][0] * m[1][1] - m[0][1] * m[1][0];
+    if fabs(det) < 1e-18 {
+        return None;
+    }
+    let inv = 1.0 / det;
+    Some([
+        [m[1][1] * inv, -m[0][1] * inv],
+        [-m[1][0] * inv, m[0][0] * inv],
+    ])
+}
+
+/// Invert a 3×3 matrix stored row-major; returns `None` if singular.
+fn invert3(m: [[f64; 3]; 3]) -> Option<[[f64; 3]; 3]> {
+    let a = m[0][0];
+    let b = m[0][1];
+    let c = m[0][2];
+    let d = m[1][0];
+    let e = m[1][1];
+    let f = m[1][2];
+    let g = m[2][0];
+    let h = m[2][1];
+    let i = m[2][2];
+    let det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+    if fabs(det) < 1e-18 {
+        return None;
+    }
+    let inv = 1.0 / det;
+    Some([
+        [
+            (e * i - f * h) * inv,
+            (c * h - b * i) * inv,
+            (b * f - c * e) * inv,
+        ],
+        [
+            (f * g - d * i) * inv,
+            (a * i - c * g) * inv,
+            (c * d - a * f) * inv,
+        ],
+        [
+            (d * h - e * g) * inv,
+            (b * g - a * h) * inv,
+            (a * e - b * d) * inv,
+        ],
+    ])
+}
+
+/// Shepard normalisation factor `Σ_j V_j W_ij` including self (`j=i` term `V_i W(0)`).
+///
+/// On a full lattice this ≈ 1; near free surfaces it drops and the filter restores
+/// partition of unity for density / colour fields.
+pub fn shepard_factor(kind: KernelKind, h: f64, dim: Dim, dx: f64, truncated: bool) -> f64 {
+    let support = support_radius(kind, h);
+    let n = ((support / dx).ceil() as i32) + 1;
+    let vol = match dim {
+        Dim::D2 => dx * dx,
+        Dim::D3 => dx * dx * dx,
+    };
+    let mut sum = vol * w(kind, 0.0, h, dim);
+    for ix in -n..=n {
+        for iy in -n..=n {
+            let jz_range = match dim {
+                Dim::D2 => 0..=0,
+                Dim::D3 => -n..=n,
+            };
+            for iz in jz_range {
+                if ix == 0 && iy == 0 && iz == 0 {
+                    continue;
+                }
+                // Truncated half-space test: drop x < 0 neighbours.
+                if truncated && (ix as f64) * dx < 0.0 {
+                    continue;
+                }
+                let r = sqrt(
+                    (ix as f64 * dx).powi(2) + (iy as f64 * dx).powi(2) + (iz as f64 * dx).powi(2),
+                );
+                if r >= support {
+                    continue;
+                }
+                sum += vol * w(kind, r, h, dim);
+            }
+        }
+    }
+    sum
+}
+
+/// Corrected Shepard kernel value at distance `r` given neighbour sum `sum_vw`.
+#[inline]
+pub fn shepard_w(kind: KernelKind, r: f64, h: f64, dim: Dim, sum_vw: f64) -> f64 {
+    if sum_vw.abs() < 1e-30 {
+        return 0.0;
+    }
+    w(kind, r, h, dim) / sum_vw
+}
+
+/// Gradient-correction matrix `L_i` on a lattice (optionally truncated half-space).
+///
+/// Returns row-major `dim_n × dim_n` embedded in a 3×3 (unused rows/cols zero),
+/// or identity if singular.
+pub fn gradient_correction_matrix(
+    kind: KernelKind,
+    h: f64,
+    dim: Dim,
+    dx: f64,
+    truncated: bool,
+) -> [[f64; 3]; 3] {
+    let support = support_radius(kind, h);
+    let n = ((support / dx).ceil() as i32) + 1;
+    let vol = match dim {
+        Dim::D2 => dx * dx,
+        Dim::D3 => dx * dx * dx,
+    };
+    let mut m = [[0.0f64; 3]; 3];
+    for ix in -n..=n {
+        for iy in -n..=n {
+            let jz_range = match dim {
+                Dim::D2 => 0..=0,
+                Dim::D3 => -n..=n,
+            };
+            for iz in jz_range {
+                if ix == 0 && iy == 0 && iz == 0 {
+                    continue;
+                }
+                if truncated && (ix as f64) * dx < 0.0 {
+                    continue;
+                }
+                let rij = Vec3::new(ix as f64 * dx, iy as f64 * dx, iz as f64 * dx);
+                if rij.norm() >= support {
+                    continue;
+                }
+                let g = grad_w(kind, rij, h, dim);
+                m[0][0] += vol * rij.x * g.x;
+                m[0][1] += vol * rij.x * g.y;
+                m[0][2] += vol * rij.x * g.z;
+                m[1][0] += vol * rij.y * g.x;
+                m[1][1] += vol * rij.y * g.y;
+                m[1][2] += vol * rij.y * g.z;
+                m[2][0] += vol * rij.z * g.x;
+                m[2][1] += vol * rij.z * g.y;
+                m[2][2] += vol * rij.z * g.z;
+            }
+        }
+    }
+    let mut eye = [[0.0f64; 3]; 3];
+    eye[0][0] = 1.0;
+    eye[1][1] = 1.0;
+    eye[2][2] = 1.0;
+    match dim {
+        Dim::D2 => {
+            let a = [[m[0][0], m[0][1]], [m[1][0], m[1][1]]];
+            if let Some(inv) = invert2(a) {
+                eye[0][0] = inv[0][0];
+                eye[0][1] = inv[0][1];
+                eye[1][0] = inv[1][0];
+                eye[1][1] = inv[1][1];
+                eye[2][2] = 1.0;
+            }
+        }
+        Dim::D3 => {
+            if let Some(inv) = invert3(m) {
+                return inv;
+            }
+        }
+    }
+    eye
+}
+
+/// Apply `L · g` for a 3×3 correction matrix.
+#[inline]
+pub fn apply_gradient_correction(l: [[f64; 3]; 3], g: Vec3) -> Vec3 {
+    Vec3::new(
+        l[0][0] * g.x + l[0][1] * g.y + l[0][2] * g.z,
+        l[1][0] * g.x + l[1][1] * g.y + l[1][2] * g.z,
+        l[2][0] * g.x + l[2][1] * g.y + l[2][2] * g.z,
+    )
+}
+
+/// First-order consistency error **after** gradient correction on a (possibly
+/// truncated) lattice. Same metric as [`gradient_consistency_error`].
+pub fn gradient_consistency_error_corrected(
+    kind: KernelKind,
+    h: f64,
+    dim: Dim,
+    dx: f64,
+    truncated: bool,
+) -> f64 {
+    let l = gradient_correction_matrix(kind, h, dim, dx, truncated);
+    let support = support_radius(kind, h);
+    let n = ((support / dx).ceil() as i32) + 1;
+    let vol = match dim {
+        Dim::D2 => dx * dx,
+        Dim::D3 => dx * dx * dx,
+    };
+    let mut m = [[0.0f64; 3]; 3];
+    for ix in -n..=n {
+        for iy in -n..=n {
+            let jz_range = match dim {
+                Dim::D2 => 0..=0,
+                Dim::D3 => -n..=n,
+            };
+            for iz in jz_range {
+                if ix == 0 && iy == 0 && iz == 0 {
+                    continue;
+                }
+                if truncated && (ix as f64) * dx < 0.0 {
+                    continue;
+                }
+                let rij = Vec3::new(ix as f64 * dx, iy as f64 * dx, iz as f64 * dx);
+                if rij.norm() >= support {
+                    continue;
+                }
+                let g = apply_gradient_correction(l, grad_w(kind, rij, h, dim));
+                m[0][0] += vol * rij.x * g.x;
+                m[0][1] += vol * rij.x * g.y;
+                m[0][2] += vol * rij.x * g.z;
+                m[1][0] += vol * rij.y * g.x;
+                m[1][1] += vol * rij.y * g.y;
+                m[1][2] += vol * rij.y * g.z;
+                m[2][0] += vol * rij.z * g.x;
+                m[2][1] += vol * rij.z * g.y;
+                m[2][2] += vol * rij.z * g.z;
+            }
+        }
+    }
+    let dim_n = match dim {
+        Dim::D2 => 2,
+        Dim::D3 => 3,
+    };
+    let mut err: f64 = 0.0;
+    for a in 0..dim_n {
+        for b in 0..dim_n {
+            let target = if a == b { 1.0 } else { 0.0 };
+            err = err.max(fabs(m[a][b] - target));
+        }
+    }
+    err
+}
+
+/// Truncated-neighbourhood (half-space) first-order error **without** correction.
+pub fn gradient_consistency_error_truncated(kind: KernelKind, h: f64, dim: Dim, dx: f64) -> f64 {
+    let support = support_radius(kind, h);
+    let n = ((support / dx).ceil() as i32) + 1;
+    let vol = match dim {
+        Dim::D2 => dx * dx,
+        Dim::D3 => dx * dx * dx,
+    };
+    let mut m = [[0.0f64; 3]; 3];
+    for ix in -n..=n {
+        for iy in -n..=n {
+            let jz_range = match dim {
+                Dim::D2 => 0..=0,
+                Dim::D3 => -n..=n,
+            };
+            for iz in jz_range {
+                if ix == 0 && iy == 0 && iz == 0 {
+                    continue;
+                }
+                if (ix as f64) * dx < 0.0 {
+                    continue;
+                }
+                let rij = Vec3::new(ix as f64 * dx, iy as f64 * dx, iz as f64 * dx);
+                if rij.norm() >= support {
+                    continue;
+                }
+                let g = grad_w(kind, rij, h, dim);
+                m[0][0] += vol * rij.x * g.x;
+                m[0][1] += vol * rij.x * g.y;
+                m[0][2] += vol * rij.x * g.z;
+                m[1][0] += vol * rij.y * g.x;
+                m[1][1] += vol * rij.y * g.y;
+                m[1][2] += vol * rij.y * g.z;
+                m[2][0] += vol * rij.z * g.x;
+                m[2][1] += vol * rij.z * g.y;
+                m[2][2] += vol * rij.z * g.z;
+            }
+        }
+    }
+    let dim_n = match dim {
+        Dim::D2 => 2,
+        Dim::D3 => 3,
+    };
+    let mut err: f64 = 0.0;
+    for a in 0..dim_n {
+        for b in 0..dim_n {
+            let target = if a == b { 1.0 } else { 0.0 };
+            err = err.max(fabs(m[a][b] - target));
+        }
+    }
+    err
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -348,5 +653,17 @@ mod tests {
         assert!(cubic_spline_w(0.0, h, Dim::D3) > 0.0);
         assert!(cubic_spline_w(0.15, h, Dim::D3) > 0.0);
         assert_eq!(cubic_spline_w(0.2, h, Dim::D3), 0.0);
+    }
+
+    #[test]
+    fn gradient_correction_restores_truncated() {
+        let h = 0.12;
+        let dx = h / 6.0;
+        let before = gradient_consistency_error_truncated(KernelKind::CubicSpline, h, Dim::D2, dx);
+        let after =
+            gradient_consistency_error_corrected(KernelKind::CubicSpline, h, Dim::D2, dx, true);
+        assert!(before > 0.05, "truncated should be bad: {before}");
+        assert!(after < before * 0.25, "before={before} after={after}");
+        assert!(after < 0.05, "after={after}");
     }
 }
