@@ -189,7 +189,16 @@ fn solve_rows(
         let d1 = jt[1] - old[1];
         r.jt = jt;
         apply_impulse(
-            r.a, r.b, n, awake, r.ra, r.rb, r.t1 * d0 + r.t2 * d1, v, l, im,
+            r.a,
+            r.b,
+            n,
+            awake,
+            r.ra,
+            r.rb,
+            r.t1 * d0 + r.t2 * d1,
+            v,
+            l,
+            im,
         );
 
         let va = v[r.a] + mat_vec(&iinv[r.a], l[r.a]).cross(r.ra);
@@ -220,8 +229,7 @@ fn solve_rows(
 
         let (soft, bias) = if !use_separation_bias {
             (Softness::HARD, 0.0)
-        } else if (high_ratio || heavy_static || single_static)
-            && r.separation + linear_slop >= 0.0
+        } else if (high_ratio || heavy_static || single_static) && r.separation + linear_slop >= 0.0
         {
             (Softness::HARD, 0.0)
         } else {
@@ -233,8 +241,7 @@ fn solve_rows(
             (soft, b)
         };
 
-        let incremental =
-            -soft.mass_scale * r.kn * (vn + bias) - soft.impulse_scale * r.lam;
+        let incremental = -soft.mass_scale * r.kn * (vn + bias) - soft.impulse_scale * r.lam;
         let new_lam = (r.lam + incremental).max(0.0);
         let applied = new_lam - r.lam;
         r.lam = new_lam;
@@ -459,7 +466,6 @@ pub(crate) fn solve_soft_step(
                 params.max_push_out_speed,
             );
         }
-
     }
 
     // Restitution from pre-solve relative velocity.

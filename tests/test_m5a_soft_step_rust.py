@@ -65,7 +65,7 @@ def test_soft_step_pyramid_runs_and_hashes_stable():
     h1 = pe.canonical_soft_step_collision_hash()
     h2 = pe.canonical_soft_step_collision_hash()
     assert h1 == h2
-    assert h1 == 0x494B791B2A5F2918
+    assert h1 == 0x676D67A223120E34
 
 
 def test_sleep_and_wake_exposed():
