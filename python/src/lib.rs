@@ -1,9 +1,11 @@
-//! PyO3 bindings for stages 1–2 (`physics_engine_rs`).
+//! PyO3 bindings for stages 1–3 (`physics_engine_rs`).
 //!
 //! - Built as **abi3** (CPython 3.10+)
 //! - GIL released during `step` / `run` (including contact steps)
 //! - State export packs into a contiguous `Vec<f64>` then moves into NumPy
 //!   (`PyArray::from_vec`) — one allocation, no second copy
+
+mod aero_hydro;
 
 use numpy::{PyArray1, PyArray2, PyArrayMethods};
 use pe_collision::{
@@ -270,9 +272,11 @@ fn extract_generators(gens: &Bound<'_, PyAny>) -> PyResult<Vec<Box<dyn ForceGene
             out.push(Box::new(g.inner.clone()));
         } else if let Ok(g) = item.extract::<PyRef<PyConstantTorque>>() {
             out.push(Box::new(g.inner.clone()));
+        } else if let Some(g) = aero_hydro::try_extract_generator(&item)? {
+            out.push(g);
         } else {
             return Err(PyTypeError::new_err(
-                "generators must be UniformGravity|NewtonianGravity|LinearDrag|QuadraticDrag|Spring|ConstantTorque",
+                "generators must be UniformGravity|NewtonianGravity|LinearDrag|QuadraticDrag|Spring|ConstantTorque|AircraftAero|FixedThrust|PropellerThrust|JetThrust|Buoyancy|HullDrag",
             ));
         }
     }
@@ -868,6 +872,7 @@ fn physics_engine_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(inertia_solid_cylinder, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_determinism_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_collision_hash, m)?)?;
+    aero_hydro::register(m)?;
     m.add("G", G)?;
     m.add("STANDARD_GRAVITY", STANDARD_GRAVITY)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;

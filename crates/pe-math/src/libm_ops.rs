@@ -63,3 +63,21 @@ pub fn atan2(y: f64, x: f64) -> f64 {
 pub fn copysign(x: f64, y: f64) -> f64 {
     libm::copysign(x, y)
 }
+
+/// `x^y` via pure-Rust libm (used by jet thrust density scaling).
+#[inline]
+pub fn pow(x: f64, y: f64) -> f64 {
+    libm::pow(x, y)
+}
+
+/// asin(x) [rad].
+#[inline]
+pub fn asin(x: f64) -> f64 {
+    libm::asin(x)
+}
+
+/// acos(x) [rad].
+#[inline]
+pub fn acos(x: f64) -> f64 {
+    libm::acos(x)
+}

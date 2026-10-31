@@ -141,3 +141,16 @@ jobs:
             echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
             exit 1
           fi
+
+      - name: Compute canonical stage-3 aero+hydro hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-hydro --bin aero_hydro_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical aero+hydro hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=25ecc6e6a8911d8c
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::Aero/hydro determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi

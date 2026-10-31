@@ -68,6 +68,12 @@ impl Quat {
         )
     }
 
+    /// Conjugate `q*` (inverse for unit quaternions).
+    #[inline]
+    pub fn conjugate(self) -> Self {
+        Self::new(self.w, -self.x, -self.y, -self.z)
+    }
+
     /// Active rotation of a body-frame vector into the world frame: `R(q) v`.
     ///
     /// `q` is assumed unit (or nearly); call [`normalize`](Self::normalize) first if needed.
@@ -79,6 +85,12 @@ impl Quat {
             r[1][0] * v.x + r[1][1] * v.y + r[1][2] * v.z,
             r[2][0] * v.x + r[2][1] * v.y + r[2][2] * v.z,
         )
+    }
+
+    /// World→body: `R(q)ᵀ v` (unit `q`).
+    #[inline]
+    pub fn inverse_rotate(self, v: Vec3) -> Vec3 {
+        self.conjugate().rotate(v)
     }
 
     /// Rotation matrix `R(q)` such that `v_world = R v_body` (row-major 3×3).

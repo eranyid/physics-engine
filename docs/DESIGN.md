@@ -15,25 +15,27 @@ invariants that the Rust port must preserve (units, frames, numerics, test bar).
 
 ## Architecture / module layout
 
-### Dual-track (as of M1–M3)
+### Dual-track (as of M1–M4)
 
 | Track | Role |
 | --- | --- |
 | `src/physics_engine/` (Python) | Reference oracle; analytic tests; slow/energy runs |
-| `crates/pe-math`, `pe-core`, `pe-collision` (Rust) | Stages 1–2 production core; analytic + Criterion |
+| `crates/pe-math`, `pe-core`, `pe-collision`, `pe-aero`, `pe-hydro` (Rust) | Stages 1–3 production core; analytic + Criterion |
 | `python/` → `physics_engine_rs` | PyO3 abi3 wheel; GIL released on step; oracle harness |
 | Godot GDExtension | Later consumer of a stable C/Rust ABI (not started) |
 
 Determinism / oracle tolerances: [DETERMINISM.md](DETERMINISM.md). Baselines:
-[BENCHMARKS.md](BENCHMARKS.md). Stage 3 (aero/hydro) remains Python-only until M4.
+[BENCHMARKS.md](BENCHMARKS.md).
 
-### Rust stages 1–2 (as built)
+### Rust stages 1–3 (as built)
 
 ```
 crates/pe-math/       Vec3, Quat [w,x,y,z], SI constants, portable libm wrappers
 crates/pe-core/       World SoA, forces, integrators, diagnostics, canonical_hash bin
 crates/pe-collision/  shapes, BroadPhase/NarrowPhase traits, ContactWorld, collision_hash bin
-python/               PyO3 module physics_engine_rs (abi3 ≥ 3.10) — World + ContactWorld
+crates/pe-aero/       ISA atmosphere, WingPolar/stall, thrust, AircraftAero
+crates/pe-hydro/      Box/Cylinder/Sphere/Mesh hulls, Buoyancy, GM/GZ, IMO IS Code, aero_hydro_hash
+python/               PyO3 module physics_engine_rs (abi3 ≥ 3.10) — World + ContactWorld + aero/hydro
 ```
 
 Invariants preserved from the Python oracle: SI units; world-frame `L`; quaternion
@@ -41,11 +43,13 @@ body→world; fixed-step Euler / symplectic Euler / velocity Verlet / RK4 with t
 implicit-midpoint rotational drift; force set including springs and constant torque;
 stage-2 sequential impulses with Coulomb friction, restitution threshold, warm start,
 and translational positional correction (β, slop). Pair order sorted by `(min id, max id)`.
+Stage-3 aero/hydro match Python equations and constants (ISA, polar, trim, Archimedes,
+GM/GZ, periods). Extra vs Python: IMO IS Code MSC.267(85) intact-stability checker;
+`SphereHull` closed-form upright buoyancy. At `V → 0`, α/β clamp to 0 (no divide-by-zero);
+Mach ≈ 1 singularities are not modelled (no compressibility).
 
-**Designed for next (not in M3):** `BroadPhase` / `NarrowPhase` traits so a dynamic AABB
-tree and GJK/EPA (or SAT with feature caching) can replace SAP + dedicated pairs;
-`FeatureId` on manifold points for stable warm starting. Soft-step, CCD, joints, and
-islands remain M5+.
+**Designed for next (not in M4):** joints/islands/sleep (M5); CCD + convex/GJK (M6);
+waves / Airy / Morison (M9). Soft-step remains deferred.
 
 ### Python reference (as built)
 

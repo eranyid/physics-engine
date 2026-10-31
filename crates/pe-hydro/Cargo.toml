@@ -1,0 +1,24 @@
+[package]
+name = "pe-hydro"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Ship hydrostatics: buoyancy, GM/GZ, periods, hull drag, IMO IS Code (stage 3)"
+
+[dependencies]
+pe-math = { workspace = true }
+pe-core = { workspace = true }
+pe-aero = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "hydrostatics"
+harness = false
+
+[[bin]]
+name = "aero_hydro_hash"
+path = "src/bin/aero_hydro_hash.rs"

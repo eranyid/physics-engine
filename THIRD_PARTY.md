@@ -17,3 +17,10 @@ not copied into this tree.
 
 _None yet. No third-party simulation source has been vendored or derived into
 this tree._
+
+### M4 note
+
+ISA constants and formulas follow ICAO Doc 7488 / ISO 2533 (public standards);
+IMO IS Code criteria are from MSC.267(85) (regulatory text — criteria encoded as
+pure thresholds, not copied source). Lanchester phugoid and elliptic-wing
+formulas are textbook identities. No third-party simulation code was copied.
