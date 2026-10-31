@@ -26,6 +26,7 @@ pub struct Softness {
 
 impl Softness {
     /// Hard constraint (no spring/damper): `Δλ = −m_eff · v_n`.
+    /// Relax pass: zero bias, mass_scale = 1, impulse_scale = 0.
     pub const HARD: Self = Self {
         bias_rate: 0.0,
         mass_scale: 1.0,
@@ -50,6 +51,8 @@ impl Softness {
     /// mass_scale    = a2 · a3
     /// impulse_scale = a3
     /// ```
+    ///
+    /// `h` must be the **sub-step** size (`dt / substeps`), not the full step `dt`.
     pub fn from_hertz_zeta(hertz: f64, zeta: f64, h: f64) -> Self {
         if hertz <= 0.0 || h <= 0.0 {
             return Self::ZERO;
@@ -79,6 +82,11 @@ pub struct SoftStepParams {
     pub hertz_cap_fraction: f64,
     /// Restitution speed threshold [m/s] for the post-substep bounce pass (default 1).
     pub restitution_threshold: f64,
+    /// Linear slop [m] added to separation before soft bias (default 0.005).
+    /// Penetrations smaller than this are not spring-pushed.
+    pub linear_slop: f64,
+    /// Max contact push-out bias speed [m/s] (default 3). Caps soft Baumgarte.
+    pub max_push_out_speed: f64,
 }
 
 impl Default for SoftStepParams {
@@ -89,6 +97,8 @@ impl Default for SoftStepParams {
             contact_zeta: 10.0,
             hertz_cap_fraction: 0.25,
             restitution_threshold: 1.0,
+            linear_slop: 0.005,
+            max_push_out_speed: 3.0,
         }
     }
 }
@@ -158,7 +168,7 @@ mod tests {
     #[test]
     fn hertz_is_capped_to_fraction_of_substep_rate() {
         let p = SoftStepParams {
-            contact_hertz: 1.0e6,
+            contact_hertz: 30.0e6,
             hertz_cap_fraction: 0.25,
             ..SoftStepParams::default()
         };
@@ -166,5 +176,12 @@ mod tests {
         let soft = p.contact_softness(h);
         let capped = Softness::from_hertz_zeta(0.25 * 240.0, p.contact_zeta, h);
         assert_eq!(soft, capped);
+    }
+
+    #[test]
+    fn default_has_slop_and_push_out() {
+        let p = SoftStepParams::default();
+        assert_relative_eq!(p.linear_slop, 0.005, epsilon = 0.0);
+        assert_relative_eq!(p.max_push_out_speed, 3.0, epsilon = 0.0);
     }
 }

@@ -51,10 +51,14 @@ Tree rebuild-from-scratch is slower than SAP at 1k (query overhead) but wins at 
 | Solver | Max contact depth [m] | Kinetic energy [J] |
 | --- | --- | --- |
 | PGS (20 iter) | ~3.0e-4 | ~4.37 |
-| Soft-step (4 sub, Hertz 30, ζ 10) | ~9.2e-3 | ~10.0 |
+| Soft-step (4 sub, Hertz 30, ζ 10) | ~2.3e-3 | ~4.00 |
 
-Soft-step 1000:1 sphere stack penetration remains ~0.52 m (PGS meets the 5 mm
-oracle). Values are comparative / engineering bounds — not closed-form oracles.
+Soft-step 1000:1 sphere stack penetration ~1.7e-3 m (under 5 mm + 5 mm slop;
+PGS meets the 5 mm oracle). Values are comparative / engineering bounds — not
+closed-form oracles. Soft-step now integrates forces per sub-step with `h`,
+warm-starts each sub-step, and hard-holds high mass-ratio / heavy-static /
+single-body static contacts within linear slop so soft spring equilibrium
+cannot park under a 1000:1 stack.
 
 ## M7 — space (`pe-space`)
 

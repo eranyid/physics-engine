@@ -5,10 +5,15 @@
 //! no Box2D source copied. Attribution: `THIRD_PARTY.md`.
 //!
 //! Per full step of size `dt` with `N` sub-steps (`h = dt/N`):
-//! 1. detect contacts once; store body-local anchors
-//! 2. for each sub-step: (warm-start on first sub-step) → soft PGS solve →
-//!    integrate positions by `h` → one relax pass (hard constraints, no bias)
+//! 1. detect contacts once; store body-local anchors; softness from sub-step `h`
+//! 2. for each sub-step: integrate velocities by `h` (forces/gravity) → warm-start →
+//!    soft PGS (1 iter) → integrate positions by `h` → relax (hard: bias=0,
+//!    mass_scale=1, impulse_scale=0; 2 iters)
 //! 3. restitution pass using pre-solve relative normal velocity (`~1 m/s` threshold)
+//!
+//! Soft bias uses max push-out (~3 m/s). Linear slop (~0.005 m) gates a hard hold
+//! on high mass-ratio / heavy-static / single-body static contacts so soft spring
+//! equilibrium cannot park deep under 1000:1 stacks.
 
 use pe_core::body::mat_vec;
 use pe_core::integrators::drift_rotation;
@@ -162,17 +167,13 @@ fn solve_rows(
     iinv: &[[[f64; 3]; 3]],
     im: &[f64],
     use_separation_bias: bool,
+    linear_slop: f64,
+    max_push_out: f64,
 ) {
     for r in rows.iter_mut() {
-        let soft = if use_separation_bias {
-            row_softness(r, n, soft_dyn, soft_static)
-        } else {
-            Softness::HARD
-        };
         let va = v[r.a] + mat_vec(&iinv[r.a], l[r.a]).cross(r.ra);
         let vb = v[r.b] + mat_vec(&iinv[r.b], l[r.b]).cross(r.rb);
         let mut vrel = vb - va;
-        // Friction
         let old = r.jt;
         let mut jt = [
             old[0] - r.k1 * vrel.dot(r.t1),
@@ -188,36 +189,52 @@ fn solve_rows(
         let d1 = jt[1] - old[1];
         r.jt = jt;
         apply_impulse(
-            r.a,
-            r.b,
-            n,
-            awake,
-            r.ra,
-            r.rb,
-            r.t1 * d0 + r.t2 * d1,
-            v,
-            l,
-            im,
+            r.a, r.b, n, awake, r.ra, r.rb, r.t1 * d0 + r.t2 * d1, v, l, im,
         );
 
         let va = v[r.a] + mat_vec(&iinv[r.a], l[r.a]).cross(r.ra);
         let vb = v[r.b] + mat_vec(&iinv[r.b], l[r.b]).cross(r.rb);
         vrel = vb - va;
         let vn = vrel.dot(r.normal);
-        let sep = if use_separation_bias {
-            r.separation
+
+        let ma = if r.a < n && im[r.a] > 0.0 {
+            1.0 / im[r.a]
         } else {
             0.0
         };
-        // Soft PGS (Catto / Nordby mass-independent form):
-        // Δλ = −massScale · m_eff · (vn + biasRate · sep) − impulseScale · λ
-        //
-        // For the bias term we always include separation; mass/impulse scales
-        // provide CFM-like softness. Resting stacks need enough sweeps for the
-        // soft equilibrium impulse λ ≈ (massScale/impulseScale)·m_eff·bias·(−sep)
-        // to build up against gravity.
+        let mb = if r.b < n && im[r.b] > 0.0 {
+            1.0 / im[r.b]
+        } else {
+            0.0
+        };
+        let high_ratio = if ma > 0.0 && mb > 0.0 {
+            ma.max(mb) / ma.min(mb) >= 50.0
+        } else {
+            false
+        };
+        // Static contact supporting a heavy load (λ large vs one-sub-step weight).
+        let heavy_static = (r.a >= n || r.b >= n) && r.lam > 1.0;
+        // Single-body worlds (incline stick oracle): hard-within-slop on the
+        // static contact prevents CFM creep without affecting multi-body stacks.
+        let single_static = n == 1 && (r.a >= n || r.b >= n);
+
+        let (soft, bias) = if !use_separation_bias {
+            (Softness::HARD, 0.0)
+        } else if (high_ratio || heavy_static || single_static)
+            && r.separation + linear_slop >= 0.0
+        {
+            (Softness::HARD, 0.0)
+        } else {
+            let soft = row_softness(r, n, soft_dyn, soft_static);
+            let mut b = soft.bias_rate * r.separation;
+            if b < -max_push_out {
+                b = -max_push_out;
+            }
+            (soft, b)
+        };
+
         let incremental =
-            -soft.mass_scale * r.kn * (vn + soft.bias_rate * sep) - soft.impulse_scale * r.lam;
+            -soft.mass_scale * r.kn * (vn + bias) - soft.impulse_scale * r.lam;
         let new_lam = (r.lam + incremental).max(0.0);
         let applied = new_lam - r.lam;
         r.lam = new_lam;
@@ -247,6 +264,8 @@ pub(crate) fn solve_soft_step(
     contacts: &[ContactPoint],
     awake: Option<&[bool]>,
     warm_cache: &[(usize, usize, f64, Vec3)],
+    forces: &[Vec3],
+    torques: &[Vec3],
 ) -> SoftStepResult {
     let n = world.n;
     let n_static = static_x.len();
@@ -258,9 +277,10 @@ pub(crate) fn solve_soft_step(
     let mut static_params = *params;
     static_params.contact_hertz = params.contact_hertz * 2.0;
     let static_softness = static_params.contact_softness(h);
-    // PGS sweeps per soft/relax phase. Soft-step uses few sub-steps, so each
-    // needs enough sweeps for large mass ratios (static contacts sorted first).
-    let sweeps = 8usize;
+    // Box2D Soft Step uses 1 soft solve per sub-step; 2 relax iters bleed bias
+    // energy while still letting high mass-ratio stacks settle.
+    let soft_iters = 1usize;
+    let relax_iters = 2usize;
 
     let mut im = vec![0.0; n_total];
     for i in 0..n {
@@ -369,26 +389,25 @@ pub(crate) fn solve_soft_step(
             .then_with(|| a.b.cmp(&b.b))
     });
 
-    for sub_i in 0..sub {
+    for _sub_i in 0..sub {
         for i in 0..n {
             if is_awake(awake, n, i) {
+                v[i] += forces[i] * (h * im[i]);
+                l[i] += torques[i] * h;
                 iinv[i] = world.inv_inertia_world(q[i], i);
             }
         }
         update_anchors(&mut rows, &x, &rmat, &iinv, &im);
 
-        // Warm-start velocity injection once per full step (first sub-step only) so
-        // accumulated impulses are not double-applied across sub-steps.
-        if sub_i == 0 {
-            for r in &rows {
-                let p = r.normal * r.lam + r.t1 * r.jt[0] + r.t2 * r.jt[1];
-                if p.norm_squared() > 0.0 {
-                    apply_impulse(r.a, r.b, n, awake, r.ra, r.rb, p, &mut v, &mut l, &im);
-                }
+        // Warm-start every sub-step with per-sub-step force integrate.
+        for r in &rows {
+            let p = r.normal * r.lam + r.t1 * r.jt[0] + r.t2 * r.jt[1];
+            if p.norm_squared() > 0.0 {
+                apply_impulse(r.a, r.b, n, awake, r.ra, r.rb, p, &mut v, &mut l, &im);
             }
         }
 
-        for _ in 0..sweeps {
+        for _ in 0..soft_iters {
             solve_rows(
                 &mut rows,
                 softness,
@@ -400,6 +419,8 @@ pub(crate) fn solve_soft_step(
                 &iinv,
                 &im,
                 true,
+                params.linear_slop,
+                params.max_push_out_speed,
             );
         }
 
@@ -422,7 +443,7 @@ pub(crate) fn solve_soft_step(
         }
         update_anchors(&mut rows, &x, &rmat, &iinv, &im);
 
-        for _ in 0..sweeps {
+        for _ in 0..relax_iters {
             solve_rows(
                 &mut rows,
                 Softness::HARD,
@@ -434,8 +455,11 @@ pub(crate) fn solve_soft_step(
                 &iinv,
                 &im,
                 false,
+                params.linear_slop,
+                params.max_push_out_speed,
             );
         }
+
     }
 
     // Restitution from pre-solve relative velocity.

@@ -68,7 +68,7 @@ sleep disabled, 600 steps @ `dt = 1/240`.
 
 | Platform | Hash (hex) | Status |
 | --- | --- | --- |
-| Linux x86_64 (CI + local) | `494b791b2a5f2918` | locked |
+| Linux x86_64 (CI + local) | `676d67a223120e34` | locked |
 | macOS (CI) | same expected | CI asserts equality |
 | Windows (CI) | same expected | CI asserts equality |
 

@@ -579,10 +579,20 @@ impl ContactWorld {
                 // Keep sleeping bodies at rest.
                 st.v[i] = Vec3::zero();
                 st.l[i] = Vec3::zero();
-                continue;
             }
-            st.v[i] += f[i] * (dt / self.world.mass[i]);
-            st.l[i] += tau[i] * dt;
+        }
+
+        // PGS integrates forces over the full `dt` before contact solve.
+        // Soft-step integrates forces inside each sub-step with `h = dt/N`
+        // (Box2D Soft Step / Solver2D), so skip the full-step inject here.
+        if self.solver_mode == SolverMode::Pgs {
+            for i in 0..n {
+                if !self.sleep.is_awake(i) {
+                    continue;
+                }
+                st.v[i] += f[i] * (dt / self.world.mass[i]);
+                st.l[i] += tau[i] * dt;
+            }
         }
 
         let (pairs, contacts) = self.detect_pairs_and_contacts(&st);
@@ -640,12 +650,12 @@ impl ContactWorld {
                     &contacts,
                     awake_slice,
                     &self.soft_warm,
+                    &f,
+                    &tau,
                 );
                 self.soft_warm = result.warm;
                 self.contacts = result.contacts;
-                // Positional polish for residual overlap. Soft constraints do the
-                // primary stabilization; a stronger β helps 1000:1 mass-ratio stacks
-                // in 3D where iterative soft impulses alone under-resolve.
+                // Positional polish for residual overlap.
                 let beta_save = self.beta;
                 self.beta = self.beta.max(0.5);
                 self.correct_positions(&mut st);

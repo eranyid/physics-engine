@@ -111,7 +111,7 @@ pub fn canonical_soft_step_collision_hash() -> u64 {
 }
 
 /// Locked cross-OS soft-step collision hash (Linux x86_64 release). See `docs/DETERMINISM.md`.
-pub const CANONICAL_SOFT_STEP_COLLISION_HASH: u64 = 0x494b_791b_2a5f_2918;
+pub const CANONICAL_SOFT_STEP_COLLISION_HASH: u64 = 0x676d_67a2_2312_0e34;
 
 #[cfg(test)]
 mod hash_tests {
