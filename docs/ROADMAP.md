@@ -160,10 +160,11 @@ Sizes are relative engineering scope, not calendar schedules.
 
 ### D6 — Space / gravity / orbits
 
-- **Models:** point-mass n-body; optional central + J2; patched conics helpers;
-  non-inertial frames later.
-- **Validation:** Kepler two-body; three-body restricted Lagrange points
-  numerically; energy/L conservation; SPICE or textbook ephemeris spot checks.
+- **Models:** point-mass n-body; optional central + J2; Kepler/Lambert helpers;
+  SRP / drag / third-body; non-inertial frames later. (**M7 shipped** in `pe-space` —
+  IAS15/WHFast stubs remain.)
+- **Validation:** Kepler two-body; figure-eight / Pythagorean conservation; J₂ nodal
+  rate; sun-synchronous inclination; energy/L property tests. SPICE ephemeris later.
 - **Effort:** M.
 
 ### D7 — Hydrodynamics & waves
@@ -213,7 +214,7 @@ ported early because the Python oracle already exists.
 | **M4** | Port stage 3 | ISA/aero/hydro parity with Python suite | **done** (this PR) |
 | **M5** | Joints + islands + sleep | Pendulum/motor tests; large resting scene sleeps; Python may gain thin joint oracle or shared fixtures | planned |
 | **M6** | CCD + convex | TOI tests (no tunnel at configured speeds); GJK/EPA convex; capsule–box | planned |
-| **M7** | Space module | Kepler + n-body conservation suite in Rust (+ Python helpers as needed) | planned |
+| **M7** | Space module | Kepler + n-body conservation suite in Rust (+ Python helpers as needed) | **done** (this PR) |
 | **M8** | Scene I/O + C ABI | Round-trip serialization; `pe-ffi` headers; smoke GDExtension optional | planned |
 | **M9** | Waves / hydrodynamics v1 | Airy + Morison validated | planned |
 | **M10** | Materials + soft v1 | Elastic validation; one soft demo with analytic check | planned |
@@ -255,6 +256,19 @@ ported early because the Python oracle already exists.
   `tests/test_oracle_aero_hydro_rust.py`. Criterion benches in `docs/BENCHMARKS.md`.
   Default CI stays fast (no Criterion; slow pytest marker unchanged).
 - **Out of scope (later):** waves, 6-DOF aero check-cases, blade element, compressibility.
+
+### M7 as built (summary)
+
+- New crate `crates/pe-space`: `GravityField` + N-body `Integrator` traits (SI; μ used
+  directly); Leapfrog, Yoshida4, RK4, adaptive **RKF78** (DOP853 stand-in); compensated
+  Neumaier positions + origin rebase; Kepler elements ↔ state, Stumpff / universal
+  propagation, Lambert (Izzo 2015 geometry); J₂, cannonball SRP, third-body, ISA/exponential
+  drag. **IAS15** and **WHFast** are documented stubs (TODO follow-up).
+- Clean-room from published papers only — no REBOUND / nyx-space / JSBSim code
+  (`docs/SPACE.md`, `THIRD_PARTY.md`).
+- Determinism: portable `libm`, no FMA / `HashMap` iteration; cross-OS figure-eight hash CI.
+- Tests: Rust analytic + proptest; Python `tests/test_space_rust.py`. Criterion benches in
+  `docs/BENCHMARKS.md`.
 
 **Rule.** No milestone merges without: (1) analytic or published benchmark tests,
 (2) oracle or cross-impl diff where a Python reference exists, (3) CI green.

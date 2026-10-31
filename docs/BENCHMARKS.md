@@ -6,8 +6,9 @@ Numbers are wall time for the named workload; re-run locally after numerical cha
 Default CI does **not** run Criterion (`cargo test` omits harness benches). Use
 `cargo bench -p pe-core --bench integrators`,
 `cargo bench -p pe-collision --bench contact_pyramids`,
-`cargo bench -p pe-aero --bench aero_forces`, and
-`cargo bench -p pe-hydro --bench hydrostatics`.
+`cargo bench -p pe-aero --bench aero_forces`,
+`cargo bench -p pe-hydro --bench hydrostatics`, and
+`cargo bench -p pe-space --bench space`.
 
 ## Stage 1 — integrators (`pe-core`)
 
@@ -36,6 +37,15 @@ Default CI does **not** run Criterion (`cargo test` omits harness benches). Use
 | `heave_rk4_500_steps` | floating barge, 500× RK4 @ dt=1e-3 | ~2.23 ms |
 | `gz_curve_60_angles` | box GZ curve, 60 heel samples | ~54 µs |
 
-These are foundation baselines for M2–M4 — not throughput targets. Re-record when
-changing `libm` usage, SoA layout, integrator math, the contact solver, or aero/hydro
-force models.
+## M7 — space (`pe-space`)
+
+| Benchmark | Workload | Median time |
+| --- | --- | --- |
+| `leo_leapfrog_2k_steps` | circular LEO, 2000× leapfrog | ~101 µs |
+| `leo_yoshida4_2k_steps` | same, Yoshida4 | ~312 µs |
+| `leo_rk4_2k_steps` | same, RK4 | ~1.68 ms |
+| `figure8_leapfrog_2k_steps` | figure-eight, 2000× leapfrog | ~162 µs |
+
+These are foundation baselines for M2–M7 — not throughput targets. Re-record when
+changing `libm` usage, SoA layout, integrator math, the contact solver, aero/hydro
+force models, or space integrators.

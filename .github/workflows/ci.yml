@@ -154,3 +154,16 @@ jobs:
             echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
             exit 1
           fi
+
+      - name: Compute canonical M7 space hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-space --bin space_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical space hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=4633eb9e6412be18
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::Space determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi

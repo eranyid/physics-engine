@@ -1,0 +1,24 @@
+[package]
+name = "pe-space"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "N-body gravity, orbital helpers, Kepler/Lambert utilities, and space force models (M7)"
+
+[dependencies]
+pe-math = { workspace = true }
+pe-aero = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
+proptest = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "space"
+harness = false
+
+[[bin]]
+name = "space_hash"
+path = "src/bin/space_hash.rs"

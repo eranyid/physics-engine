@@ -1,13 +1,14 @@
-# Determinism policy (stages 1–3 / M2–M4)
+# Determinism policy (stages 1–3 / M2–M4 + M7 space)
 
 ## Guarantees
 
 On the **Rust step path** (`pe-core` integrators + force apply + quaternion `exp_rotvec`,
-`pe-collision` broad/narrow/contact, and `pe-aero` / `pe-hydro` force apply):
+`pe-collision` broad/narrow/contact, `pe-aero` / `pe-hydro` force apply, and `pe-space`
+N-body / Kepler / perturbation paths):
 
 1. **f64 only**; no `target-cpu=native`, no explicit FMA (`mul_add` unused).
 2. Elementary functions go through the pure-Rust [`libm`](https://crates.io/crates/libm) crate
-   (`pe_math::libm_ops`: `sin`/`cos`/`sqrt`/`exp`/`log`/`tanh`/`fabs`/`hypot`/`atan2`/`copysign`/`pow`/`asin`/`acos`).
+   (`pe_math::libm_ops`: `sin`/`cos`/`tan`/`sqrt`/`cbrt`/`exp`/`log`/`tanh`/`fabs`/`hypot`/`atan2`/`atan`/`copysign`/`pow`/`asin`/`acos`).
 3. Fixed body and generator order (`Vec`, never `HashMap` iteration).
 4. Contact pairs sorted by `(min_id, max_id)` before narrow phase; warm-start cache is a
    `BTreeMap` keyed by `(a, b, feature)` (lookups only — never unordered iteration).
@@ -22,6 +23,8 @@ Cross-check helpers:
   `physics_engine_rs.canonical_collision_hash()`
 - Stage 3: `cargo run -p pe-hydro --bin aero_hydro_hash --release` /
   `physics_engine_rs.canonical_aero_hydro_hash()`
+- M7 space: `cargo run -p pe-space --bin space_hash --release` /
+  `physics_engine_rs.canonical_space_hash()`
 
 ### Canonical stage-1 scenario hash (locked)
 
@@ -73,6 +76,22 @@ Scenario:
 | macOS (CI) | same expected | CI asserts equality |
 | Windows (CI) | same expected | CI asserts equality |
 
+### Canonical M7 space hash (locked)
+
+Scenario (must stay in sync in the binary, Rust scenario helper, and Python helper):
+
+- Chenciner–Montgomery figure-eight, `G = m = 1`
+- `x₁ = (0.97000436, −0.24308753, 0)`, `x₂ = −x₁`, `x₃ = 0`
+- `v₃ = (−0.93240737, −0.86473146, 0)`, `v₁ = v₂ = −v₃/2`
+- Integrate **2000** leapfrog steps over one period `T = 6.32591398`
+- Hash: FNV-1a 64 over little-endian IEEE bits of packed `(x‖v)`
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `4633eb9e6412be18` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
 If a platform ever diverges, **do not silently loosen**: record the OS, toolchain,
 exact first differing packed index / float bits, and root cause (usually accidental
 platform `libm` or FMA) in this table.
@@ -109,3 +128,5 @@ calls — not from algorithm or ordering drift.
 Within Rust, `test_rust_determinism_repeat`, `determinism_bitwise_repeat`, and
 `collision_hash_is_bit_stable_on_repeat` require **bit-identical** packed state on repeat.
 The stage-3 hash is asserted equal on repeat via `canonical_aero_hydro_hash`.
+The M7 figure-eight hash is asserted equal on repeat via `canonical_space_hash` /
+`figure_eight_hash_bit_stable_on_repeat`.
