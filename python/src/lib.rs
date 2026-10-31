@@ -7,6 +7,7 @@
 
 mod aero_hydro;
 mod blast_ballistics;
+mod fluid;
 mod space;
 
 use numpy::{PyArray1, PyArray2, PyArrayMethods};
@@ -1065,6 +1066,7 @@ fn physics_engine_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     aero_hydro::register(m)?;
     space::register(m)?;
     blast_ballistics::register(m)?;
+    fluid::register(m)?;
     m.add("G", G)?;
     m.add("STANDARD_GRAVITY", STANDARD_GRAVITY)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;

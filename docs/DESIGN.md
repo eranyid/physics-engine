@@ -35,7 +35,8 @@ crates/pe-core/       World SoA, forces, integrators, diagnostics, canonical_has
 crates/pe-collision/  shapes, BroadPhase/NarrowPhase traits, ContactWorld, collision_hash bin
 crates/pe-aero/       ISA atmosphere, WingPolar/stall, thrust, AircraftAero
 crates/pe-hydro/      Box/Cylinder/Sphere/Mesh hulls, Buoyancy, GM/GZ, IMO IS Code, aero_hydro_hash
-python/               PyO3 module physics_engine_rs (abi3 ≥ 3.10) — World + ContactWorld + aero/hydro
+crates/pe-fluid/      SPH (WCSPH) + PBF particle fluids (3-D / 2-D tests), fluid_hash
+python/               PyO3 module physics_engine_rs (abi3 ≥ 3.10) — World + ContactWorld + aero/hydro/fluid
 ```
 
 Invariants preserved from the Python oracle: SI units; world-frame `L`; quaternion
