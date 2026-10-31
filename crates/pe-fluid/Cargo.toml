@@ -1,0 +1,23 @@
+[package]
+name = "pe-fluid"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Particle fluids: SPH (WCSPH) and PBF, 3D with 2D test mode"
+
+[dependencies]
+pe-math = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
+proptest = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "fluid"
+harness = false
+
+[[bin]]
+name = "fluid_hash"
+path = "src/bin/fluid_hash.rs"

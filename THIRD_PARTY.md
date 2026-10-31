@@ -124,6 +124,27 @@ Clean-room formulas only — **no** third-party simulation source translated:
 - **Not used:** G1/G7 standard drag coefficient tables (no verified primary BRL
   transcription in this milestone — analytic `C_D(M)` stand-in instead).
 
+### Particle fluids note (`pe-fluid`)
+
+Clean-room formulas only — **no** third-party SPH/PBF source translated
+(no DualSPHysics, SPlisHSPlasH, NVIDIA Flex, LiquidFun, etc.):
+
+- Monaghan, J. J. (1992). Smoothed particle hydrodynamics. *ARA&A* **30** —
+  cubic spline kernel; artificial viscosity / XSPH practice.
+- Wendland, H. (1995). Compactly supported radial functions. *Adv. Comput. Math.* **4**.
+- Müller, M., Charypar, D. & Gross, M. (2003). Particle-based fluid simulation
+  for interactive applications. *SCA* — poly6 / spiky kernels.
+- Becker, M. & Teschner, M. (2007). Weakly compressible SPH. *SCA* — Tait EOS,
+  `c₀ ≥ 10 v_max` stiffness rule.
+- Akinci, N. et al. (2012). Versatile rigid–fluid coupling for incompressible
+  SPH. *ACM TOG* **31** — boundary volume `ψ` (boundary particles only here).
+- Macklin, M. & Müller, M. (2013). Position Based Fluids. *ACM TOG* **32** —
+  λ density constraints, artificial pressure, vorticity confinement.
+- Ritter, A. (1892). Dam-break shallow-water front `x_f = 2√(g h₀) t`.
+- **Not transcribed:** Martin & Moyce (1952) experimental dam-break tables
+  (no verified primary table in-tree). **Deferred:** DFSPH (Bender & Koschier
+  2015); fluid→rigid force sampling.
+
 ### M8 note (`pe-scene`, `pe-ffi`, Godot GDExtension)
 
 - Scene / FFI / Godot binding code in this repository is **clean-room** (no

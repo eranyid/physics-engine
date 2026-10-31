@@ -9,8 +9,9 @@ Default CI does **not** run Criterion (`cargo test` omits harness benches). Use
 `cargo bench -p pe-aero --bench aero_forces`,
 `cargo bench -p pe-hydro --bench hydrostatics`, and
 `cargo bench -p pe-space --bench space`,
-`cargo bench -p pe-blast --bench blast`, and
-`cargo bench -p pe-ballistics --bench ballistics`.
+`cargo bench -p pe-blast --bench blast`,
+`cargo bench -p pe-ballistics --bench ballistics`, and
+`cargo bench -p pe-fluid --bench fluid`.
 
 ## Stage 1 — integrators (`pe-core`)
 
@@ -134,7 +135,21 @@ Cloud Agent host after GJK/EPA numerical changes.
 | `step_10k_bullets` | one ProjectileSystem step, 10k bullets | ~15.1 ms |
 | `volley_hash` | canonical 100-bullet hash scenario | ~14.5 ms |
 
-These are foundation baselines for M2–M9 + blast/ballistics — not throughput
-targets. Re-record when changing `libm` usage, SoA layout, integrator math, the
-contact solver, aero/hydro force models, waves, space integrators, or
-blast/ballistics.
+## Fluids (`pe-fluid`)
+
+Measured on the Cloud Agent host (Linux x86_64, release).
+
+Neighbour-list reuse across PBF iterations (default on):
+
+| Benchmark | Workload | Before reuse | After reuse | Approx. rate (after) |
+| --- | --- | --- | --- | --- |
+| `fluid_tank_hash` | canonical PBF 4³ tank, 40 steps | ~86.4 ms | **~67.5 ms** (−22%) | — |
+| `pbf_1k_particles_10_steps` | ~1000 fluid + boundary, 10 PBF steps | ~250 ms | **~183 ms** (−27%) | ~5.5×10⁴ particle·steps/s |
+| `wcsph_256_particles_20_steps` | 8×8×4 WCSPH, 20 steps | ~41.9 ms | ~41.4 ms (noise) | ~1.2×10⁵ particle·steps/s |
+
+Re-record with `cargo bench -p pe-fluid --bench fluid` after solver changes.
+
+These are foundation baselines for M2–M9 + blast/ballistics/fluids — not
+throughput targets. Re-record when changing `libm` usage, SoA layout, integrator
+math, the contact solver, aero/hydro force models, waves, space integrators,
+blast/ballistics, or SPH/PBF loops.

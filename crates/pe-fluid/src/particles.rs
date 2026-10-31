@@ -1,0 +1,237 @@
+//! SoA particle state for SPH / PBF.
+
+use pe_math::Vec3;
+
+use crate::Dim;
+
+/// Fluid / boundary particle flags.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ParticleKind {
+    /// Dynamic fluid particle.
+    Fluid = 0,
+    /// Akinci-style boundary sample (fixed or prescribed motion).
+    Boundary = 1,
+}
+
+/// Structure-of-arrays particle buffer.
+#[derive(Clone, Debug)]
+pub struct Particles {
+    /// Simulation dimension.
+    pub dim: Dim,
+    /// Rest density ρ₀ [kg/m³].
+    pub rest_density: f64,
+    /// Particle mass [kg] (uniform for fluid particles).
+    pub mass: f64,
+    /// Smoothing length h [m].
+    pub h: f64,
+    /// Positions [m].
+    pub x: Vec<Vec3>,
+    /// Velocities [m/s].
+    pub v: Vec<Vec3>,
+    /// Accelerations [m/s²] (scratch).
+    pub a: Vec<Vec3>,
+    /// Densities [kg/m³].
+    pub rho: Vec<f64>,
+    /// Pressures [Pa].
+    pub p: Vec<f64>,
+    /// Kind flags.
+    pub kind: Vec<ParticleKind>,
+    /// Akinci boundary volume factor ψ [m³] (0 for fluid).
+    pub psi: Vec<f64>,
+}
+
+impl Particles {
+    /// Empty system.
+    pub fn new(dim: Dim, rest_density: f64, mass: f64, h: f64) -> Self {
+        Self {
+            dim,
+            rest_density,
+            mass,
+            h,
+            x: Vec::new(),
+            v: Vec::new(),
+            a: Vec::new(),
+            rho: Vec::new(),
+            p: Vec::new(),
+            kind: Vec::new(),
+            psi: Vec::new(),
+        }
+    }
+
+    /// Number of particles (fluid + boundary).
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.x.len()
+    }
+
+    /// True if empty.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.x.is_empty()
+    }
+
+    /// Count fluid particles.
+    pub fn fluid_count(&self) -> usize {
+        self.kind
+            .iter()
+            .filter(|k| **k == ParticleKind::Fluid)
+            .count()
+    }
+
+    /// Push a fluid particle.
+    pub fn push_fluid(&mut self, x: Vec3, v: Vec3) {
+        self.x.push(x);
+        self.v.push(v);
+        self.a.push(Vec3::zero());
+        self.rho.push(self.rest_density);
+        self.p.push(0.0);
+        self.kind.push(ParticleKind::Fluid);
+        self.psi.push(0.0);
+    }
+
+    /// Push a fixed boundary particle with Akinci volume `psi` [m³] (2-D: m²).
+    pub fn push_boundary(&mut self, x: Vec3, psi: f64) {
+        self.x.push(x);
+        self.v.push(Vec3::zero());
+        self.a.push(Vec3::zero());
+        self.rho.push(self.rest_density);
+        self.p.push(0.0);
+        self.kind.push(ParticleKind::Boundary);
+        self.psi.push(psi);
+    }
+
+    /// Pack positions as flat `[x0,y0,z0, x1,…]` for hashing / NumPy export.
+    pub fn pack_positions(&self) -> Vec<f64> {
+        let mut out = Vec::with_capacity(self.len() * 3);
+        for p in &self.x {
+            out.push(p.x);
+            out.push(p.y);
+            out.push(p.z);
+        }
+        out
+    }
+
+    /// Pack velocities as flat `[vx,vy,vz,…]`.
+    pub fn pack_velocities(&self) -> Vec<f64> {
+        let mut out = Vec::with_capacity(self.len() * 3);
+        for p in &self.v {
+            out.push(p.x);
+            out.push(p.y);
+            out.push(p.z);
+        }
+        out
+    }
+
+    /// Total fluid mass [kg].
+    pub fn total_fluid_mass(&self) -> f64 {
+        self.mass * self.fluid_count() as f64
+    }
+}
+
+/// Estimate particle mass from rest density and lattice spacing `dx` [m].
+#[inline]
+pub fn mass_from_spacing(rest_density: f64, dx: f64, dim: Dim) -> f64 {
+    match dim {
+        Dim::D2 => rest_density * dx * dx,
+        Dim::D3 => rest_density * dx * dx * dx,
+    }
+}
+
+/// Fill a rectangular fluid block on a lattice (inclusive-exclusive in index space).
+///
+/// `origin` is the centre of the first particle; spacing `dx`.
+pub fn fill_box(
+    parts: &mut Particles,
+    origin: Vec3,
+    nx: usize,
+    ny: usize,
+    nz: usize,
+    dx: f64,
+    v0: Vec3,
+) {
+    let nz = match parts.dim {
+        Dim::D2 => 1,
+        Dim::D3 => nz,
+    };
+    for iz in 0..nz {
+        for iy in 0..ny {
+            for ix in 0..nx {
+                let p = Vec3::new(
+                    origin.x + ix as f64 * dx,
+                    origin.y + iy as f64 * dx,
+                    origin.z + iz as f64 * dx,
+                );
+                parts.push_fluid(p, v0);
+            }
+        }
+    }
+}
+
+/// Sample Akinci boundary particles on an axis-aligned box shell (walls).
+///
+/// Places particles on the six faces (or four in 2-D) at spacing `dx`, with
+/// `psi = dx^d` (volume/area of the sample). Corners/edges may be duplicated
+/// slightly — acceptable for engineering boundary samples.
+pub fn fill_box_boundary(parts: &mut Particles, min: Vec3, max: Vec3, dx: f64, layers: usize) {
+    let psi = match parts.dim {
+        Dim::D2 => dx * dx,
+        Dim::D3 => dx * dx * dx,
+    };
+    let layers = layers.max(1);
+    match parts.dim {
+        Dim::D2 => {
+            // Walls at x=min/max and y=min/max; z fixed at 0.
+            let nx = ((max.x - min.x) / dx).round() as usize + 1;
+            let ny = ((max.y - min.y) / dx).round() as usize + 1;
+            for layer in 0..layers {
+                let off = layer as f64 * dx;
+                for i in 0..nx {
+                    let x = min.x + i as f64 * dx;
+                    parts.push_boundary(Vec3::new(x, min.y - off, 0.0), psi);
+                    parts.push_boundary(Vec3::new(x, max.y + off, 0.0), psi);
+                }
+                for j in 1..ny.saturating_sub(1) {
+                    let y = min.y + j as f64 * dx;
+                    parts.push_boundary(Vec3::new(min.x - off, y, 0.0), psi);
+                    parts.push_boundary(Vec3::new(max.x + off, y, 0.0), psi);
+                }
+            }
+        }
+        Dim::D3 => {
+            let nx = ((max.x - min.x) / dx).round() as usize + 1;
+            let ny = ((max.y - min.y) / dx).round() as usize + 1;
+            let nz = ((max.z - min.z) / dx).round() as usize + 1;
+            for layer in 0..layers {
+                let off = layer as f64 * dx;
+                // z faces
+                for i in 0..nx {
+                    for j in 0..ny {
+                        let x = min.x + i as f64 * dx;
+                        let y = min.y + j as f64 * dx;
+                        parts.push_boundary(Vec3::new(x, y, min.z - off), psi);
+                        parts.push_boundary(Vec3::new(x, y, max.z + off), psi);
+                    }
+                }
+                // y faces (exclude z edges already covered)
+                for i in 0..nx {
+                    for k in 1..nz.saturating_sub(1) {
+                        let x = min.x + i as f64 * dx;
+                        let z = min.z + k as f64 * dx;
+                        parts.push_boundary(Vec3::new(x, min.y - off, z), psi);
+                        parts.push_boundary(Vec3::new(x, max.y + off, z), psi);
+                    }
+                }
+                // x faces
+                for j in 1..ny.saturating_sub(1) {
+                    for k in 1..nz.saturating_sub(1) {
+                        let y = min.y + j as f64 * dx;
+                        let z = min.z + k as f64 * dx;
+                        parts.push_boundary(Vec3::new(min.x - off, y, z), psi);
+                        parts.push_boundary(Vec3::new(max.x + off, y, z), psi);
+                    }
+                }
+            }
+        }
+    }
+}

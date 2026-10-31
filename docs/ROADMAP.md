@@ -32,7 +32,7 @@ physics-engine/
     pe-ballistics/             # point-mass ballistics, ammo profiles, projectile SoA
     pe-materials/              # constitutive models (elastic/plastic/thermal)
     pe-soft/                   # soft bodies / FEM / XPBD cloth-style (later)
-    pe-fluids/                 # particles / SPH / blast coupling (later)
+    pe-fluid/                  # particles / SPH / PBF (M11 partial; DFSPH later)
     pe-scene/                  # serialization, scene graph, sleeping metadata
     pe-ffi/                    # stable C ABI for GDExtension and others
   python/                      # PyO3 crate → maturin wheel (`physics_engine_rs`)
@@ -221,8 +221,8 @@ ported early because the Python oracle already exists.
 | **M7** | Space module | Kepler + n-body conservation suite in Rust (+ Python helpers as needed) | **done** (this PR) |
 | **M8** | Scene I/O + C ABI | Round-trip serialization; `pe-ffi` headers; smoke GDExtension optional | **done** (pe-scene + pe-ffi + godot/ compile check; see docs/SCENE.md, FFI.md, GODOT.md) |
 | **M9** | Waves / hydrodynamics v1 | Airy + Stokes/Gerstner/spectra + buoyancy coupling (Morison later) | **done** (Morison shipped in M11 hydro follow-on) |
-| **M10** | Materials + soft v1 | Elastic validation; one soft demo with analytic check | planned (other agents; do not collide) |
-| **M11** | Fluids / blast v1 *or* deferred aero/hydro | Roadmap fluids/blast vs deferred Morison/seakeeping/BEM | **aero/hydro deferred items done** (this PR); blast engineering shipped early; particle fluids still planned |
+| **M10** | Materials + soft v1 | Elastic validation; one soft demo with analytic check | planned |
+| **M11** | Fluids / blast v1 *or* deferred aero/hydro | Particle hydrostatic + blast scaling; Morison/seakeeping/BEM | **partial+** (blast earlier; **`pe-fluid` SPH/PBF shipped**; Morison/seakeeping/BEM done this PR; DFSPH / rigid coupling deferred) |
 
 ### M1–M2 as built (summary)
 
