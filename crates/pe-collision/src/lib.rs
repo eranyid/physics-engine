@@ -32,7 +32,7 @@ pub mod support;
 pub use aabb_tree::{dynamic_tree_pairs, DynamicAabbTree, DEFAULT_FAT_MARGIN};
 pub use broadphase::{brute_force_pairs, sweep_and_prune, BroadPhase, BruteForce, SweepAndPrune};
 pub use ccd::{CcdParams, DEFAULT_SPECULATIVE_DISTANCE};
-pub use contact::{BroadPhaseKind, ContactWorld, StaticCollider};
+pub use contact::{BroadPhaseKind, ContactWorld, StaticCollider, WarmCacheRow};
 pub use epa::{epa, EpaResult, EpaTol};
 pub use gjk::{gjk, gjk_intersect, GjkResult, GjkTol};
 pub use hull::{ConvexHull, HullError, HullFace, HULL_EPS};

@@ -4,15 +4,18 @@ Rigorous, reusable real-world physics simulation (SI units). Correctness first.
 
 **Today:** Python reference oracle (NumPy/SciPy), stages 1–3, plus a **Rust stages 1–3
 core** (`pe-math` / `pe-core` / `pe-collision` / `pe-aero` / `pe-hydro`) with PyO3 bindings
-(`physics_engine_rs`, abi3). Godot GDExtension is planned later; Python remains the oracle
-for cross-checks.
+(`physics_engine_rs`, abi3). Scene I/O (`pe-scene`), C ABI (`pe-ffi`), and a Godot 4
+GDExtension (`godot/`) ship as M8. Python remains the oracle for cross-checks.
 
 - Design: [docs/DESIGN.md](docs/DESIGN.md)
 - Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
 - Determinism: [docs/DETERMINISM.md](docs/DETERMINISM.md)
 - Benchmarks: [docs/BENCHMARKS.md](docs/BENCHMARKS.md)
+- Scene I/O: [docs/SCENE.md](docs/SCENE.md)
+- C ABI: [docs/FFI.md](docs/FFI.md)
+- Godot: [docs/GODOT.md](docs/GODOT.md)
 
-**Status:** M0–M4 done.
+**Status:** M0–M5, M7–M9 done; M8 scene/FFI/Godot done (compile-check); M6 GJK partial.
 - Stage 1: rigid bodies, gravity, drag, springs, integrators, diagnostics (Python + Rust)
 - Stage 2: collision shapes, broad/narrow phase, sequential-impulse contacts (Python + Rust)
 - Stage 3: ISA / aero / hydro (Python + Rust)

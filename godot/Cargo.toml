@@ -1,0 +1,19 @@
+[package]
+name = "pe-godot"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Godot 4 GDExtension exposing PhysicsWorld (gdext / godot-rust)"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+name = "pe_godot"
+
+[dependencies]
+godot = { version = "0.4", features = ["api-4-3"] }
+pe-math = { workspace = true }
+pe-core = { workspace = true }
+pe-collision = { workspace = true }
+pe-scene = { workspace = true }
