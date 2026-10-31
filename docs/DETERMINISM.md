@@ -128,6 +128,23 @@ Scenario (must stay in sync in the binary, Rust scenario helper, and Python help
 | macOS (CI) | same expected | CI asserts equality |
 | Windows (CI) | same expected | CI asserts equality |
 
+### Canonical M7 IAS15 hash (locked)
+
+Scenario (must stay in sync in the binary, Rust scenario helper, and Python helper):
+
+- Earth-μ Kepler, `a = 1e7 m`, `e = 0.5`, `i = 0.2`, Ω = 0.1, ω = 0.3, ν = 0
+- Compensated positions on; IAS15 with `ε_b = 1e-9`, initial `dt = T/100`
+- **64 accepted** adaptive steps; hash FNV-1a 64 over packed `(x‖v)`
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `b918884ca264b70d` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+`cargo run -p pe-space --bin space_hash --release` prints figure-eight then IAS15
+(two lines).
+
 If a platform ever diverges, **do not silently loosen**: record the OS, toolchain,
 exact first differing packed index / float bits, and root cause (usually accidental
 platform `libm` or FMA) in this table.

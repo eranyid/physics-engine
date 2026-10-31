@@ -86,10 +86,12 @@ linear slop so soft spring equilibrium cannot park under a 1000:1 stack.
 
 | Benchmark | Workload | Median time |
 | --- | --- | --- |
-| `leo_leapfrog_2k_steps` | circular LEO, 2000× leapfrog | ~101 µs |
-| `leo_yoshida4_2k_steps` | same, Yoshida4 | ~312 µs |
-| `leo_rk4_2k_steps` | same, RK4 | ~1.68 ms |
-| `figure8_leapfrog_2k_steps` | figure-eight, 2000× leapfrog | ~162 µs |
+| `leo_leapfrog_2k_steps` | circular LEO, 2000× leapfrog | ~105 µs |
+| `leo_yoshida4_2k_steps` | same, Yoshida4 | ~337 µs |
+| `leo_rk4_2k_steps` | same, RK4 | ~1.48 ms |
+| `figure8_leapfrog_2k_steps` | figure-eight, 2000× leapfrog | ~141 µs |
+| `ias15_e09_one_orbit` | `e=0.9` Kepler, IAS15 one period | ~1.12 ms |
+| `whfast_5body_10k_steps` | synthetic 5-body WHFast Jacobi, 10k steps | ~14.2 ms |
 
 These are foundation baselines for M2–M9 — not throughput targets. Re-record when
 changing `libm` usage, SoA layout, integrator math, the contact solver, aero/hydro

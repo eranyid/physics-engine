@@ -23,12 +23,6 @@
 //! Algorithms are derived from published papers / textbooks cited in module
 //! comments and [`THIRD_PARTY.md`](../../THIRD_PARTY.md). **Do not** copy or
 //! translate code from GPL/AGPL/LGPL projects (REBOUND, nyx-space, JSBSim, …).
-//!
-//! # Deferred
-//!
-//! - Full IAS15 (Rein & Spiegel 2015) — interface stub + tracked TODO.
-//! - Full WHFast Wisdom–Holman with symplectic correctors — stub + tracked TODO
-//!   (universal-variable Kepler drift helpers used by the stub are implemented).
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
@@ -55,8 +49,8 @@ pub use diagnostics::{angular_momentum, kinetic_energy, potential_energy, total_
 pub use field::{CentralMu, GravityField, NBodyPointMass};
 pub use integrator::{AdaptiveStep, Integrator, StepResult};
 pub use integrators::{
-    dormand_prince_8_7, ias15, leapfrog, rk4, rkf78, whfast, yoshida4, Dop853, Ias15, Leapfrog,
-    Rk4, Rkf78, Whfast, Yoshida4,
+    dormand_prince_8_7, ias15, leapfrog, rk4, rkf78, whfast, whfast_with, yoshida4, Dop853, Ias15,
+    Leapfrog, Rk4, Rkf78, Whfast, WhfastCoords, Yoshida4, DEFAULT_EPSILON_B, RADAU_H,
 };
 pub use kepler::{
     elements_to_state, mean_motion, orbital_period, propagate_universal, state_to_elements,
@@ -68,6 +62,7 @@ pub use perturbations::{
     SrpModel, ThirdBody,
 };
 pub use scenarios::{
-    figure_eight_hash, figure_eight_state, FIGURE_EIGHT_HASH_STEPS, FIGURE_EIGHT_PERIOD,
+    figure_eight_hash, figure_eight_state, ias15_hash, FIGURE_EIGHT_HASH_STEPS,
+    FIGURE_EIGHT_PERIOD, FIGURE_EIGHT_PERIOD_RETURN, IAS15_HASH_STEPS,
 };
 pub use state::{NBodyState, OriginRebase};

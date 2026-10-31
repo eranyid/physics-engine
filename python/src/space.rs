@@ -5,14 +5,15 @@ use pe_space::constants::{EARTH_J2, EARTH_MU, EARTH_RADIUS};
 use pe_space::diagnostics::{angular_momentum, kinetic_energy, total_energy};
 use pe_space::field::{CentralMu, GravityField, NBodyPointMass};
 use pe_space::figure_eight_hash;
-use pe_space::integrator::Integrator;
-use pe_space::integrators::{Leapfrog, Rk4, Yoshida4};
+use pe_space::ias15_hash;
+use pe_space::integrator::{AdaptiveStep, Integrator};
+use pe_space::integrators::{Ias15, Leapfrog, Rk4, Whfast, WhfastCoords, Yoshida4};
 use pe_space::kepler::{
     elements_to_state, orbital_period, propagate_universal, state_to_elements, KeplerElements,
 };
 use pe_space::lambert::lambert_izzo;
 use pe_space::perturbations::{accel_j2, j2_nodal_rate, J2Model};
-use pe_space::scenarios::figure_eight_state;
+use pe_space::scenarios::{figure_eight_state, FIGURE_EIGHT_PERIOD_RETURN};
 use pe_space::state::NBodyState;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -54,6 +55,12 @@ fn state_from_lists(
 #[pyfunction]
 fn canonical_space_hash() -> u64 {
     figure_eight_hash()
+}
+
+/// Canonical IAS15 eccentric-Kepler hash (cross-OS determinism).
+#[pyfunction]
+fn canonical_ias15_hash() -> u64 {
+    ias15_hash()
 }
 
 /// Orbital period `T = 2π √(a³/μ)` [s].
@@ -160,7 +167,7 @@ fn j2_acceleration(r: &Bound<'_, PyAny>) -> PyResult<Vec<f64>> {
 /// Integrate an N-body / central-μ system; return final positions as a flat
 /// length-`3N` list (row-major).
 #[pyfunction]
-#[pyo3(signature = (masses, positions, velocities, t_end, dt, integrator="leapfrog", mu=None, geometric=false))]
+#[pyo3(signature = (masses, positions, velocities, t_end, dt, integrator="leapfrog", mu=None, geometric=false, g_const=None))]
 #[allow(clippy::too_many_arguments)]
 fn nbody_integrate(
     py: Python<'_>,
@@ -172,16 +179,21 @@ fn nbody_integrate(
     integrator: &str,
     mu: Option<f64>,
     geometric: bool,
+    g_const: Option<f64>,
 ) -> PyResult<Vec<f64>> {
     let mut state = state_from_lists(masses, positions, velocities)?;
-    if !matches!(integrator, "leapfrog" | "yoshida4" | "rk4") {
+    if !matches!(
+        integrator,
+        "leapfrog" | "yoshida4" | "rk4" | "ias15" | "whfast" | "whfast_helio"
+    ) {
         return Err(PyValueError::new_err(format!(
-            "unknown integrator {integrator:?}; expected leapfrog|yoshida4|rk4"
+            "unknown integrator {integrator:?}; expected leapfrog|yoshida4|rk4|ias15|whfast|whfast_helio"
         )));
     }
     let integ_name = integrator.to_string();
     let use_mu = mu;
     let use_geom = geometric;
+    let g = g_const.unwrap_or(if geometric { 1.0 } else { pe_math::G });
 
     py.allow_threads(|| {
         let central = CentralMu::new(use_mu.unwrap_or(EARTH_MU));
@@ -203,6 +215,22 @@ fn nbody_integrate(
                 let mut integ = Yoshida4::default();
                 integ.integrate_to(field, &mut state, 0.0, t_end, dt);
             }
+            "ias15" => {
+                state.enable_compensated_positions();
+                let mut integ = Ias15::new(AdaptiveStep {
+                    dt,
+                    ..AdaptiveStep::default()
+                });
+                integ.integrate_to(field, &mut state, 0.0, t_end, dt);
+            }
+            "whfast" => {
+                let mut integ = Whfast::new(g, WhfastCoords::Jacobi);
+                integ.integrate_to(field, &mut state, 0.0, t_end, dt);
+            }
+            "whfast_helio" => {
+                let mut integ = Whfast::new(g, WhfastCoords::DemocraticHeliocentric);
+                integ.integrate_to(field, &mut state, 0.0, t_end, dt);
+            }
             _ => {
                 let mut integ = Rk4;
                 integ.integrate_to(field, &mut state, 0.0, t_end, dt);
@@ -220,17 +248,42 @@ fn nbody_integrate(
 
 /// Figure-eight demo: integrate one period, return max |Δx|/|Δv|.
 #[pyfunction]
-fn figure_eight_period_error(steps: usize) -> f64 {
+#[pyo3(signature = (steps=4000, integrator="leapfrog"))]
+fn figure_eight_period_error(steps: usize, integrator: &str) -> PyResult<f64> {
     let mut state = figure_eight_state();
     let x0 = state.x.clone();
     let v0 = state.v.clone();
     let field = NBodyPointMass::geometric();
-    let mut integ = Leapfrog::default();
-    let dt = pe_space::FIGURE_EIGHT_PERIOD / steps as f64;
-    let mut t = 0.0;
-    for _ in 0..steps {
-        let res = integ.step(&field, &mut state, t, dt);
-        t = res.t;
+    let t_end = if integrator == "ias15" {
+        FIGURE_EIGHT_PERIOD_RETURN
+    } else {
+        pe_space::FIGURE_EIGHT_PERIOD
+    };
+    match integrator {
+        "leapfrog" => {
+            let mut integ = Leapfrog::default();
+            let dt = t_end / steps as f64;
+            let mut t = 0.0;
+            for _ in 0..steps {
+                let res = integ.step(&field, &mut state, t, dt);
+                t = res.t;
+            }
+        }
+        "ias15" => {
+            state.enable_compensated_positions();
+            let mut integ = Ias15::new(AdaptiveStep {
+                dt: t_end / steps.max(1) as f64,
+                dt_min: 1e-10,
+                dt_max: t_end / 20.0,
+                ..AdaptiveStep::default()
+            });
+            integ.integrate_to(&field, &mut state, 0.0, t_end, t_end / steps.max(1) as f64);
+        }
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "unknown integrator {other:?}; expected leapfrog|ias15"
+            )));
+        }
     }
     let mut max_dx = 0.0_f64;
     for i in 0..3 {
@@ -248,12 +301,13 @@ fn figure_eight_period_error(steps: usize) -> f64 {
         angular_momentum(&state, Vec3::zero()),
         total_energy(&field, &state),
     );
-    max_dx
+    Ok(max_dx)
 }
 
 /// Register space bindings on the module.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(canonical_space_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(canonical_ias15_hash, m)?)?;
     m.add_function(wrap_pyfunction!(kepler_period, m)?)?;
     m.add_function(wrap_pyfunction!(kepler_elements_to_state, m)?)?;
     m.add_function(wrap_pyfunction!(kepler_state_to_elements, m)?)?;

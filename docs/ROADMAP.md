@@ -162,7 +162,7 @@ Sizes are relative engineering scope, not calendar schedules.
 
 - **Models:** point-mass n-body; optional central + J2; Kepler/Lambert helpers;
   SRP / drag / third-body; non-inertial frames later. (**M7 shipped** in `pe-space` —
-  IAS15/WHFast stubs remain.)
+  IAS15 + WHFast landed; DOP853 still RKF78 stand-in.)
 - **Validation:** Kepler two-body; figure-eight / Pythagorean conservation; J₂ nodal
   rate; sun-synchronous inclination; energy/L property tests. SPICE ephemeris later.
 - **Effort:** M.
@@ -272,15 +272,18 @@ ported early because the Python oracle already exists.
 ### M7 as built (summary)
 
 - New crate `crates/pe-space`: `GravityField` + N-body `Integrator` traits (SI; μ used
-  directly); Leapfrog, Yoshida4, RK4, adaptive **RKF78** (DOP853 stand-in); compensated
-  Neumaier positions + origin rebase; Kepler elements ↔ state, Stumpff / universal
-  propagation, Lambert (Izzo 2015 geometry); J₂, cannonball SRP, third-body, ISA/exponential
-  drag. **IAS15** and **WHFast** are documented stubs (TODO follow-up).
+  directly); Leapfrog, Yoshida4, RK4, adaptive **RKF78** (DOP853 stand-in), **IAS15**
+  (Rein & Spiegel 2015), **WHFast**-style Wisdom–Holman (Jacobi / democratic-heliocentric);
+  compensated Neumaier positions + origin rebase; Kepler elements ↔ state, Stumpff /
+  universal propagation, Lambert (Izzo 2015 geometry); J₂, cannonball SRP, third-body,
+  ISA/exponential drag.
 - Clean-room from published papers only — no REBOUND / nyx-space / JSBSim code
   (`docs/SPACE.md`, `THIRD_PARTY.md`).
-- Determinism: portable `libm`, no FMA / `HashMap` iteration; cross-OS figure-eight hash CI.
+- Determinism: portable `libm`, no FMA / `HashMap` iteration; cross-OS figure-eight +
+  IAS15 hash CI.
 - Tests: Rust analytic + proptest; Python `tests/test_space_rust.py`. Criterion benches in
   `docs/BENCHMARKS.md`.
+- Follow-up (deferred): Hairer DOP853 tableau + order tests; WHFast symplectic correctors.
 
 **Rule.** No milestone merges without: (1) analytic or published benchmark tests,
 (2) oracle or cross-impl diff where a Python reference exists, (3) CI green.
