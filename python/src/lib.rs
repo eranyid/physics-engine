@@ -6,6 +6,7 @@
 //!   (`PyArray::from_vec`) — one allocation, no second copy
 
 mod aero_hydro;
+mod blast_ballistics;
 mod space;
 
 use numpy::{PyArray1, PyArray2, PyArrayMethods};
@@ -940,6 +941,7 @@ fn physics_engine_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(canonical_soft_step_collision_hash, m)?)?;
     aero_hydro::register(m)?;
     space::register(m)?;
+    blast_ballistics::register(m)?;
     m.add("G", G)?;
     m.add("STANDARD_GRAVITY", STANDARD_GRAVITY)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;

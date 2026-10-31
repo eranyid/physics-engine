@@ -202,3 +202,29 @@ jobs:
             echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
             exit 1
           fi
+
+      - name: Compute canonical blast-pyramid hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-blast --bin blast_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical blast hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=b51e11e89d4dd055
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::Blast determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+
+      - name: Compute canonical ballistics volley hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-ballistics --bin ballistics_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical ballistics hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=c839907696748e9a
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::Ballistics determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
