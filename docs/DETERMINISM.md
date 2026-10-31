@@ -1,4 +1,4 @@
-# Determinism policy (stages 1–3 / M2–M4)
+# Determinism policy (stages 1–3 / M2–M5a)
 
 ## Guarantees
 
@@ -22,6 +22,8 @@ Cross-check helpers:
   `physics_engine_rs.canonical_collision_hash()`
 - Stage 3: `cargo run -p pe-hydro --bin aero_hydro_hash --release` /
   `physics_engine_rs.canonical_aero_hydro_hash()`
+- M5a soft-step: `cargo run -p pe-collision --bin soft_step_hash --release` /
+  `physics_engine_rs.canonical_soft_step_collision_hash()`
 
 ### Canonical stage-1 scenario hash (locked)
 
@@ -52,6 +54,18 @@ Scenario:
 | Platform | Hash (hex) | Status |
 | --- | --- | --- |
 | Linux x86_64 (CI + local) | `50d52b2193aa528c` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+### Canonical M5a soft-step collision hash (locked)
+
+Scenario: same 10-box partial pyramid as stage-2, but `SolverMode::SoftStep`
+(default SoftStepParams: 4 substeps, Hertz 30, ζ 10, restitution threshold 1 m/s),
+sleep disabled, 600 steps @ `dt = 1/240`.
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `494b791b2a5f2918` | locked |
 | macOS (CI) | same expected | CI asserts equality |
 | Windows (CI) | same expected | CI asserts equality |
 

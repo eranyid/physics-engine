@@ -1,8 +1,8 @@
-//! AABB broad phase: sweep-and-prune on x, plus an O(N²) brute-force reference.
+//! AABB broad phase: sweep-and-prune on x, O(N²) brute-force, and (via
+//! [`crate::aabb_tree::DynamicAabbTree`]) a dynamic AABB tree.
 //!
 //! Pair order is always sorted by `(min_id, max_id)` for determinism. The
-//! [`BroadPhase`] trait lets a dynamic AABB tree replace SAP later without
-//! changing the contact pipeline.
+//! [`BroadPhase`] trait lets backends swap without changing the contact pipeline.
 
 use pe_math::Vec3;
 

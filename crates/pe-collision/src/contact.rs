@@ -1,13 +1,16 @@
 //! Contact dynamics: sequential impulses (projected Gauss–Seidel) with restitution
 //! and Coulomb friction, embedded in a semi-implicit Euler step, plus non-energetic
-//! positional correction.
+//! positional correction — and an optional Soft Step solver (M5a).
 //!
-//! Step (`dt`):
+//! Step (`dt`), PGS mode (oracle default):
 //! 1. kick `v += dt F/m`, `L += dt T`
 //! 2. detect: broad phase (sorted pairs) + narrow phase
 //! 3. solve: sequential impulses on `(v, L)`
 //! 4. drift `x`, `q` (stage-1 implicit-midpoint exponential map)
 //! 5. correct: re-detect, translate bodies apart by `β(depth − slop)`
+//!
+//! Soft-step mode: sub-steps with soft constraints (Hertz/ζ), relax pass, then
+//! restitution from pre-solve relative velocity — see `soft_step` / `softness`.
 
 use std::collections::BTreeMap;
 
@@ -17,10 +20,14 @@ use pe_core::{State, World};
 use pe_math::libm_ops::{fabs, sqrt};
 use pe_math::{Quat, Vec3};
 
-use crate::broadphase::{BroadPhase, SweepAndPrune};
+use crate::aabb_tree::DynamicAabbTree;
+use crate::broadphase::{BroadPhase, BruteForce, SweepAndPrune};
+use crate::islands::{angular_speed, SleepState};
 use crate::manifold::{ContactPoint, FeatureId};
 use crate::narrowphase::{DedicatedNarrowPhase, NarrowPhase};
 use crate::shapes::{Material, Shape};
+use crate::soft_step::solve_soft_step;
+use crate::softness::{SoftStepParams, SolverMode};
 
 /// Infinite-mass static collider (plane, fixed box, …).
 #[derive(Clone, Debug)]
@@ -84,6 +91,18 @@ struct WarmEntry {
     point: Vec3,
 }
 
+/// Broad-phase backend selection (deterministic pair order for all variants).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BroadPhaseKind {
+    /// Sweep-and-prune on x (M3 default).
+    #[default]
+    Sap,
+    /// O(N²) reference.
+    Brute,
+    /// Dynamic AABB tree (SAH insert, fat AABBs, rotations).
+    DynamicTree,
+}
+
 /// Wraps a stage-1 [`World`]; body `i` gets `shapes[i]` and `materials[i]`.
 /// Statics have infinite mass.
 pub struct ContactWorld {
@@ -97,7 +116,7 @@ pub struct ContactWorld {
     pub materials: Vec<Material>,
     /// PGS iterations (default 20).
     pub iterations: usize,
-    /// Below this approach speed [m/s], restitution is ignored.
+    /// Below this approach speed [m/s], restitution is ignored (PGS path).
     pub restitution_threshold: f64,
     /// Penetration slop [m] (default 0.1 mm).
     pub slop: f64,
@@ -105,11 +124,23 @@ pub struct ContactWorld {
     pub beta: f64,
     /// Re-apply previous impulses for persistent features.
     pub warm_start: bool,
+    /// Solver mode: [`SolverMode::Pgs`] (oracle default) or [`SolverMode::SoftStep`].
+    pub solver_mode: SolverMode,
+    /// Soft-step tuning (used when `solver_mode == SoftStep`).
+    pub soft_params: SoftStepParams,
+    /// Broad-phase backend (default SAP).
+    pub broad_phase: BroadPhaseKind,
+    /// Island sleeping bookkeeping.
+    pub sleep: SleepState,
     /// Last detected contacts.
     pub contacts: Vec<ContactPoint>,
+    /// Previous step's broad-phase pairs (for wake-on-new-contact).
+    prev_pairs: Vec<(usize, usize)>,
     /// Warm-start cache keyed by `(a, b, feature)` — `BTreeMap` so there is never
     /// unordered hash-map iteration on the step path.
     cache: BTreeMap<(usize, usize, u32), WarmEntry>,
+    /// Soft-step warm cache `(a, b, λn, jt)` in contact order.
+    soft_warm: Vec<(usize, usize, f64, Vec3)>,
     is_static: Vec<bool>,
     static_x: Vec<Vec3>,
     static_r: Vec<[[f64; 3]; 3]>,
@@ -133,6 +164,7 @@ impl ContactWorld {
         let static_x: Vec<Vec3> = statics.iter().map(|c| c.position).collect();
         let static_r: Vec<[[f64; 3]; 3]> =
             statics.iter().map(|c| c.orientation.to_matrix()).collect();
+        let sleep = SleepState::new(n);
         Self {
             world,
             shapes,
@@ -143,12 +175,81 @@ impl ContactWorld {
             slop: 1e-4,
             beta: 0.2,
             warm_start: true,
+            solver_mode: SolverMode::Pgs,
+            soft_params: SoftStepParams::default(),
+            broad_phase: BroadPhaseKind::Sap,
+            sleep,
             contacts: Vec::new(),
+            prev_pairs: Vec::new(),
             cache: BTreeMap::new(),
+            soft_warm: Vec::new(),
             is_static,
             static_x,
             static_r,
         }
+    }
+
+    /// Enable or disable island sleeping.
+    pub fn set_allow_sleep(&mut self, allow: bool) {
+        self.sleep.enabled = allow;
+        if !allow {
+            self.sleep.awake.fill(true);
+        }
+    }
+
+    /// Per-dynamic-body sleep flags (length `world.n`).
+    pub fn body_awake(&self) -> &[bool] {
+        &self.sleep.awake
+    }
+
+    /// Wake dynamic body `i` (and its island).
+    pub fn wake_body(&mut self, i: usize) {
+        self.sleep.wake_island_of(i);
+    }
+
+    fn mats_ext(&self) -> Vec<Material> {
+        let mut m = self.materials.clone();
+        m.extend(self.statics.iter().map(|s| s.material));
+        m
+    }
+
+    fn detect_pairs_and_contacts(&self, st: &State) -> (Vec<(usize, usize)>, Vec<ContactPoint>) {
+        let (x, r) = self.poses(st);
+        let shapes = self.all_shapes();
+        let aabbs: Vec<_> = shapes
+            .iter()
+            .enumerate()
+            .map(|(i, s)| s.aabb(x[i], &r[i]))
+            .collect();
+        let mut pairs = match self.broad_phase {
+            BroadPhaseKind::Sap => SweepAndPrune.pairs(&aabbs, &self.is_static),
+            BroadPhaseKind::Brute => BruteForce.pairs(&aabbs, &self.is_static),
+            BroadPhaseKind::DynamicTree => {
+                DynamicAabbTree::default().pairs(&aabbs, &self.is_static)
+            }
+        };
+        pairs.sort_unstable();
+        pairs.dedup();
+        let narrow = DedicatedNarrowPhase;
+        let mut out = Vec::new();
+        for &(i, j) in &pairs {
+            let mut cs = narrow.collide(
+                &crate::narrowphase::ColliderPose::new(shapes[i], x[i], r[i]),
+                &crate::narrowphase::ColliderPose::new(shapes[j], x[j], r[j]),
+            );
+            for (k, c) in cs.iter_mut().enumerate() {
+                c.feature = FeatureId(k as u32);
+                out.push(ContactPoint {
+                    a: i,
+                    b: j,
+                    point: c.point,
+                    normal: c.normal,
+                    depth: c.depth,
+                    feature: c.feature,
+                });
+            }
+        }
+        (pairs, out)
     }
 
     /// Simulation time [s].
@@ -187,7 +288,7 @@ impl ContactWorld {
     /// Broad + narrow phase. Pairs are sorted by `(min id, max id)`.
     pub fn detect(&self, st: Option<&State>) -> Vec<ContactPoint> {
         let st = st.unwrap_or(&self.world.state);
-        self.detect_with(&SweepAndPrune, &DedicatedNarrowPhase, st)
+        self.detect_pairs_and_contacts(st).1
     }
 
     /// Detect with pluggable broad/narrow backends (extension hooks for AABB trees / GJK).
@@ -230,9 +331,9 @@ impl ContactWorld {
         out
     }
 
-    /// Default detect path (SAP + dedicated pairs) — used by `step`.
+    /// Default detect path (selected broad phase + dedicated pairs) — used by `step`.
     fn detect_default(&self, st: &State) -> Vec<ContactPoint> {
-        self.detect_with(&SweepAndPrune, &DedicatedNarrowPhase, st)
+        self.detect_pairs_and_contacts(st).1
     }
 
     /// Sequential-impulse velocity solve. Writes `st.v` / `st.l` for dynamics.
@@ -458,22 +559,127 @@ impl ContactWorld {
     pub fn step(&mut self, dt: f64) {
         let (f, tau) = self.world.forces(&self.world.state, self.world.t);
         let n = self.world.n;
+        self.sleep.resize(n);
+
+        // Wake islands that receive non-gravitational forces/torques.
+        // Uniform gravity alone must not prevent sleeping (Box2D-style).
+        if self.sleep.enabled {
+            use pe_math::STANDARD_GRAVITY;
+            for i in 0..n {
+                let weight = Vec3::new(0.0, 0.0, -STANDARD_GRAVITY * self.world.mass[i]);
+                let excess = f[i] - weight;
+                // Torque always wakes; excess linear force (springs, user forces, …) wakes.
+                self.sleep.wake_from_force(i, excess, tau[i]);
+            }
+        }
+
         let mut st = self.world.state.copy();
         for i in 0..n {
+            if !self.sleep.is_awake(i) {
+                // Keep sleeping bodies at rest.
+                st.v[i] = Vec3::zero();
+                st.l[i] = Vec3::zero();
+                continue;
+            }
             st.v[i] += f[i] * (dt / self.world.mass[i]);
             st.l[i] += tau[i] * dt;
         }
-        let contacts = self.detect_default(&st);
-        self.solve_velocities(&mut st, &contacts);
-        self.contacts = contacts;
-        for i in 0..n {
-            st.x[i] += st.v[i] * dt;
+
+        let (pairs, contacts) = self.detect_pairs_and_contacts(&st);
+        self.sleep
+            .wake_from_new_contacts(n, &self.prev_pairs, &pairs);
+        self.sleep.rebuild_islands(n, &pairs);
+        // Re-apply awake flags after rebuild (islands rebuilt; keep awake vector).
+        self.prev_pairs = pairs;
+
+        match self.solver_mode {
+            SolverMode::Pgs => {
+                // Filter contacts involving only sleeping dynamics.
+                let awake = self.sleep.awake.clone();
+                let active: Vec<ContactPoint> = contacts
+                    .iter()
+                    .cloned()
+                    .filter(|c| {
+                        let a_ok = c.a >= n || awake[c.a];
+                        let b_ok = c.b >= n || awake[c.b];
+                        a_ok && b_ok && (c.a >= n || c.b >= n || awake[c.a] || awake[c.b])
+                    })
+                    .collect();
+                self.solve_velocities(&mut st, &active);
+                self.contacts = contacts;
+                for i in 0..n {
+                    if !self.sleep.is_awake(i) {
+                        continue;
+                    }
+                    st.x[i] += st.v[i] * dt;
+                }
+                // Drift rotation only for awake bodies.
+                let q_new = drift_rotation(&self.world, &st.q, &st.l, dt);
+                for i in 0..n {
+                    if self.sleep.is_awake(i) {
+                        st.q[i] = q_new[i].normalize();
+                    }
+                }
+                self.correct_positions(&mut st);
+            }
+            SolverMode::SoftStep => {
+                let mats = self.mats_ext();
+                let awake_slice = if self.sleep.enabled {
+                    Some(self.sleep.awake.as_slice())
+                } else {
+                    None
+                };
+                let result = solve_soft_step(
+                    &self.world,
+                    &mats,
+                    &self.static_x,
+                    &self.static_r,
+                    &self.soft_params,
+                    dt,
+                    &mut st,
+                    &contacts,
+                    awake_slice,
+                    &self.soft_warm,
+                );
+                self.soft_warm = result.warm;
+                self.contacts = result.contacts;
+                // Positional polish for residual overlap. Soft constraints do the
+                // primary stabilization; a stronger β helps 1000:1 mass-ratio stacks
+                // in 3D where iterative soft impulses alone under-resolve.
+                let beta_save = self.beta;
+                self.beta = self.beta.max(0.5);
+                self.correct_positions(&mut st);
+                self.beta = beta_save;
+            }
         }
-        st.q = drift_rotation(&self.world, &st.q, &st.l, dt);
-        for q in &mut st.q {
-            *q = q.normalize();
+
+        // Sleep update.
+        if self.sleep.enabled {
+            let mut lin = vec![0.0; n];
+            let mut ang = vec![0.0; n];
+            let mut has_c = vec![false; n];
+            for i in 0..n {
+                lin[i] = st.v[i].norm();
+                let iinv = self.world.inv_inertia_world(st.q[i], i);
+                ang[i] = angular_speed(st.l[i], &iinv);
+            }
+            for c in &self.contacts {
+                if c.a < n {
+                    has_c[c.a] = true;
+                }
+                if c.b < n {
+                    has_c[c.b] = true;
+                }
+            }
+            self.sleep.update_sleep(dt, &lin, &ang, &has_c);
+            for i in 0..n {
+                if !self.sleep.awake[i] {
+                    st.v[i] = Vec3::zero();
+                    st.l[i] = Vec3::zero();
+                }
+            }
         }
-        self.correct_positions(&mut st);
+
         self.world.state = st;
         self.world.t += dt;
     }

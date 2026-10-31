@@ -18,9 +18,14 @@ not copied into this tree.
 _None yet. No third-party simulation source has been vendored or derived into
 this tree._
 
-### M4 note
+## Algorithmic citations (clean-room; not derived source)
 
-ISA constants and formulas follow ICAO Doc 7488 / ISO 2533 (public standards);
-IMO IS Code criteria are from MSC.267(85) (regulatory text — criteria encoded as
-pure thresholds, not copied source). Lanchester phugoid and elliptic-wing
-formulas are textbook identities. No third-party simulation code was copied.
+The following published descriptions informed clean-room reimplementations in
+`crates/pe-collision` (M5a). **No Box2D / Solver2D / Bepu source was copied.**
+
+| Topic | Citation | Where used |
+| --- | --- | --- |
+| Soft constraints (Hertz / ζ → bias, mass, impulse scales) | Erin Catto, [Solver2D](https://box2d.org/posts/2024/02/solver2d/) (2024-02-05); GDC 2011 “Soft Constraints”; mass-independent form attributed there to Ross Nordby (Bepu) | `softness.rs`, `soft_step.rs` |
+| Soft Step / TGS_Soft pipeline (sub-steps, warm start, relax, restitution) | Erin Catto, Solver2D post + Box2D v3 release notes | `soft_step.rs`, `contact.rs` |
+| Dynamic AABB tree (SAH insert, fat AABBs, rotations) | Published Box2D dynamic-tree / BVH descriptions (Erin Catto) | `aabb_tree.rs` |
+| Island sleeping thresholds | Box2D-style defaults adapted to SI (documented in `islands.rs`) | `islands.rs` |

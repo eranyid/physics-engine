@@ -211,7 +211,7 @@ ported early because the Python oracle already exists.
 | **M2** | Port stage 1 | Rust matches Python oracle on stage-1 analytic tests (tolerances documented); bit-stable deterministic mode | **done** |
 | **M3** | Port stage 2 | Contacts/friction/stacks cross-validated; missing narrow pairs tracked; SAP≡brute in Rust | **done** |
 | **M4** | Port stage 3 | ISA/aero/hydro parity with Python suite | **done** (this PR) |
-| **M5** | Joints + islands + sleep | Pendulum/motor tests; large resting scene sleeps; Python may gain thin joint oracle or shared fixtures | planned |
+| **M5** | Joints + islands + sleep | Pendulum/motor tests; large resting scene sleeps; Python may gain thin joint oracle or shared fixtures | **M5a done** (soft-step / tree / islands / sleep); joints + CCD later |
 | **M6** | CCD + convex | TOI tests (no tunnel at configured speeds); GJK/EPA convex; capsule–box | planned |
 | **M7** | Space module | Kepler + n-body conservation suite in Rust (+ Python helpers as needed) | planned |
 | **M8** | Scene I/O + C ABI | Round-trip serialization; `pe-ffi` headers; smoke GDExtension optional | planned |
@@ -241,6 +241,17 @@ ported early because the Python oracle already exists.
 - Tests: Rust unit + proptest narrow-phase; analytic contact suite; Python oracle
   `tests/test_oracle_contacts_rust.py` (near bit-exact). Criterion pyramid benches in
   `docs/BENCHMARKS.md`. Default CI stays fast (no Criterion; slow pytest marker unchanged).
+
+### M5a as built (summary)
+
+- Soft-step solver (Box2D v3 / Solver2D clean-room): sub-steps (default 4), soft constraints
+  (contact Hertz 30, ζ 10, capped to 0.25×substep rate), per-substep warm start, relax without
+  bias, restitution from pre-solve relative velocity (~1 m/s threshold). **PGS remains the
+  default** (oracle-compatible).
+- Dynamic AABB tree broad phase (SAH insert, fat AABBs, rotations) ≡ SAP ≡ brute; sleeping
+  islands (0.05 m/s, 2°/s, 0.5 s) with wake on new contact / non-gravity force.
+- Out of scope (later PR): joints, CCD. Do not touch `pe-space`.
+- Determinism: soft-step pyramid hash CI; Criterion benches for soft-step vs PGS and tree vs SAP.
 
 ### M4 as built (summary)
 

@@ -142,6 +142,19 @@ jobs:
             exit 1
           fi
 
+      - name: Compute canonical M5a soft-step collision hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-collision --bin soft_step_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical soft-step collision hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=494b791b2a5f2918
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::Soft-step determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+
       - name: Compute canonical stage-3 aero+hydro hash
         shell: bash
         run: |
