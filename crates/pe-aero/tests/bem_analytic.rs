@@ -55,24 +55,30 @@ fn ideal_bem_matches_momentum_hover() {
     // One redesign step: build twist for a guess, then rebuild at the measured vh.
     let mut v_design = 5.0;
     let mut r = {
-        let geom = RotorGeometry::ideal_hover_twist(
-            2, radius, hub, chord_tip, omega, v_design, alpha, 48,
-        );
+        let geom =
+            RotorGeometry::ideal_hover_twist(2, radius, hub, chord_tip, omega, v_design, alpha, 48);
         BemRotor::new(geom, ideal_rotor_polar(chord_tip))
             .ideal()
             .evaluate(omega, 0.0, RHO0)
     };
-    assert!(r.converged, "iters={} residual={}", r.iterations, r.residual);
+    assert!(
+        r.converged,
+        "iters={} residual={}",
+        r.iterations, r.residual
+    );
     v_design = hover_induced_velocity(r.thrust, RHO0, area);
     {
-        let geom = RotorGeometry::ideal_hover_twist(
-            2, radius, hub, chord_tip, omega, v_design, alpha, 48,
-        );
+        let geom =
+            RotorGeometry::ideal_hover_twist(2, radius, hub, chord_tip, omega, v_design, alpha, 48);
         r = BemRotor::new(geom, ideal_rotor_polar(chord_tip))
             .ideal()
             .evaluate(omega, 0.0, RHO0);
     }
-    assert!(r.converged, "iters={} residual={}", r.iterations, r.residual);
+    assert!(
+        r.converged,
+        "iters={} residual={}",
+        r.iterations, r.residual
+    );
     assert!(r.residual < 1e-8, "residual={}", r.residual);
     let vh = hover_induced_velocity(r.thrust, RHO0, area);
     let vi_err = (r.induced_velocity - vh).abs() / vh;
@@ -93,10 +99,7 @@ fn ideal_bem_matches_momentum_hover() {
         r.induced_velocity,
         vh
     );
-    assert!(
-        vi_tw_err < 0.02,
-        "ideal |vi_tw−vh|/vh = {vi_tw_err}"
-    );
+    assert!(vi_tw_err < 0.02, "ideal |vi_tw−vh|/vh = {vi_tw_err}");
     assert!(
         p_err < 0.02,
         "ideal |P−T vh|/(T vh) = {p_err} (P={}, T vh={})",
@@ -145,7 +148,10 @@ fn tip_loss_reduces_figure_of_merit() {
     let fm_t = figure_of_merit(tip.thrust, tip.power, RHO0, area);
     let drop = fm_i - fm_t;
     eprintln!("tip-loss: FM_ideal={fm_i:.6} FM_tip={fm_t:.6} drop={drop:.6}");
-    assert!(drop > 0.01, "expected tip-loss FM drop: ideal={fm_i} tip={fm_t}");
+    assert!(
+        drop > 0.01,
+        "expected tip-loss FM drop: ideal={fm_i} tip={fm_t}"
+    );
     assert!(
         fm_t > 0.85 && fm_t < 0.99,
         "tip-loss FM={fm_t} outside stated band [0.85, 0.99]"

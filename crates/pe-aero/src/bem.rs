@@ -148,9 +148,7 @@ impl RotorGeometry {
         alpha_design: f64,
         n_stations: usize,
     ) -> Self {
-        assert!(
-            n_blades >= 1 && radius > hub && n_stations >= 2 && chord_tip > 0.0 && omega > 0.0
-        );
+        assert!(n_blades >= 1 && radius > hub && n_stations >= 2 && chord_tip > 0.0 && omega > 0.0);
         let mut stations = Vec::with_capacity(n_stations);
         for i in 0..n_stations {
             let t = i as f64 / (n_stations - 1) as f64;

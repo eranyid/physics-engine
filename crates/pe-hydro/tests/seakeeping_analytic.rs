@@ -103,8 +103,8 @@ fn free_decay_rate_matches_damping_coefficient() {
     let a33 = sectional_a33_inf(RHO_FRESHWATER, 4.0, 1.0) * 12.0;
     let a_wp = 12.0 * 4.0;
     let c33 = RHO_FRESHWATER * STANDARD_GRAVITY * a_wp;
-    let b33 = 2.0 * 0.05 * ((mass + a33) * c33).sqrt(); // ζ ≈ 0.05
-    // Fine RK4 + multi-cycle log-decrement. Measured |β_fit−β|/β ≈ 0.2–1%.
+    // ζ ≈ 0.05. Fine RK4 + multi-cycle log-decrement (measured |β_fit−β|/β ≪ 3%).
+    let b33 = 2.0 * 0.05 * ((mass + a33) * c33).sqrt();
     let (_traj, beta_a, beta_fit) = free_decay_heave(mass, a33, b33, c33, 0.2, 5e-4, 80_000);
     assert_relative_eq!(beta_a, b33 / (2.0 * (mass + a33)), max_relative = 1e-12);
     let rel = (beta_fit - beta_a).abs() / beta_a;
