@@ -581,6 +581,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "pe-space"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "criterion",
+ "pe-aero",
+ "pe-math",
+ "proptest",
+]
+
+[[package]]
 name = "physics_engine_rs"
 version = "0.1.0"
 dependencies = [
@@ -590,6 +601,7 @@ dependencies = [
  "pe-core",
  "pe-hydro",
  "pe-math",
+ "pe-space",
  "pyo3",
 ]
 

@@ -24,3 +24,22 @@ ISA constants and formulas follow ICAO Doc 7488 / ISO 2533 (public standards);
 IMO IS Code criteria are from MSC.267(85) (regulatory text — criteria encoded as
 pure thresholds, not copied source). Lanchester phugoid and elliptic-wing
 formulas are textbook identities. No third-party simulation code was copied.
+
+### M7 note (`pe-space`)
+
+Algorithms implemented clean-room from published papers / textbooks (coefficients
+and formulas only — **no** source translated from REBOUND, nyx-space, JSBSim, or
+other GPL/AGPL/LGPL projects):
+
+- Yoshida, H. (1990). Construction of higher order symplectic integrators.
+  *Phys. Lett. A* **150**.
+- Fehlberg, E. (1968). Classical fifth-, sixth-, seventh-, and eighth-order
+  Runge–Kutta formulas with stepsize control. NASA TR R-287. (RKF78; DOP853-class
+  adaptive role.)
+- Izzo, D. (2015). Revisiting Lambert's problem. *Celest. Mech. Dyn. Astr.* **121**.
+- Battin / Danby / Vallado textbook identities for Stumpff functions and universal
+  Kepler variables.
+- Rein & Spiegel (2015) IAS15 and Wisdom & Holman (1991) WHFast are **cited as
+  future work only** (stubs); no code from those papers' reference implementations
+  was used.
+- Chenciner–Montgomery / Simó figure-eight initial conditions are published IC values.
