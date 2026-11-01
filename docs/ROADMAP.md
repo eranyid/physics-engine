@@ -150,9 +150,11 @@ Sizes are relative engineering scope, not calendar schedules.
 
 - **Models:** ISA; wing polar + stall; thrust; pitch derivatives; compressibility /
   Dryden (M9); BEM rotors (M11); **6-DOF stability-derivative FDM** (trim,
-  linearisation, eigenmodes — see `docs/AERO.md`).
+  longitudinal + lateral linearisation / eigenmodes, α̇ derivatives, 2nd-order
+  Dryden, ground effect — see `docs/AERO.md`).
 - **Validation:** ISA tables; trim L=W, T=D; \((L/D)_{\max}\); dive terminal V;
-  actuator-disk \(v_h\); BEM hover FM band; Navion phugoid vs Lanchester/Nelson;
+  actuator-disk \(v_h\); BEM hover FM band; Navion phugoid/short-period/lateral
+  roots vs Nelson–Teper published values; Dryden PSD/RMS; Wieselsberger GE;
   coordinated-turn identities; FDM hash lock.
 - **Effort:** S port; M for 6-DOF aero / compressibility (**6-DOF FDM shipped**).
 
@@ -348,7 +350,7 @@ ported early because the Python oracle already exists.
   Dryden wind, Coriolis/Eötvös, spin/Magnus models, hit-scan, Poncelet /
   Recht–Ipson, ballistic tables; **G1/G7 JBM/BRL Cd tables** (linear interp,
   BC scaling); sourced cartridge rows + py_ballisticcalc drop/TOF oracle;
-  cross-OS 100-bullet volley hash (`a9ec62a39bbd3dc4`).
+  cross-OS 100-bullet volley hash (`7b0162d346bf9f1b`; follows pe-aero Dryden).
 - PyO3 + Python tests; Criterion benches recorded in [`BENCHMARKS.md`](BENCHMARKS.md).
 
 ### M8 soft / materials (`pe-soft`) as built

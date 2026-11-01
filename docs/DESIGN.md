@@ -243,8 +243,9 @@ simulated small-heel period within ~8 % (slow). Default `pytest` keeps these fas
 markers cover trimmed level flight (5 s) and roll oscillation.
 
 **Known limitations / risks**
-* Longitudinal / planar aero only (no sideslip, no lateral-directional derivatives, no
-  ground effect, no compressibility; stall model is a simple linear break).
+* Python reference `aero.py` remains longitudinal / planar; Rust `pe-aero::fdm`
+  adds full 6-DOF stability derivatives, lateral modes, α̇, Dryden, ground effect
+  (see [`AERO.md`](AERO.md)). Stall model is still a simple linear break.
 * Propeller/jet models are first-order (no advance ratio map, no intake momentum drag).
 * ISA stops at 20 km; geometric vs geopotential altitude not distinguished.
 * Cylinder hull is vertical; heeled cylinder uses an N-gon prism (facet error).

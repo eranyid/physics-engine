@@ -7,7 +7,9 @@ use pe_math::{Quat, Vec3};
 
 use super::derivatives::{ControlInputs, StabilityDerivatives};
 use crate::atmosphere::DensityModel;
+use crate::ground_effect::apply_ground_effect;
 use crate::polar::dynamic_pressure;
+use crate::turbulence::HeldDrydenGust;
 
 /// SI aircraft geometry, mass properties, and derivative set for 6-DOF aero.
 #[derive(Clone, Debug)]
@@ -32,7 +34,8 @@ pub struct SixDofModel {
     pub thrust_offset: Vec3,
     /// Density model (ISA or constant).
     pub density: DensityModel,
-    /// Wind velocity [m/s] (world frame; blowing *to*).
+    /// Wind velocity [m/s] (world frame; blowing *to*). Steady component only;
+    /// turbulence is attached on [`SixDofAero`] via [`HeldDrydenGust`].
     pub wind: Vec3,
     /// Control-surface deflections [rad].
     pub controls: ControlInputs,
@@ -41,6 +44,9 @@ pub struct SixDofModel {
     pub alpha_trim: f64,
     /// Whether geometry/derivatives are from cited public sources.
     pub verified: bool,
+    /// Enable Wieselsberger/McCormick ground effect when `Some(h_agl)` [m]
+    /// (wing height above ground). `None` disables.
+    pub ground_height: Option<f64>,
 }
 
 impl SixDofModel {
@@ -106,10 +112,33 @@ pub fn body_rates_hat(omega_b: Vec3, b: f64, c: f64, v: f64) -> (f64, f64, f64) 
     (p_hat, q_hat, r_hat)
 }
 
+/// Nondimensional α̇: `α̂̇ = α̇ c̄ / (2 V)`.
+pub fn alpha_dot_hat(alpha_dot: f64, c: f64, v: f64) -> f64 {
+    alpha_dot * c / (2.0 * v.max(1e-6))
+}
+
+/// Kinematic α̇ [rad/s] from body air-relative velocity and its body-frame
+/// derivative: `α̇ = (u ẇ − w ú) / (u² + w²)` with `α = atan2(−w, u)`.
+pub fn alpha_dot_kinematic(v_body: Vec3, a_body: Vec3) -> f64 {
+    let u = v_body.x;
+    let w = v_body.z;
+    let den = u * u + w * w;
+    if den < 1e-12 {
+        return 0.0;
+    }
+    // α = atan2(−w, u) ⇒ α̇ = (−u ẇ + w ú) / (u² + w²)?
+    // d/dt atan2(−w,u) = [u (−ẇ) − (−w) ú] / (u²+w²) = (−u ẇ + w ú)/(u²+w²)
+    (w * a_body.x - u * a_body.z) / den
+}
+
 /// Evaluate body-frame aero + thrust force/moment for a model state sample.
 ///
 /// `v_body` [m/s] air-relative velocity in body axes; `omega_b` [rad/s] body rates;
 /// `rho` [kg/m³]; controls from `model.controls` unless `controls` is `Some`.
+///
+/// Uses `α̇ = 0` (steady / quasi-steady). Pass a nonzero rate through
+/// [`eval_aero_body_with_alphadot`] — linearisation does a gravity-consistent
+/// fixed-point; [`SixDofAero`] can supply a lagged `α̇` from attitude history.
 pub fn eval_aero_body(
     model: &SixDofModel,
     v_body: Vec3,
@@ -117,21 +146,39 @@ pub fn eval_aero_body(
     rho: f64,
     controls: Option<ControlInputs>,
 ) -> SixDofForces {
+    eval_aero_body_with_alphadot(model, v_body, omega_b, rho, controls, 0.0)
+}
+
+/// As [`eval_aero_body`] with an explicit `α̇` [rad/s] for `C_Lα̇` / `C_mα̇`.
+pub fn eval_aero_body_with_alphadot(
+    model: &SixDofModel,
+    v_body: Vec3,
+    omega_b: Vec3,
+    rho: f64,
+    controls: Option<ControlInputs>,
+    alpha_dot: f64,
+) -> SixDofForces {
     let ctrl = controls.unwrap_or(model.controls);
     let (alpha_abs, beta, v) = air_angles(v_body);
     // Derivatives tabulated about trim AoA: use incremental α.
     let alpha = alpha_abs - model.alpha_trim;
     let (p_hat, q_hat, r_hat) = body_rates_hat(omega_b, model.b, model.c, v);
+    let adot_hat = alpha_dot_hat(alpha_dot, model.c, v);
 
-    let cl = model.deriv.cl(alpha, q_hat, ctrl.delta_e);
-    let cd = model.deriv.cd(alpha);
+    let mut cl = model.deriv.cl_full(alpha, q_hat, ctrl.delta_e, adot_hat);
+    let mut cd = model.deriv.cd(alpha);
+    if let Some(h) = model.ground_height {
+        let (cl_ge, cd_ge, _, _) = apply_ground_effect(cl, cd, model.deriv.cd0, h, model.b);
+        cl = cl_ge;
+        cd = cd_ge;
+    }
     let cy = model
         .deriv
         .cy(beta, p_hat, r_hat, ctrl.delta_a, ctrl.delta_r);
     let c_l = model
         .deriv
         .c_l_roll(beta, p_hat, r_hat, ctrl.delta_a, ctrl.delta_r);
-    let cm = model.deriv.cm(alpha, q_hat, ctrl.delta_e);
+    let cm = model.deriv.cm_full(alpha, q_hat, ctrl.delta_e, adot_hat);
     let cn = model
         .deriv
         .cn(beta, p_hat, r_hat, ctrl.delta_a, ctrl.delta_r);
@@ -139,41 +186,9 @@ pub fn eval_aero_body(
     let qbar = dynamic_pressure(rho, v);
     let qs = qbar * model.s;
 
-    // Wind-axis → body (z-up): drag along −V̂, side along ŷ_wind, lift ⟂ V in α-plane.
-    // For small β the body-axis approximation:
-    //   X = qs (−CD cosα cosβ + CY sinβ − ? ) …
-    // We use the same geometric construction as planar AircraftAero, extended for β:
-    let (f_aero_b, _e_v) = if v < 1e-9 {
-        (Vec3::zero(), Vec3::unit_x())
-    } else {
-        let e_v = v_body / v;
-        // Lift direction in the plane of body x–z, perpendicular to the projection of V.
-        let e_lift = Vec3::new(libm_ops::sin(alpha_abs), 0.0, libm_ops::cos(alpha_abs));
-        // Side unit: complete right-handed wind basis ≈ body y for modest β.
-        let e_side = e_v.cross(e_lift);
-        let e_side = {
-            let n = e_side.norm();
-            if n < 1e-12 {
-                Vec3::unit_y()
-            } else {
-                e_side / n
-            }
-        };
-        let f = e_lift * (qs * cl) + e_side * (qs * cy) + (-e_v) * (qs * cd);
-        (f, e_v)
-    };
-
+    let f_aero_b = aero_force_body(v_body, alpha_abs, cl, cd, cy, qs);
     let m_aero_b = Vec3::new(qs * model.b * c_l, qs * model.c * cm, qs * model.b * cn);
-
-    let t_axis = {
-        let n = model.thrust_axis.norm();
-        if n < 1e-15 {
-            Vec3::unit_x()
-        } else {
-            model.thrust_axis / n
-        }
-    };
-    let f_thrust = t_axis * model.thrust;
+    let f_thrust = thrust_force(model);
     let m_thrust = model.thrust_offset.cross(f_thrust);
 
     SixDofForces {
@@ -193,40 +208,111 @@ pub fn eval_aero_body(
     }
 }
 
+fn thrust_force(model: &SixDofModel) -> Vec3 {
+    let n = model.thrust_axis.norm();
+    let t_axis = if n < 1e-15 {
+        Vec3::unit_x()
+    } else {
+        model.thrust_axis / n
+    };
+    t_axis * model.thrust
+}
+
+fn aero_force_body(v_body: Vec3, alpha_abs: f64, cl: f64, cd: f64, cy: f64, qs: f64) -> Vec3 {
+    let v = v_body.norm();
+    if v < 1e-9 {
+        return Vec3::zero();
+    }
+    let e_v = v_body / v;
+    // Lift in the body x–z plane, ⟂ to the α-projection of V (z-up).
+    let e_lift = Vec3::new(libm_ops::sin(alpha_abs), 0.0, libm_ops::cos(alpha_abs));
+    // Side force: stability-derivative `C_Y` is the body-+y coefficient
+    // (Nelson / Etkin). Do **not** use `e_v × e_lift` — that equals −ŷ at
+    // α=β=0 and would flip the sign of Y_β (and Dutch-roll damping).
+    e_lift * (qs * cl) + Vec3::unit_y() * (qs * cy) + (-e_v) * (qs * cd)
+}
+
 /// [`ForceGenerator`] wrapping a [`SixDofModel`] attached to one body.
+///
+/// Optional [`HeldDrydenGust`] supplies a **piecewise-constant** gust held over
+/// each discrete interval `[n Δt, (n+1) Δt)`. RK4 stages that land in the same
+/// interval therefore see identical wind, so integrator replay stays
+/// bit-deterministic for a fixed seed/`Δt` (see `docs/AERO.md`).
 #[derive(Clone, Debug)]
 pub struct SixDofAero {
     /// Body index in the [`World`].
     pub body: usize,
-    /// Aircraft model (controls / thrust / wind are part of the model).
+    /// Aircraft model (controls / thrust / steady wind are part of the model).
     pub model: SixDofModel,
+    /// Optional Dryden gust (held per discrete step).
+    pub gust: Option<HeldDrydenGust>,
 }
 
 impl SixDofAero {
-    /// Attach 6-DOF aero to `body`.
+    /// Attach 6-DOF aero to `body` (no turbulence).
     pub fn new(body: usize, model: SixDofModel) -> Self {
-        Self { body, model }
+        Self {
+            body,
+            model,
+            gust: None,
+        }
     }
 
-    /// Diagnostic loads at the current state.
+    /// Attach 6-DOF aero with a held Dryden gust schedule.
+    pub fn with_gust(body: usize, model: SixDofModel, gust: HeldDrydenGust) -> Self {
+        Self {
+            body,
+            model,
+            gust: Some(gust),
+        }
+    }
+
+    fn wind_at(&self, t: f64, airspeed: f64) -> Vec3 {
+        let gust = match &self.gust {
+            Some(g) => g.gust_at(t, airspeed),
+            None => Vec3::zero(),
+        };
+        self.model.wind + gust
+    }
+
+    /// Diagnostic loads at the current state (`t = 0` wind hold).
     pub fn loads(&self, world: &World, s: &State) -> SixDofForces {
+        self.loads_at(world, s, 0.0)
+    }
+
+    /// Diagnostic loads at simulation time `t` [s] (gust schedule keyed by `t`).
+    pub fn loads_at(&self, world: &World, s: &State, t: f64) -> SixDofForces {
         let i = self.body;
-        let v_rel = s.v[i] - self.model.wind;
+        let airspeed = (s.v[i] - self.model.wind).norm().max(1.0);
+        let wind = self.wind_at(t, airspeed);
+        let v_rel = s.v[i] - wind;
         let v_b = s.q[i].inverse_rotate(v_rel);
         let omega_b = s.q[i].inverse_rotate(world.omega_i(s, i));
-        let rho = self.model.density.density_at(s.x[i].z);
-        eval_aero_body(&self.model, v_b, omega_b, rho, None)
+        let model = &self.model;
+        let rho = model.density.density_at(s.x[i].z);
+        eval_aero_body(model, v_b, omega_b, rho, None)
     }
 }
 
 impl ForceGenerator for SixDofAero {
-    fn apply(&self, world: &World, s: &State, _t: f64, f: &mut [Vec3], torque: &mut [Vec3]) {
+    fn apply(&self, world: &World, s: &State, t: f64, f: &mut [Vec3], torque: &mut [Vec3]) {
         let i = self.body;
-        let v_rel = s.v[i] - self.model.wind;
+        let airspeed = (s.v[i] - self.model.wind).norm().max(1.0);
+        let wind = self.wind_at(t, airspeed);
+        let v_rel = s.v[i] - wind;
         let v_b = s.q[i].inverse_rotate(v_rel);
         let omega_b = s.q[i].inverse_rotate(world.omega_i(s, i));
-        let rho = self.model.density.density_at(s.x[i].z);
-        let loads = eval_aero_body(&self.model, v_b, omega_b, rho, None);
+        let mut model = self.model.clone();
+        // If ground effect is armed with height source = body altitude (z AGL
+        // when ground is z=0), update from state when a non-negative sentinel
+        // was stored; callers set `ground_height` explicitly for offline eval.
+        if let Some(h0) = model.ground_height {
+            if h0 < 0.0 {
+                model.ground_height = Some(s.x[i].z.max(0.0));
+            }
+        }
+        let rho = model.density.density_at(s.x[i].z);
+        let loads = eval_aero_body(&model, v_b, omega_b, rho, None);
         f[i] += s.q[i].rotate(loads.force_body);
         torque[i] += s.q[i].rotate(loads.moment_body);
     }
