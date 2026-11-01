@@ -534,7 +534,8 @@ impl Grid3d {
             return;
         }
         let ke = 0.5 * (c[1] * c[1] + c[2] * c[2] + c[3] * c[3]) / c[0];
-        if !((self.gamma - 1.0) * (c[4] - ke) >= self.p_floor) {
+        let p = (self.gamma - 1.0) * (c[4] - ke);
+        if p.is_nan() || p < self.p_floor {
             c[4] = self.p_floor / (self.gamma - 1.0) + ke;
         }
     }

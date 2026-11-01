@@ -327,7 +327,7 @@ impl BlastScene {
                 }
             }
         }
-        if cells.is_empty() || !(energy_j > 0.0) {
+        if cells.is_empty() || energy_j.is_nan() || energy_j <= 0.0 {
             return 0;
         }
         let de = energy_j / (cells.len() as f64 * g.cell_volume());
@@ -370,7 +370,7 @@ impl BlastScene {
             Some(r) => r,
             None => self.clearance(d.origin, d.surface_burst) - 2.0 * dx,
         };
-        if !(w > 0.0) {
+        if w <= 0.0 {
             return DetonationReport::default();
         }
         if r_map < 3.0 * dx || r_map <= 2.0 * r_charge {

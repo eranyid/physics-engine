@@ -379,6 +379,21 @@ jobs:
             exit 1
           fi
 
+      - name: Compute canonical 3-D blast (Euler voxel grid) hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED=9110aefcfa8c74a8
+          for FEAT in "" "--features parallel"; do
+            HASH=$(cargo run -p pe-blast $FEAT --bin blast3d_hash --release | tr -d '\r\n' | tail -n1)
+            echo "Canonical blast3d hash on ${{ matrix.os }} (${FEAT:-serial}): $HASH"
+            if [ "$HASH" != "$EXPECTED" ]; then
+              echo "::error::3-D blast determinism hash mismatch on ${{ matrix.os }} (${FEAT:-serial}): got $HASH expected $EXPECTED"
+              echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+              exit 1
+            fi
+          done
+
       - name: Compute canonical ballistics volley hash
         shell: bash
         run: |

@@ -39,6 +39,8 @@ Cross-check helpers:
   `physics_engine_rs.canonical_convex_hash()`
 - M7 space: `cargo run -p pe-space --bin space_hash --release` /
   `physics_engine_rs.canonical_space_hash()`
+- 3-D blast (Euler voxel grid): `cargo run -p pe-blast --bin blast3d_hash --release`
+  (also with `--features parallel`; both must print the same value)
 - Blast: `cargo run -p pe-blast --bin blast_hash --release` /
   `physics_engine_rs.canonical_blast_hash()`
 - Ballistics: `cargo run -p pe-ballistics --bin ballistics_hash --release` /
@@ -487,3 +489,19 @@ Within Rust, `test_rust_determinism_repeat`, `determinism_bitwise_repeat`, and
 The stage-3 hash is asserted equal on repeat via `canonical_aero_hydro_hash`.
 The M7 figure-eight hash is asserted equal on repeat via `canonical_space_hash` /
 `figure_eight_hash_bit_stable_on_repeat`.
+
+### Canonical 3-D blast hash (locked)
+
+Scenario (`pe_blast::blast3d_corridor_hash`, `blast3d_hash` binary):
+
+- 32 × 24 × 16 grid, `dx = 0.25 m` (8 × 6 × 4 m), sea-level air, γ = 1.4.
+- Ground below 0.25 m, a 2.5 m wall at x ≈ 4.5 m with a 1 m gap, and a return
+  wall along x at y ≈ 4.5 m.
+- 0.2 kg TNT-equivalent at (2, 3, 0.75) m: 1-D spherical near field, then
+  remap into the grid (default options), then 60 CFL steps (CFL 0.4).
+- FNV-1a over every cell's conserved state, in cell order.
+
+**Locked value:** `9110aefcfa8c74a8`. Serial and `--features parallel`
+(rayon over z-slabs) must match. Fluxes are computed per face and gathered
+per cell, and the CFL max-reduction is order-independent, so thread count
+does not change the result.
