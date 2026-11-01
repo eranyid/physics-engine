@@ -3,13 +3,20 @@
 use serde::{Deserialize, Serialize};
 
 /// Current scene schema version written by this crate.
-pub const SCENE_SCHEMA_VERSION: u32 = 1;
+///
+/// - **v1:** primitives (sphere/box/capsule/plane), joints, basic CCD bools.
+/// - **v2:** + convex hulls, rounded shapes, body bullet flag, fuller CCD params.
+pub const SCENE_SCHEMA_VERSION: u32 = 2;
+
+/// Schema version of the frozen v1 fixture (migration tests).
+pub const SCENE_SCHEMA_V1: u32 = 1;
 
 /// Binary magic `PESC` (Physics Engine SCene).
 pub const SCENE_BINARY_MAGIC: [u8; 4] = *b"PESC";
 
 /// Rigid body description (SI).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct BodyDesc {
     /// Mass [kg].
     pub mass: f64,
@@ -26,6 +33,9 @@ pub struct BodyDesc {
     /// Optional debug name.
     #[serde(default)]
     pub name: String,
+    /// Bullet / TOI CCD flag for this dynamic body (schema v2; default false).
+    #[serde(default)]
+    pub bullet: bool,
 }
 
 impl Default for BodyDesc {
@@ -38,13 +48,14 @@ impl Default for BodyDesc {
             orientation: [1.0, 0.0, 0.0, 0.0],
             angular_velocity: [0.0; 3],
             name: String::new(),
+            bullet: false,
         }
     }
 }
 
 /// Collision shape descriptor.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ShapeDesc {
     /// Sphere radius [m].
     Sphere {
@@ -56,7 +67,7 @@ pub enum ShapeDesc {
         /// Half-extents `[hx,hy,hz]` [m].
         half_extents: [f64; 3],
     },
-    /// Capsule.
+    /// Capsule (sphere-swept segment; also a rounded primitive).
     Capsule {
         /// Sweep radius [m].
         radius: f64,
@@ -70,10 +81,31 @@ pub enum ShapeDesc {
         /// Plane offset [m].
         offset: f64,
     },
+    /// Convex polyhedron from body-frame vertices (schema v2).
+    ///
+    /// Faces are rebuilt deterministically via `ConvexHull::from_points` on load.
+    Convex {
+        /// Body-frame vertices `[x,y,z]` [m] (≥ 4, non-coplanar).
+        vertices: Vec<[f64; 3]>,
+        /// Optional Minkowski-sum radius [m] on the hull.
+        #[serde(default)]
+        radius: f64,
+    },
+    /// Minkowski sum of an inner convex shape with a sphere (schema v2).
+    ///
+    /// Typical: rounded box = `Rounded { inner: Box { … }, radius }`.
+    /// Inner must not be `Plane` or nested `Rounded`.
+    Rounded {
+        /// Core shape (sphere, box, capsule, or convex).
+        inner: Box<ShapeDesc>,
+        /// Sweep radius [m].
+        radius: f64,
+    },
 }
 
 /// Contact material.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct MaterialDesc {
     /// Restitution `e`.
     pub restitution: f64,
@@ -92,6 +124,7 @@ impl Default for MaterialDesc {
 
 /// Static collider.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct StaticDesc {
     /// Shape.
     pub shape: ShapeDesc,
@@ -112,7 +145,7 @@ fn identity_quat() -> [f64; 4] {
 
 /// Force generator descriptor (stage-1 set).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ForceDesc {
     /// Uniform gravity `F = m g`.
     UniformGravity {
@@ -162,7 +195,7 @@ pub enum ForceDesc {
 
 /// Joint kind payload.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum JointKindDesc {
     /// Distance joint.
     Distance {
@@ -227,6 +260,7 @@ pub enum JointKindDesc {
 
 /// Joint descriptor.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct JointDesc {
     /// Body A (`usize::MAX` = world).
     pub body_a: u64,
@@ -285,6 +319,7 @@ fn default_joint_zeta() -> f64 {
 
 /// Contact solver settings.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct SolverSettings {
     /// `"pgs"` or `"soft_step"`.
     #[serde(default = "default_solver_mode")]
@@ -319,12 +354,21 @@ pub struct SolverSettings {
     /// Allow island sleeping.
     #[serde(default)]
     pub allow_sleep: bool,
-    /// CCD speculative.
+    /// CCD speculative contacts.
     #[serde(default)]
     pub ccd_speculative: bool,
-    /// CCD TOI.
+    /// Speculative separation threshold [m] (schema v2; default 0.02).
+    #[serde(default = "default_spec_dist")]
+    pub ccd_speculative_distance: f64,
+    /// CCD TOI / bullet substepping.
     #[serde(default)]
     pub ccd_toi: bool,
+    /// Max TOI / CA iterations (schema v2).
+    #[serde(default = "default_toi_iters")]
+    pub ccd_toi_max_iters: usize,
+    /// TOI tolerance [m] (schema v2).
+    #[serde(default = "default_toi_tol")]
+    pub ccd_toi_tolerance: f64,
 }
 
 fn default_solver_mode() -> String {
@@ -357,6 +401,15 @@ fn default_contact_hertz() -> f64 {
 fn default_contact_zeta() -> f64 {
     10.0
 }
+fn default_spec_dist() -> f64 {
+    pe_collision::DEFAULT_SPECULATIVE_DISTANCE
+}
+fn default_toi_iters() -> usize {
+    16
+}
+fn default_toi_tol() -> f64 {
+    1e-4
+}
 
 impl Default for SolverSettings {
     fn default() -> Self {
@@ -373,7 +426,10 @@ impl Default for SolverSettings {
             soft_contact_zeta: default_contact_zeta(),
             allow_sleep: false,
             ccd_speculative: false,
+            ccd_speculative_distance: default_spec_dist(),
             ccd_toi: false,
+            ccd_toi_max_iters: default_toi_iters(),
+            ccd_toi_tolerance: default_toi_tol(),
         }
     }
 }
@@ -383,6 +439,7 @@ impl Default for SolverSettings {
 /// Floats are stored as IEEE-754 bit patterns (`u64`) so JSON/RON/binary all
 /// round-trip **bit-exactly** (JSON decimal floats alone cannot).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct StateSnapshot {
     /// Simulation time [s] as `f64::to_bits`.
     pub t_bits: u64,
@@ -425,6 +482,7 @@ impl StateSnapshot {
 
 /// One warm-start cache row with bit-exact floats.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct WarmCacheEntry {
     /// Body A.
     pub a: usize,
@@ -442,6 +500,7 @@ pub struct WarmCacheEntry {
 
 /// Soft-step warm row.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct SoftWarmEntry {
     /// Body A.
     pub a: usize,
@@ -455,6 +514,7 @@ pub struct SoftWarmEntry {
 
 /// Solver runtime needed for bit-exact continue after restore.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Default)]
+#[serde(deny_unknown_fields)]
 pub struct RuntimeSnapshot {
     /// Warm-start cache.
     #[serde(default)]

@@ -4,16 +4,13 @@
 //! JSON payload, so the binary path is bit-exact even though the envelope is JSON.
 
 use crate::document::SceneDocument;
-use crate::error::SceneError;
+use crate::error::{map_format_error, SceneError};
 use crate::migrate::migrate_document;
 use crate::types::{SCENE_BINARY_MAGIC, SCENE_SCHEMA_VERSION};
 
 /// Encode document to compact binary.
 pub fn encode(doc: &SceneDocument) -> Result<Vec<u8>, SceneError> {
-    let json = serde_json::to_string(doc).map_err(|e| SceneError::Parse {
-        format: "binary",
-        message: e.to_string(),
-    })?;
+    let json = serde_json::to_string(doc).map_err(|e| map_format_error("binary", e.to_string()))?;
     let payload = json.as_bytes();
     let mut out = Vec::with_capacity(4 + 4 + 8 + payload.len());
     out.extend_from_slice(&SCENE_BINARY_MAGIC);
@@ -50,14 +47,11 @@ pub fn decode(bytes: &[u8]) -> Result<SceneDocument, SceneError> {
             detail: format!("trailing {} bytes after payload", bytes.len() - 16 - len),
         });
     }
-    let s = core::str::from_utf8(&bytes[16..]).map_err(|e| SceneError::Parse {
-        format: "binary",
-        message: format!("utf-8: {e}"),
-    })?;
-    let mut doc: SceneDocument = serde_json::from_str(s).map_err(|e| SceneError::Parse {
-        format: "binary",
-        message: e.to_string(),
-    })?;
+    let s = core::str::from_utf8(&bytes[16..])
+        .map_err(|e| map_format_error("binary", format!("utf-8: {e}")))?;
+    let mut doc: SceneDocument =
+        serde_json::from_str(s).map_err(|e| map_format_error("binary", e.to_string()))?;
+    // Binary header version is authoritative when it disagrees with the payload.
     if doc.schema_version != ver {
         doc.schema_version = ver;
     }

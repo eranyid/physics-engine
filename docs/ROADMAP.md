@@ -291,11 +291,15 @@ ported early because the Python oracle already exists.
 - New crates `pe-scene` (JSON/RON/`PESC` binary; bit-exact state+warm-cache restore)
   and `pe-ffi` (opaque `PeWorld*`, SoA transforms, raycast/overlap, contacts,
   `catch_unwind`, cbindgen header + C smoke in CI).
-- `godot/` GDExtension (`godot` / gdext, MPL-2.0 dependency): `PePhysicsWorld` /
-  `PeRigidBody3D`; Linux **compile check** in CI. Godot editor/headless **not** run
+- **Scene schema v2:** convex hulls, rounded shapes, body bullet, fuller CCD
+  params; v1 fixtures migrate; unknown-field / version errors; locked pyramid +
+  convex round-trip hashes (`docs/SCENE.md`).
+- `godot/` GDExtension (`godot` / gdext, MPL-2.0): `PePhysicsWorld` /
+  `PeRigidBody3D`; Linux **headless drop test** in CI (pinned Godot 4.3-stable,
+  SHA-512 verified) — final `y≈0.2499`, hash `a0d625f02641a420`
   (`docs/GODOT.md`).
 - Docs: [`SCENE.md`](SCENE.md), [`FFI.md`](FFI.md), [`GODOT.md`](GODOT.md).
-- Determinism: scene save/load/continue hash locked (= collision pyramid hash).
+- Determinism: scene save/load/continue hashes locked (pyramid + convex + Godot).
 
 ### M7 as built (summary)
 
