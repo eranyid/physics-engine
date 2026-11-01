@@ -261,7 +261,7 @@ mod tests {
         for k in 0..21 {
             let m = 0.1 * k as f64;
             let y = t.cd_monotone(m);
-            assert!(y >= -1e-12 && y <= 1.0 + 1e-12, "m={m} y={y}");
+            assert!((-1e-12..=1.0 + 1e-12).contains(&y), "m={m} y={y}");
         }
     }
 
