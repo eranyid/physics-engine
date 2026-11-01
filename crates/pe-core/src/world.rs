@@ -180,6 +180,18 @@ impl World {
         self.state.v[i] += impulse * (1.0 / self.mass[i]);
     }
 
+    /// Apply a wrench over `dt` [s]: `Δv = F dt / m`, `ΔL = τ dt` (world frame).
+    ///
+    /// Stable interface for continuous domain coupling (SPH fluid→rigid, etc.)
+    /// when the caller integrates forces explicitly rather than via a
+    /// [`crate::ForceGenerator`]. Prefer [`crate::ExternalLoads`] when the
+    /// integrator must sample forces multiple times per step (e.g. RK4).
+    pub fn apply_wrench(&mut self, i: usize, force: Vec3, torque: Vec3, dt: f64) {
+        debug_assert!(i < self.n);
+        self.state.v[i] += force * (dt / self.mass[i]);
+        self.state.l[i] += torque * dt;
+    }
+
     /// Advance one fixed step [s] with the given integrator; renormalize quaternions.
     pub fn step(&mut self, dt: f64, integrator: Integrator) {
         self.state = integrator(self, &self.state, self.t, dt);

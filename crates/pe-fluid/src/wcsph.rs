@@ -74,6 +74,8 @@ pub struct WcsphWorld {
     normals: Vec<Vec3>,
     /// Scratch surface-tension accel.
     st_a: Vec<Vec3>,
+    /// Accumulated fluid→boundary force [N] (Akinci reactions; cleared each step).
+    pub boundary_force: Vec<Vec3>,
 }
 
 impl WcsphWorld {
@@ -92,6 +94,7 @@ impl WcsphWorld {
             xsph_dv: Vec::new(),
             normals: vec![Vec3::zero(); n],
             st_a: vec![Vec3::zero(); n],
+            boundary_force: vec![Vec3::zero(); n],
         }
     }
 
@@ -139,8 +142,10 @@ impl WcsphWorld {
                 match self.particles.kind[j] {
                     ParticleKind::Fluid => rho += mass * wij,
                     ParticleKind::Boundary => {
-                        // Akinci: ρ += ρ₀ ψ_b W
-                        rho += rho0 * self.particles.psi[j] * wij;
+                        if self.particles.boundary_sees_fluid(j, xi) {
+                            // Akinci: ρ += ρ₀ ψ_b W
+                            rho += rho0 * self.particles.psi[j] * wij;
+                        }
                     }
                 }
             }
@@ -187,6 +192,12 @@ impl WcsphWorld {
         for a in &mut self.particles.a {
             *a = Vec3::zero();
         }
+        if self.boundary_force.len() != n {
+            self.boundary_force.resize(n, Vec3::zero());
+        }
+        for f in &mut self.boundary_force {
+            *f = Vec3::zero();
+        }
 
         // Pairwise fluid–fluid (j > i) for momentum symmetry.
         for i in 0..n {
@@ -231,11 +242,16 @@ impl WcsphWorld {
                         self.particles.a[j] -= f; // equal mass ⇒ opposite accel
                     }
                     ParticleKind::Boundary => {
+                        if !self.particles.boundary_sees_fluid(j, xi) {
+                            continue;
+                        }
                         // Akinci pressure: a_i += − ρ₀ ψ_b (p_i/ρ_i²) ∇_i W
                         // (boundary rest pressure ≈ fluid pressure for impermeability)
                         let press = p_i / (rho_i * rho_i);
                         let f = gw * (-(rho0 * self.particles.psi[j]) * press);
                         self.particles.a[i] += f;
+                        // Reaction on boundary: F_b = − m_i a_boundary = − m_i f
+                        self.boundary_force[j] += f * (-mass);
                     }
                 }
             }

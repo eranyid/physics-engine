@@ -26,6 +26,26 @@ def test_canonical_dfsph_hash_stable():
     assert a == 0xF1F2825B5EEAAB0D
 
 
+def test_canonical_coupling_hash_stable():
+    a = pe.canonical_coupling_hash()
+    b = pe.canonical_coupling_hash()
+    assert a == b
+    assert isinstance(a, int)
+    # Locked cross-OS value (docs/DETERMINISM.md); do not loosen silently.
+    assert a == 0xE9A6A84FEF4CE9D5
+
+
+def test_archimedes_and_heave_oracles():
+    d = pe.fluid_archimedes_box_draft(500.0, 1000.0, 0.16)
+    assert d == pytest.approx(0.08, rel=0, abs=1e-15)
+    t = pe.fluid_heave_period_analytic(19.2, 1000.0, 0.24, pe.STANDARD_GRAVITY)
+    assert t == pytest.approx(
+        2.0 * math.pi * math.sqrt(19.2 / (1000.0 * pe.STANDARD_GRAVITY * 0.24)),
+        rel=0,
+        abs=1e-12,
+    )
+
+
 def test_ritter_front_matches_formula():
     g, h0, t = 9.81, 1.0, 0.5
     xf = pe.fluid_ritter_front(g, h0, t)

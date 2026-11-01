@@ -330,6 +330,25 @@ Scenario (`pe_fluid::dfsph_tank_hash`, `dfsph_hash` binary,
 
 Helper: `cargo run -p pe-fluid --bin dfsph_hash --release`.
 
+### Canonical fluid↔rigid coupling hash (locked)
+
+Scenario (`pe_fluid::coupling_tank_hash`, `coupling_hash` binary,
+`physics_engine_rs.canonical_coupling_hash()`):
+
+- DFSPH 2-D floating box via Akinci samples (`make_floating_box_2d`, `dx=0.05`,
+  `ρ_b=500`, tank/water as in `coupling_hash_world`).
+- 80 steps @ `dt = 1/240`.
+- Hash: FNV-1a 64 over fluid particle `(x, v)` IEEE bits, then rigid packed state.
+- Reactions via `pe_core::ExternalLoads`; no `HashMap` iteration; `libm_ops` only.
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `e9a6a84fef4ce9d5` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+Helper: `cargo run -p pe-fluid --bin coupling_hash --release`.
+
 If a platform ever diverges, **do not silently loosen**: record the OS, toolchain,
 exact first differing packed index / float bits, and root cause (usually accidental
 platform `libm` or FMA) in this table.

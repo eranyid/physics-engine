@@ -1,5 +1,6 @@
 //! SoA particle state for SPH / PBF.
 
+use pe_math::libm_ops::sqrt;
 use pe_math::Vec3;
 
 use crate::Dim;
@@ -39,6 +40,11 @@ pub struct Particles {
     pub kind: Vec<ParticleKind>,
     /// Akinci boundary volume factor ψ [m³] (0 for fluid).
     pub psi: Vec<f64>,
+    /// Outward unit normal for one-sided rigid boundary samples.
+    ///
+    /// Zero means no half-space filter (tank walls). Non-zero: fluid↔boundary
+    /// pairs contribute only when `(x_fluid − x_b) · n_out > 0`.
+    pub n_out: Vec<Vec3>,
 }
 
 impl Particles {
@@ -56,6 +62,7 @@ impl Particles {
             p: Vec::new(),
             kind: Vec::new(),
             psi: Vec::new(),
+            n_out: Vec::new(),
         }
     }
 
@@ -88,10 +95,16 @@ impl Particles {
         self.p.push(0.0);
         self.kind.push(ParticleKind::Fluid);
         self.psi.push(0.0);
+        self.n_out.push(Vec3::zero());
     }
 
     /// Push a fixed boundary particle with Akinci volume `psi` [m³] (2-D: m²).
     pub fn push_boundary(&mut self, x: Vec3, psi: f64) {
+        self.push_boundary_oriented(x, psi, Vec3::zero());
+    }
+
+    /// Push a boundary sample with an outward normal for one-sided coupling.
+    pub fn push_boundary_oriented(&mut self, x: Vec3, psi: f64, n_out: Vec3) {
         self.x.push(x);
         self.v.push(Vec3::zero());
         self.a.push(Vec3::zero());
@@ -99,6 +112,25 @@ impl Particles {
         self.p.push(0.0);
         self.kind.push(ParticleKind::Boundary);
         self.psi.push(psi);
+        self.n_out.push(n_out);
+    }
+
+    /// True if fluid at `x_fluid` may couple to boundary `b`.
+    ///
+    /// Tank walls (`n_out = 0`) always see fluid. Rigid samples with a
+    /// non-zero outward normal reject fluid in the **deep interior**
+    /// half-space `(x_f − x_b)·n < −ε` (ε ≈ 0.15 ‖n‖·h), keeping grazing
+    /// contacts for impermeability while dropping free-surface hits on dry
+    /// faces through the kernel support.
+    #[inline]
+    pub fn boundary_sees_fluid(&self, b: usize, x_fluid: Vec3) -> bool {
+        let n = self.n_out[b];
+        let n2 = n.norm_squared();
+        if n2 <= 0.0 {
+            return true;
+        }
+        let eps = 0.15 * self.h * sqrt(n2.max(0.0));
+        (x_fluid - self.x[b]).dot(n) > -eps
     }
 
     /// Pack positions as flat `[x0,y0,z0, x1,…]` for hashing / NumPy export.
