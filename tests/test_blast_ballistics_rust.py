@@ -41,10 +41,17 @@ def test_vacuum_range():
 def test_ammo_bundled_and_energy():
     names = pe.ammo_bundled_names()
     assert "generic_pistol" in names
+    assert "5.56_55gr_fmjbt_federal_ae193" in names
+    assert "308_168gr_sierra_matchking" in names
     e = pe.ammo_muzzle_energy("generic_pistol")
     data = json.loads(pe.ammo_profile_json("generic_pistol"))
     expect = 0.5 * data["mass_kg"] * data["muzzle_velocity_m_s"] ** 2
     assert e == pytest.approx(expect)
+    fed = json.loads(pe.ammo_profile_json("5.56_55gr_fmjbt_federal_ae193"))
+    assert fed["provenance"]["verified"] is True
+    assert len(fed["provenance"]["note"].strip()) > 0
+    assert fed["bc"]["provenance"]["verified"] is True
+    assert fed["bc"]["drag_model"] == "G1"
 
 
 def test_demo_volley_advances():

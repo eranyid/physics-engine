@@ -17,6 +17,11 @@ def test_soft_material_table_unverified():
     d = pe.soft_material_dict("jelly")
     assert d["verified"] == "false"
     assert float(d["density"]) > 0.0
+    steel = pe.soft_material_dict("steel_aisi1020")
+    assert steel["verified"] == "true"
+    assert len(steel["source_note"].strip()) > 0
+    assert abs(float(steel["density"]) - 7870.0) < 1e-9
+    assert abs(float(steel["youngs_modulus"]) - 186.0e9) < 1.0
 
 
 def test_soft_lame_and_compliance():
@@ -98,7 +103,13 @@ def test_material_table_has_copper_and_fields():
     names = pe.soft_material_names()
     assert "copper_nominal" in names
     assert "polycarbonate_nominal" in names
+    assert "aluminum_6061_t6" in names
+    assert "water_20c" in names
     d = pe.soft_material_dict("copper_nominal")
     assert d["verified"] == "false"
     assert float(d["thermal_expansion"]) > 0.0
     assert float(d["hardening_modulus"]) >= 0.0
+    al = pe.soft_material_dict("aluminum_6061_t6")
+    assert al["verified"] == "true"
+    assert "MatWeb" in al["source_note"] or "matweb" in al["source_note"].lower()
+    assert abs(float(al["youngs_modulus"]) - 68.9e9) < 1.0

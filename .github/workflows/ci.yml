@@ -267,6 +267,28 @@ jobs:
             exit 1
           fi
 
+      - name: Compute canonical 6-DOF FDM hashes (body + Dryden gust)
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=$(cargo run -p pe-aero --bin fdm_hash --release | tr -d '\r')
+          HASH=$(echo "$OUT" | sed -n '1p')
+          GUST=$(echo "$OUT" | sed -n '2p')
+          echo "Canonical FDM hash on ${{ matrix.os }}: $HASH"
+          echo "Canonical Dryden gust hash on ${{ matrix.os }}: $GUST"
+          EXPECTED=fb8c25d5fe2184fd
+          EXPECTED_GUST=233148553b199f90
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::FDM determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+          if [ "$GUST" != "$EXPECTED_GUST" ]; then
+            echo "::error::Dryden gust hash mismatch on ${{ matrix.os }}: got $GUST expected $EXPECTED_GUST"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+
       - name: Compute canonical M7 space hashes (figure-eight + IAS15 + DOP853)
         shell: bash
         run: |
@@ -355,7 +377,7 @@ jobs:
           set -euo pipefail
           HASH=$(cargo run -p pe-ballistics --bin ballistics_hash --release | tr -d '\r\n' | tail -n1)
           echo "Canonical ballistics hash on ${{ matrix.os }}: $HASH"
-          EXPECTED=c839907696748e9a
+          EXPECTED=a9ec62a39bbd3dc4
           if [ "$HASH" != "$EXPECTED" ]; then
             echo "::error::Ballistics determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
             echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"

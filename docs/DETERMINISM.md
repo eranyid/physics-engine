@@ -51,6 +51,9 @@ Cross-check helpers:
   `physics_engine_rs.canonical_materials_hash()`
 - M11 Morison+BEM: `cargo run -p pe-hydro --bin m11_hash --release` /
   `physics_engine_rs.canonical_m11_hash()`
+- 6-DOF FDM: `cargo run -p pe-aero --bin fdm_hash --release` /
+  `physics_engine_rs.canonical_fdm_hash()` (+ Dryden gust line /
+  `canonical_dryden_gust_hash()`)
 
 ### Canonical stage-1 scenario hash (locked)
 
@@ -208,6 +211,29 @@ binary, and `physics_engine_rs.canonical_m11_hash()`):
 
 Helper: `cargo run -p pe-hydro --bin m11_hash --release`.
 
+### Canonical 6-DOF FDM hash (locked)
+
+Scenario (must stay in sync in `pe_aero::scenarios::canonical_fdm_hash`, the
+`fdm_hash` binary, and `physics_engine_rs.canonical_fdm_hash()`):
+
+- Navion (Nelson / Teper) SI model at `z = 1000` m, constant `ρ = ρ₀`
+- Steady wind `(2, 0.5, 0)` m/s; `δe = −0.02`, `δa = 0.01`, `δr = −0.005`;
+  thrust 1200 N with offset `(0,0,−0.1)` m
+- Integrate **RK4**, `t_end = 1`, `dt = 1e-2`
+- Hash: FNV-1a 64 over little-endian IEEE bits of `State::pack()`
+
+Dryden companion (line 2 of `fdm_hash`): 100 gust samples, `V=50`, `dt=0.01`,
+seed `0xAE80_FD01`, FNV-1a over `(u,v,w)` IEEE bits —
+`pe_aero::scenarios::canonical_dryden_gust_hash`.
+
+| Platform | FDM hash (hex) | Dryden gust hash | Status |
+| --- | --- | --- | --- |
+| Linux x86_64 (CI + local) | `fb8c25d5fe2184fd` | `233148553b199f90` | locked |
+| macOS (CI) | same expected | same expected | CI asserts equality |
+| Windows (CI) | same expected | same expected | CI asserts equality |
+
+Helper: `cargo run -p pe-aero --bin fdm_hash --release`. Docs: [`AERO.md`](AERO.md).
+
 ### Canonical M7 space hash (locked)
 
 Scenario (must stay in sync in the binary, Rust scenario helper, and Python helper):
@@ -300,9 +326,14 @@ Scenario (`pe_ballistics::ballistics_volley_hash`, `ballistics_hash` binary,
 
 | Platform | Hash (hex) | Status |
 | --- | --- | --- |
-| Linux x86_64 (CI + local) | `c839907696748e9a` | locked |
+| Linux x86_64 (CI + local) | `a9ec62a39bbd3dc4` | locked |
 | macOS (CI) | same expected | CI asserts equality |
 | Windows (CI) | same expected | CI asserts equality |
+
+Updated from `c839907696748e9a` when G1/G7 analytic stand-ins were replaced by the
+published JBM/BRL Cd–Mach tables with classical BC scaling
+(`BC_si = BC_imperial · 703.06958 · 4/π`). Same scenario inputs; trajectories
+(and therefore the packed FNV-1a) change. Cross-OS CI re-locks the new value.
 
 ### Canonical M8 soft-body hash (locked)
 

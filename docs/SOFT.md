@@ -46,10 +46,11 @@ quasistatic loads (not cleared automatically).
 yield_strength, hardening_modulus, thermal_conductivity, specific_heat,
 thermal_expansion, fracture_stress, fracture_strain, verified, source_note }`.
 
-Built-in table (`rubber_*`, `silicone`, `cloth_cotton`, `rope_nylon`, `jelly`,
-`steel_nominal`, `copper_nominal`, …): **every entry has `verified: false`** —
-nominal demo orders of magnitude only. Do not treat as handbook data.
-Details and measured oracles: [`MATERIALS.md`](MATERIALS.md).
+Built-in table: prior demo rows (`rubber_*`, `steel_nominal`, …) stay
+`verified: false`. Handbook rows (`steel_aisi1020`, `aluminum_6061_t6`,
+`copper_c11000`, `titanium_ti6al4v`, `glass_soda_lime`, `concrete_normal_weight`,
+`water_20c`) are `verified: true` with MatWeb/ASM/CRC citations — see
+[`MATERIALS.md`](MATERIALS.md).
 
 Conversions (unit-tested):
 
@@ -131,7 +132,8 @@ See [`MATERIALS.md`](MATERIALS.md): J2 plasticity (&lt;1% uniaxial), fracture
 - Two-way coupling to rigid `ContactWorld` / joints
 - Anisotropic cloth (warp/weft), wet cloth, continuous collision for thin sheets
 - GPU / SIMD particle loops
-- `verified: true` handbook rows with primary sources
+- Additional handbook rows (wood species cells, elastomer compounds) with
+  primary-table citations
 
 ## References (formulas only — clean-room)
 
