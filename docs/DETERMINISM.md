@@ -51,6 +51,9 @@ Cross-check helpers:
   `physics_engine_rs.canonical_materials_hash()`
 - M11 Morison+BEM: `cargo run -p pe-hydro --bin m11_hash --release` /
   `physics_engine_rs.canonical_m11_hash()`
+- 6-DOF FDM: `cargo run -p pe-aero --bin fdm_hash --release` /
+  `physics_engine_rs.canonical_fdm_hash()` (+ Dryden gust line /
+  `canonical_dryden_gust_hash()`)
 
 ### Canonical stage-1 scenario hash (locked)
 
@@ -207,6 +210,29 @@ binary, and `physics_engine_rs.canonical_m11_hash()`):
 | Windows (CI) | same expected | CI asserts equality |
 
 Helper: `cargo run -p pe-hydro --bin m11_hash --release`.
+
+### Canonical 6-DOF FDM hash (locked)
+
+Scenario (must stay in sync in `pe_aero::scenarios::canonical_fdm_hash`, the
+`fdm_hash` binary, and `physics_engine_rs.canonical_fdm_hash()`):
+
+- Navion (Nelson / Teper) SI model at `z = 1000` m, constant `ρ = ρ₀`
+- Steady wind `(2, 0.5, 0)` m/s; `δe = −0.02`, `δa = 0.01`, `δr = −0.005`;
+  thrust 1200 N with offset `(0,0,−0.1)` m
+- Integrate **RK4**, `t_end = 1`, `dt = 1e-2`
+- Hash: FNV-1a 64 over little-endian IEEE bits of `State::pack()`
+
+Dryden companion (line 2 of `fdm_hash`): 100 gust samples, `V=50`, `dt=0.01`,
+seed `0xAE80_FD01`, FNV-1a over `(u,v,w)` IEEE bits —
+`pe_aero::scenarios::canonical_dryden_gust_hash`.
+
+| Platform | FDM hash (hex) | Dryden gust hash | Status |
+| --- | --- | --- | --- |
+| Linux x86_64 (CI + local) | `fb8c25d5fe2184fd` | `233148553b199f90` | locked |
+| macOS (CI) | same expected | same expected | CI asserts equality |
+| Windows (CI) | same expected | same expected | CI asserts equality |
+
+Helper: `cargo run -p pe-aero --bin fdm_hash --release`. Docs: [`AERO.md`](AERO.md).
 
 ### Canonical M7 space hash (locked)
 

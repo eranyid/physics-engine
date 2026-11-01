@@ -7,6 +7,7 @@
 
 mod aero_hydro;
 mod blast_ballistics;
+mod fdm;
 mod fluid;
 mod scene;
 mod soft;
@@ -1165,6 +1166,7 @@ fn physics_engine_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(canonical_joints_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_convex_hash, m)?)?;
     aero_hydro::register(m)?;
+    fdm::register(m)?;
     space::register(m)?;
     blast_ballistics::register(m)?;
     soft::register(m)?;

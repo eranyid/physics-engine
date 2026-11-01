@@ -14,6 +14,10 @@ pe-core = { workspace = true }
 approx = { workspace = true }
 criterion = { workspace = true }
 
+[[bin]]
+name = "fdm_hash"
+path = "src/bin/fdm_hash.rs"
+
 [[bench]]
 name = "aero_forces"
 harness = false
