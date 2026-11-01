@@ -143,6 +143,7 @@ Cloud Agent host after GJK/EPA numerical changes.
 | `cloth_4x4_2s` | 4×4 cloth, 120× step @ 1/60 | ~2.35 ms |
 | `jelly_cube_drop_1s` | 2-div jelly cube, 60× step | ~6.72 ms |
 | `soft_canonical_hash` | canonical rope+cloth+jelly hash | ~8.24 ms |
+| `materials_canonical_hash` | J2 + thermal rod + fracture bar hash | re-record locally |
 | `soft_canonical_world_build` | build-only | ~3.4 µs |
 
 ## Fluids (`pe-fluid`)

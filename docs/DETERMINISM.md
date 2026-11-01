@@ -47,6 +47,8 @@ Cross-check helpers:
   `physics_engine_rs.canonical_wave_body_hash()`
 - M8 soft bodies: `cargo run -p pe-soft --bin soft_hash --release` /
   `physics_engine_rs.canonical_soft_hash()`
+- Materials track: `cargo run -p pe-soft --bin materials_hash --release` /
+  `physics_engine_rs.canonical_materials_hash()`
 - M11 Morison+BEM: `cargo run -p pe-hydro --bin m11_hash --release` /
   `physics_engine_rs.canonical_m11_hash()`
 
@@ -287,6 +289,24 @@ Scenario (`pe_soft::soft_canonical_hash`, `soft_hash` binary,
 
 Updated from `7e7d0d3af68735c6` when tet FEM switched to StVK/SNH energy XPBD
 (`C=√(2Ψ)`, `α=1/V₀`; jelly cube in the canonical scene uses neo-Hookean tets).
+
+### Canonical materials-track hash (locked)
+
+Scenario (`pe_soft::materials_canonical_hash`, `materials_hash` binary,
+`physics_engine_rs.canonical_materials_hash()`):
+
+- Uniaxial J2 stress history (41 samples, ε up to `2 ε_y`, steel-like params).
+- 1-D Cu-like rod (17 nodes) conduction, 80 explicit steps, Dirichlet ends.
+- Soft distance bar stretched past fracture threshold, then 80 XPBD steps.
+- Hash: FNV-1a 64 over little-endian IEEE bits of the packed payload above.
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `19498ab91f6febdc` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+Helper: `cargo run -p pe-soft --bin materials_hash --release`.
 
 ### Canonical fluid-tank hash (locked)
 

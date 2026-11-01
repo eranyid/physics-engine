@@ -29,6 +29,8 @@ pub struct DistanceConstraint {
     pub compliance: f64,
     /// Multiplier state.
     pub lambda: Multiplier,
+    /// `true` after fracture has deactivated this constraint.
+    pub broken: bool,
 }
 
 /// Distance-based bending: constrain particles across an edge to a rest distance
@@ -99,6 +101,8 @@ pub struct TetraFemConstraint {
     pub lambda_dev: Multiplier,
     /// Volumetric multiplier.
     pub lambda_vol: Multiplier,
+    /// `true` after fracture has deactivated this element.
+    pub broken: bool,
 }
 
 /// Shape-matching cluster (Müller et al. 2005 / PBD shape matching).
@@ -228,7 +232,7 @@ fn mat_vec(m: &[[f64; 3]; 3], v: Vec3) -> Vec3 {
     )
 }
 
-fn mul3(a: &[[f64; 3]; 3], b: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
+pub(crate) fn mul3(a: &[[f64; 3]; 3], b: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
     let mut out = [[0.0; 3]; 3];
     for i in 0..3 {
         for j in 0..3 {
@@ -238,12 +242,22 @@ fn mul3(a: &[[f64; 3]; 3], b: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
     out
 }
 
-fn transpose3(m: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
+/// Public 3×3 multiply (fracture / materials helpers).
+pub fn mul3_public(a: &[[f64; 3]; 3], b: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
+    mul3(a, b)
+}
+
+pub(crate) fn transpose3(m: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
     [
         [m[0][0], m[1][0], m[2][0]],
         [m[0][1], m[1][1], m[2][1]],
         [m[0][2], m[1][2], m[2][2]],
     ]
+}
+
+/// Public transpose.
+pub fn transpose3_public(m: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
+    transpose3(m)
 }
 
 /// Build rest-shape inverse for a tetrahedron from current particle positions.
@@ -305,6 +319,9 @@ pub fn solve_equality(
 
 /// Project a distance constraint once.
 pub fn project_distance(particles: &mut [Particle], c: &mut DistanceConstraint, dt: f64) {
+    if c.broken {
+        return;
+    }
     let i = c.i;
     let j = c.j;
     let pi = particles[i].x;
@@ -337,6 +354,7 @@ pub fn project_distance_bend(particles: &mut [Particle], c: &mut DistanceBendCon
         rest_length: c.rest_length,
         compliance: c.compliance,
         lambda: c.lambda,
+        broken: false,
     };
     project_distance(particles, &mut tmp, dt);
     c.lambda = tmp.lambda;
@@ -448,6 +466,15 @@ fn deformation_gradient(
     mul3(&ds, dm_inv)
 }
 
+/// Public deformation gradient F = Ds Dm⁻¹ for tet `idx`.
+pub fn deformation_gradient_public(
+    particles: &[Particle],
+    idx: [usize; 4],
+    dm_inv: &[[f64; 3]; 3],
+) -> [[f64; 3]; 3] {
+    deformation_gradient(particles, idx, dm_inv)
+}
+
 /// Project tetrahedral FEM via XPBD energy constraints (Macklin & Müller 2021).
 ///
 /// Continuum energy `U = V₀ Ψ(F)`. XPBD match: `C = √(2Ψ)`, `α = 1/V₀` so
@@ -461,7 +488,7 @@ fn deformation_gradient(
 /// - Stable NH: `Ψ = (μ/2)(I_C − 3) − μ ln J + (λ/2)(ln J)²`,
 ///   `P = μ F + (λ ln J − μ) F⁻ᵀ` (log form; stress-free at `F = I`)
 pub fn project_tetra_fem(particles: &mut [Particle], c: &mut TetraFemConstraint, dt: f64) {
-    if c.rest_volume <= 1e-30 {
+    if c.broken || c.rest_volume <= 1e-30 {
         return;
     }
     let f = deformation_gradient(particles, c.indices, &c.dm_inv);
@@ -615,6 +642,11 @@ fn green_strain(f: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
         [0.5 * c[1][0], 0.5 * (c[1][1] - 1.0), 0.5 * c[1][2]],
         [0.5 * c[2][0], 0.5 * c[2][1], 0.5 * (c[2][2] - 1.0)],
     ]
+}
+
+/// Public Green–Lagrange strain E = ½(FᵀF − I).
+pub fn green_strain_public(f: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
+    green_strain(f)
 }
 
 fn scale_mat(m: &[[f64; 3]; 3], s: f64) -> [[f64; 3]; 3] {

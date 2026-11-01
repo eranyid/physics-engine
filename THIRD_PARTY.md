@@ -139,6 +139,9 @@ PositionBasedDynamics source copied):
 - Macklin, M. & Müller, M. (2021). A Constraint-based Formulation of Stable
   Neo-Hookean Elasticity. (XPBD tet FEM constraints.)
 - Müller, M. et al. (2005). Meshless deformations based on shape matching.
+- Simo, J. C. & Hughes, T. J. R. — J2 return mapping / linear isotropic hardening
+  (textbook identities; plasticity module).
+- Fourier / Carslaw–Jaeger textbook 1-D heat equation fundamental mode (thermal).
 - Material table values are **nominal** with `verified: false` — no handbook
   constants were fetched from a primary source for this milestone.
 

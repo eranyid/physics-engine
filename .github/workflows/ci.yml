@@ -354,6 +354,19 @@ jobs:
             exit 1
           fi
 
+      - name: Compute canonical materials-track hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-soft --bin materials_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical materials hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=19498ab91f6febdc
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::Materials determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+
       - name: Compute canonical fluid-tank hash
         shell: bash
         run: |
