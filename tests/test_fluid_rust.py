@@ -44,6 +44,24 @@ def test_archimedes_and_heave_oracles():
         rel=0,
         abs=1e-12,
     )
+    m_a = pe.fluid_barge_heave_added_mass_2d(1000.0, 0.24)
+    assert m_a == pytest.approx(1000.0 * math.pi * 0.24**2 / 8.0, rel=0, abs=1e-12)
+    t_am = pe.fluid_heave_period_with_added_mass(
+        19.2, m_a, 1000.0, 0.24, pe.STANDARD_GRAVITY
+    )
+    assert t_am == pytest.approx(
+        2.0
+        * math.pi
+        * math.sqrt((19.2 + m_a) / (1000.0 * pe.STANDARD_GRAVITY * 0.24)),
+        rel=0,
+        abs=1e-12,
+    )
+    a = pe.fluid_sphere_freefall_accel_added_mass(2200.0, 1000.0, pe.STANDARD_GRAVITY)
+    assert a == pytest.approx(
+        pe.STANDARD_GRAVITY * (2200.0 - 1000.0) / (2200.0 + 0.5 * 1000.0),
+        rel=0,
+        abs=1e-12,
+    )
 
 
 def test_ritter_front_matches_formula():

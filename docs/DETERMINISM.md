@@ -18,6 +18,10 @@ N-body / Kepler / perturbation paths, and `pe-soft` XPBD):
 7. Soft-body self-collision uses a dense `Vec` spatial hash; pairs sorted by
    `(min_id, max_id)` before resolve (never `HashMap` iteration).
 8. Identical inputs → **bit-identical** packed state on the same ISA across OS when (1)–(7) hold.
+9. Optional `pe-collision` feature `parallel` (rayon): solves **islands** in ascending
+   island-id order. Results are bit-identical across thread counts 1/2/8 when
+   `ContactWorld::island_ordered_solve` is enabled. Default remains single-thread
+   **global** PGS (locked oracle hashes unchanged). No SIMD/FMA on the step path.
 
 Cross-check helpers:
 
@@ -53,7 +57,8 @@ Cross-check helpers:
   `physics_engine_rs.canonical_m11_hash()`
 - 6-DOF FDM: `cargo run -p pe-aero --bin fdm_hash --release` /
   `physics_engine_rs.canonical_fdm_hash()` (+ Dryden gust line /
-  `canonical_dryden_gust_hash()`)
+  `canonical_dryden_gust_hash()` + FDM+held-gust line /
+  `canonical_fdm_gust_hash()`)
 
 ### Canonical stage-1 scenario hash (locked)
 
@@ -224,13 +229,22 @@ Scenario (must stay in sync in `pe_aero::scenarios::canonical_fdm_hash`, the
 
 Dryden companion (line 2 of `fdm_hash`): 100 gust samples, `V=50`, `dt=0.01`,
 seed `0xAE80_FD01`, FNV-1a over `(u,v,w)` IEEE bits —
-`pe_aero::scenarios::canonical_dryden_gust_hash`.
+`pe_aero::scenarios::canonical_dryden_gust_hash` (2nd-order MIL-F-8785C `v`/`w`).
 
-| Platform | FDM hash (hex) | Dryden gust hash | Status |
-| --- | --- | --- | --- |
-| Linux x86_64 (CI + local) | `fb8c25d5fe2184fd` | `233148553b199f90` | locked |
-| macOS (CI) | same expected | same expected | CI asserts equality |
-| Windows (CI) | same expected | same expected | CI asserts equality |
+FDM+held-gust companion (line 3): same rigid-body scenario with
+`HeldDrydenGust` inside `SixDofAero` (`dt=1e-2`, same seed/params) —
+`pe_aero::scenarios::canonical_fdm_gust_hash`. Gust held piecewise-constant per
+major step so RK4 stages agree (see [`AERO.md`](AERO.md)).
+
+| Platform | FDM hash | Dryden gust | FDM+gust | Status |
+| --- | --- | --- | --- | --- |
+| Linux x86_64 (CI + local) | `ba6d68e43c69d315` | `2895b75a14f621c5` | `58f491fb7f3b34a6` | locked |
+| macOS (CI) | same expected | same | same | CI asserts equality |
+| Windows (CI) | same expected | same | same | CI asserts equality |
+
+**Changelog:** FDM `fb8c25d5fe2184fd` → `ba6d68e43c69d315` (body-+y `C_Y`
+sign fix). Dryden `233148553b199f90` → `2895b75a14f621c5` (2nd-order `v`/`w`).
+FDM+gust is new.
 
 Helper: `cargo run -p pe-aero --bin fdm_hash --release`. Docs: [`AERO.md`](AERO.md).
 
@@ -326,7 +340,10 @@ Scenario (`pe_ballistics::ballistics_volley_hash`, `ballistics_hash` binary,
 
 | Platform | Hash (hex) | Status |
 | --- | --- | --- |
-| Linux x86_64 (CI + local) | `a9ec62a39bbd3dc4` | locked |
+| Linux x86_64 (CI + local) | `7b0162d346bf9f1b` | locked |
+
+Supersedes `a9ec62a39bbd3dc4`: pe-aero Dryden `v`/`w` moved to 2nd-order
+MIL-F-8785C filters; the volley scenario seeds Dryden from `pe-aero`.
 | macOS (CI) | same expected | CI asserts equality |
 | Windows (CI) | same expected | CI asserts equality |
 

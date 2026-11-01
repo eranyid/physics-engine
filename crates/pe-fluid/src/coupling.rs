@@ -420,6 +420,26 @@ pub fn heave_period_analytic(mass: f64, rho_fluid: f64, a_wp: f64, g: f64) -> f6
     2.0 * core::f64::consts::PI * sqrt(mass / (rho_fluid * g * a_wp).max(1e-12))
 }
 
+/// 2-D barge heave added mass [kg/m] (unit depth): `m_a = ρ π B² / 8`,
+/// `B = A_wp` beam. Potential-flow strip formula for a flat-bottom section.
+#[inline]
+pub fn barge_heave_added_mass_2d(rho_fluid: f64, beam: f64) -> f64 {
+    rho_fluid * core::f64::consts::PI * beam * beam / 8.0
+}
+
+/// Heave period with added mass: `T = 2π √((m + m_a) / (ρ_w g A_wp))`.
+#[inline]
+pub fn heave_period_with_added_mass(mass: f64, m_a: f64, rho_fluid: f64, a_wp: f64, g: f64) -> f64 {
+    2.0 * core::f64::consts::PI * sqrt((mass + m_a) / (rho_fluid * g * a_wp).max(1e-12))
+}
+
+/// Free-fall initial acceleration of a submerged sphere with potential-flow
+/// added mass `C_a = 1/2`: `a = g (ρ_s − ρ_f) / (ρ_s + ½ ρ_f)`.
+#[inline]
+pub fn sphere_freefall_accel_added_mass(rho_s: f64, rho_f: f64, g: f64) -> f64 {
+    g * (rho_s - rho_f) / (rho_s + 0.5 * rho_f).max(1e-12)
+}
+
 /// Quadratic-drag terminal speed of a submerged sphere (3-D).
 #[inline]
 pub fn sphere_terminal_velocity(mass: f64, radius: f64, rho_fluid: f64, cd: f64, g: f64) -> f64 {
@@ -445,9 +465,8 @@ pub fn disk_terminal_velocity_2d(mass: f64, radius: f64, rho_fluid: f64, cd: f64
 /// Heave period from hydrostatic stiffness samples: `T = 2π √(m / k)`,
 /// `k = (F(d+δ) − F(d−δ)) / (2δ)` with kinematic bottom-face Akinci forces.
 ///
-/// Free-surface WCSPH floating boxes are overdamped (no clean zero-crossings),
-/// so the oracle locks this stiffness-derived period instead. Measured
-/// `rel ≈ 0.50` vs `2π √(m/(ρ g A))` at `dx=0.05` (see `docs/FLUID.md`).
+/// Prefer the free-oscillation oracle (`estimate_heave_period` vs
+/// [`heave_period_with_added_mass`]) when the float is underdamped.
 pub fn heave_period_from_stiffness(mass: f64, k: f64) -> f64 {
     2.0 * core::f64::consts::PI * sqrt(mass / k.max(1e-12))
 }

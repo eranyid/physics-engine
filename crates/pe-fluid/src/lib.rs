@@ -48,11 +48,12 @@ pub enum Dim {
 
 pub use cfl::{max_accel, suggested_dt, CflParams};
 pub use coupling::{
-    archimedes_box_draft, coupled_linear_momentum, coupling_hash_world, coupling_tank_hash,
-    disk_terminal_velocity_2d, estimate_heave_period, floating_box_draft_error,
+    archimedes_box_draft, barge_heave_added_mass_2d, coupled_linear_momentum, coupling_hash_world,
+    coupling_tank_hash, disk_terminal_velocity_2d, estimate_heave_period, floating_box_draft_error,
     floating_box_draft_error_wcsph, heave_period_analytic, heave_period_from_stiffness,
-    kinematic_bottom_force_at_draft, make_floating_box_2d, make_floating_box_wcsph_2d,
-    max_box_penetration, max_box_penetration_wcsph, sphere_terminal_velocity, CoupledDfsphWorld,
+    heave_period_with_added_mass, kinematic_bottom_force_at_draft, make_floating_box_2d,
+    make_floating_box_wcsph_2d, max_box_penetration, max_box_penetration_wcsph,
+    sphere_freefall_accel_added_mass, sphere_terminal_velocity, CoupledDfsphWorld,
     CoupledWcsphWorld, FluidRigidCoupler, RigidSample, SampleShape, COUPLING_HASH_DT,
     COUPLING_HASH_STEPS,
 };

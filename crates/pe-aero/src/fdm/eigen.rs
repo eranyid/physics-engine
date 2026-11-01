@@ -1,5 +1,5 @@
-//! Eigenvalues of small real matrices (longitudinal 4×4) via characteristic
-//! polynomial + Bairstow quadratic factoring.
+//! Eigenvalues of small real matrices (longitudinal / lateral 4×4) via
+//! characteristic polynomial + Bairstow quadratic factoring.
 //!
 //! Portable `libm` only; no external linear-algebra crates.
 
@@ -37,6 +37,19 @@ pub struct LongitudinalModes {
     pub phugoid: ComplexEigen,
     /// Short-period (higher frequency, heavier damping).
     pub short_period: ComplexEigen,
+    /// All four eigenvalues.
+    pub all: [ComplexEigen; 4],
+}
+
+/// Classified lateral-directional modes from a 4×4 `A` matrix.
+#[derive(Clone, Copy, Debug)]
+pub struct LateralModes {
+    /// Roll subsidence (fast real root, usually large negative).
+    pub roll: ComplexEigen,
+    /// Spiral mode (slow real root, near the origin).
+    pub spiral: ComplexEigen,
+    /// Dutch roll (oscillatory pair; representative with `im ≥ 0`).
+    pub dutch_roll: ComplexEigen,
     /// All four eigenvalues.
     pub all: [ComplexEigen; 4],
 }
@@ -211,6 +224,79 @@ pub fn classify_longitudinal_modes(a: &[[f64; 4]; 4]) -> Option<LongitudinalMode
     Some(LongitudinalModes {
         phugoid: pairs[0],
         short_period: pairs[1],
+        all: eigs,
+    })
+}
+
+/// Classify lateral-directional modes: one oscillatory pair (Dutch roll) and
+/// two real roots (roll subsidence = faster |Re|, spiral = slower |Re|).
+pub fn classify_lateral_modes(a: &[[f64; 4]; 4]) -> Option<LateralModes> {
+    let eigs = eigenvalues_4x4(a);
+    let mut oscillatory: Option<ComplexEigen> = None;
+    let mut reals: Vec<ComplexEigen> = Vec::new();
+    let mut used = [false; 4];
+
+    for i in 0..4 {
+        if used[i] {
+            continue;
+        }
+        if eigs[i].im.abs() < 1e-8 {
+            reals.push(eigs[i]);
+            used[i] = true;
+            continue;
+        }
+        // Pair with conjugate.
+        let mut found = false;
+        for j in i + 1..4 {
+            if used[j] {
+                continue;
+            }
+            if (eigs[j].re - eigs[i].re).abs() < 1e-5 && (eigs[j].im + eigs[i].im).abs() < 1e-5 {
+                let rep = if eigs[i].im >= 0.0 { eigs[i] } else { eigs[j] };
+                oscillatory = Some(rep);
+                used[i] = true;
+                used[j] = true;
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            // Treat as real if imag tiny after all.
+            if eigs[i].im.abs() < 1e-4 {
+                reals.push(ComplexEigen {
+                    re: eigs[i].re,
+                    im: 0.0,
+                });
+                used[i] = true;
+            }
+        }
+    }
+
+    let dutch = oscillatory?;
+    if reals.len() < 2 {
+        // Fall back: take remaining unused as real parts.
+        for i in 0..4 {
+            if !used[i] {
+                reals.push(ComplexEigen {
+                    re: eigs[i].re,
+                    im: 0.0,
+                });
+            }
+        }
+    }
+    if reals.len() < 2 {
+        return None;
+    }
+    reals.sort_by(|p, q| {
+        p.re.abs()
+            .partial_cmp(&q.re.abs())
+            .unwrap_or(core::cmp::Ordering::Equal)
+    });
+    // spiral = slower (|re| smaller), roll = faster
+    Some(LateralModes {
+        spiral: reals[0],
+        roll: reals[1],
+        dutch_roll: dutch,
         all: eigs,
     })
 }

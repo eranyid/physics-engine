@@ -3,17 +3,17 @@
 
 use pe_core::body::{inertia_solid_sphere, RigidBody};
 use pe_fluid::coupling::{
-    archimedes_box_draft, coupling_tank_hash, disk_terminal_velocity_2d,
-    floating_box_draft_error_wcsph, heave_period_analytic, heave_period_from_stiffness,
-    kinematic_bottom_force_at_draft, make_floating_box_2d, make_floating_box_wcsph_2d,
-    max_box_penetration, max_box_penetration_wcsph, CoupledWcsphWorld, FluidRigidCoupler,
+    archimedes_box_draft, barge_heave_added_mass_2d, coupling_tank_hash, estimate_heave_period,
+    floating_box_draft_error_wcsph, heave_period_with_added_mass, make_floating_box_2d,
+    make_floating_box_wcsph_2d, max_box_penetration, max_box_penetration_wcsph,
+    sphere_freefall_accel_added_mass, CoupledWcsphWorld, FluidRigidCoupler,
 };
 use pe_fluid::kernels::KernelKind;
 use pe_fluid::particles::{
     fill_box, fill_box_boundary, mass_calibrated_to_rest, recomputed_akinci_psi, Particles,
 };
 use pe_fluid::wcsph::{WcsphParams, WcsphWorld};
-use pe_fluid::Dim;
+use pe_fluid::{Dim, ParticleKind};
 use pe_math::libm_ops::fabs;
 use pe_math::{Vec3, STANDARD_GRAVITY};
 
@@ -27,8 +27,10 @@ fn coupling_hash_bit_stable_on_repeat() {
 
 #[test]
 fn floating_box_archimedes_draft() {
-    // WCSPH + Akinci samples. Measured (Linux x86_64): rel ≈ 0.0653 at dx=0.05.
-    // Target band was 3–5%; measured 6.5% locked at <10% (do not loosen).
+    // WCSPH + Akinci samples. Measured (Linux x86_64): rel ≈ 0.0653 at dx=0.05,
+    // fixed 2000×2.5e-4 (t=0.5). Instantaneous draft crosses within ≪1% during
+    // settle at dx≤0.05; coarser dx is unstable. Lock <10% ≈ 1.5× measured
+    // (do not loosen). See docs/FLUID.md dx notes.
     let dx = 0.05;
     let water_h = 0.40;
     let hx = 0.12;
@@ -51,28 +53,59 @@ fn floating_box_archimedes_draft() {
 
 #[test]
 fn floating_box_heave_period() {
-    // Free-surface WCSPH float is overdamped (no clean y(t) zero-crossings).
-    // Oracle: hydrostatic stiffness from kinematic bottom-face Akinci forces.
-    // Measured: k≈1041 vs ρgA≈2354 (rel_k≈0.56); T≈0.954 vs 0.635 (rel_T≈0.50).
+    // Underdamped free heave after settle: α=0.01, kick=0.04, zero-crossings vs
+    // T = 2π √((m+m_a)/(ρ g A)) with 2-D barge m_a = ρ π B²/8.
+    // Measured (Linux x86_64, dx=0.05): T≈0.776 vs 0.838 (rel≈0.074).
+    // Finer/coarser dx is not monotone better (sweet spot); lock at CI dx.
+    // Lock <0.15 ≈ 2× measured.
     let dx = 0.05;
-    let tank_w = 0.9;
-    let water_h = 0.45;
+    let water_h = 0.40;
     let hx = 0.12;
-    let hy = 0.10;
-    let d0 = 0.08;
-    let delta = 0.02;
-    let f_hi = kinematic_bottom_force_at_draft(d0 + delta, dx, tank_w, water_h, hx, hy);
-    let f_lo = kinematic_bottom_force_at_draft(d0 - delta, dx, tank_w, water_h, hx, hy);
-    let k = (f_hi - f_lo) / (2.0 * delta);
-    let mass = 500.0 * 4.0 * hx * hy;
-    let t_sim = heave_period_from_stiffness(mass, k);
-    let t_ref = heave_period_analytic(mass, 1000.0, 2.0 * hx, STANDARD_GRAVITY);
+    let hy = 0.08;
+    let rho_b = 500.0;
+    let kick = 0.04;
+    let mut world = make_floating_box_wcsph_2d(dx, 0.9, water_h, hx, hy, rho_b);
+    let dt = 2.5e-4;
+    for _ in 0..2000 {
+        world.step(dt);
+    }
+    let y_eq = world.rigid.state.x[0].y;
+    world.fluid.params.viscosity.alpha = 0.01;
+    world.fluid.params.xsph.epsilon = 0.0;
+    world.rigid.state.x[0].y = y_eq - kick;
+    world.rigid.state.v[0] = Vec3::zero();
+    let mut samples = Vec::new();
+    for _ in 0..16000 {
+        world.step(dt);
+        samples.push((world.rigid.t, world.rigid.state.x[0].y));
+    }
+    let t0 = samples[0].0;
+    let win: Vec<_> = samples
+        .iter()
+        .cloned()
+        .filter(|(t, _)| *t >= t0 + 0.1 && *t <= t0 + 4.0)
+        .collect();
+    let mass = world.rigid.mass[0];
+    let a_wp = 2.0 * hx;
+    let rho0 = 1000.0;
+    let m_a = barge_heave_added_mass_2d(rho0, a_wp);
+    let t_ref = heave_period_with_added_mass(mass, m_a, rho0, a_wp, STANDARD_GRAVITY);
+    let t_sim = estimate_heave_period(&win).expect("need ≥2 up-crossings for underdamped heave");
     let rel = fabs(t_sim - t_ref) / t_ref;
-    println!("heave F_hi={f_hi:.1} F_lo={f_lo:.1} k={k:.1} T_sim={t_sim:.4} T_ref={t_ref:.4} rel={rel:.4}");
-    assert!(k > 0.0, "stiffness must be restoring, k={k}");
+    let mean: f64 = win.iter().map(|(_, y)| *y).sum::<f64>() / win.len() as f64;
+    let ncross = (1..win.len())
+        .filter(|&i| win[i - 1].1 - mean <= 0.0 && win[i].1 - mean > 0.0)
+        .count();
+    println!(
+        "heave T_sim={t_sim:.4} T_ref={t_ref:.4} m={mass:.2} m_a={m_a:.2} ncross={ncross} rel={rel:.4}"
+    );
     assert!(
-        rel < 0.60,
-        "heave stiffness-period rel {rel} (measured ~0.50; lock <60%)"
+        ncross >= 3,
+        "expected several zero-crossings for underdamped heave, got {ncross}"
+    );
+    assert!(
+        rel < 0.15,
+        "heave free-oscillation rel {rel} (measured ~0.074; lock <15%)"
     );
 }
 
@@ -151,61 +184,55 @@ fn floating_box_no_penetration() {
     );
 }
 
-#[test]
-fn sphere_sink_terminal_velocity_sanity() {
-    // Heavy 2-D disk in a tall column. Measured: sank≈0.39 m, v_peak≈1.59 vs
-    // Cd=1 drag-balance ≈2.48 (rel≈0.36). Lock: sinks and rel_peak < 0.55.
-    let dim = Dim::D2;
-    let dx = 0.05;
-    let h = 2.2 * dx;
+/// Build a submerged 3-D sphere in a cubic WCSPH tank (kinematic hold then release).
+fn make_submerged_sphere_3d(dx: f64, rho_s: f64, radius: f64, tank: f64) -> CoupledWcsphWorld {
+    let dim = Dim::D3;
+    let hsm = 2.2 * dx;
     let rho0 = 1000.0;
-    let mass_p = mass_calibrated_to_rest(rho0, dx, h, dim, KernelKind::CubicSpline);
-    let mut parts = Particles::new(dim, rho0, mass_p, h);
     let g = STANDARD_GRAVITY;
+    let mass_p = mass_calibrated_to_rest(rho0, dx, hsm, dim, KernelKind::CubicSpline);
+    let mut parts = Particles::new(dim, rho0, mass_p, hsm);
+    let n = ((tank / dx).round() as usize).max(8);
     fill_box(
         &mut parts,
-        Vec3::new(0.5 * dx, 0.5 * dx, 0.0),
-        10,
-        36,
-        1,
+        Vec3::new(0.5 * dx, 0.5 * dx, 0.5 * dx),
+        n,
+        n,
+        n,
         dx,
         Vec3::zero(),
     );
     fill_box_boundary(
         &mut parts,
         Vec3::new(0.0, 0.0, 0.0),
-        Vec3::new(0.5, 1.9, 0.0),
+        Vec3::new(n as f64 * dx, n as f64 * dx, n as f64 * dx),
         dx,
-        2,
+        1,
     );
     recomputed_akinci_psi(&mut parts, KernelKind::CubicSpline);
-    let radius = 0.05;
     let mut coupler = FluidRigidCoupler::new(1);
     coupler.sample_sphere(&mut parts, 0, radius, dx);
     for s in &coupler.samples {
         parts.n_out[s.particle] = Vec3::zero();
     }
-    let area = core::f64::consts::PI * radius * radius;
-    let mass_b = 5000.0 * area;
-    let y0 = 1.40;
+    let vol = 4.0 / 3.0 * core::f64::consts::PI * radius * radius * radius;
+    let mass_b = rho_s * vol;
+    let c = 0.5 * n as f64 * dx;
     let body = RigidBody::new(mass_b)
-        .with_position(Vec3::new(0.25, y0, 0.0))
-        .with_velocity(Vec3::new(0.0, -1.0, 0.0))
+        .with_position(Vec3::new(c, c, c))
         .with_inertia(inertia_solid_sphere(mass_b, radius));
     for s in &coupler.samples {
-        let r = body.orientation.rotate(s.local);
-        parts.x[s.particle] = body.position + r;
-        parts.v[s.particle] = Vec3::zero();
+        parts.x[s.particle] = body.position + s.local;
     }
     let mut keep = vec![true; parts.len()];
     for (i, slot) in keep.iter_mut().enumerate() {
-        if parts.kind[i] == pe_fluid::ParticleKind::Fluid
-            && (parts.x[i] - body.position).norm() < radius + 0.35 * dx
+        if parts.kind[i] == ParticleKind::Fluid
+            && (parts.x[i] - body.position).norm() < radius + 0.5 * dx
         {
             *slot = false;
         }
     }
-    let mut parts2 = Particles::new(dim, rho0, mass_p, h);
+    let mut parts2 = Particles::new(dim, rho0, mass_p, hsm);
     let mut remap = vec![usize::MAX; parts.len()];
     for (i, &keep_i) in keep.iter().enumerate() {
         if !keep_i {
@@ -213,37 +240,58 @@ fn sphere_sink_terminal_velocity_sanity() {
         }
         remap[i] = parts2.len();
         match parts.kind[i] {
-            pe_fluid::ParticleKind::Fluid => parts2.push_fluid(parts.x[i], parts.v[i]),
-            pe_fluid::ParticleKind::Boundary => parts2.push_boundary(parts.x[i], parts.psi[i]),
+            ParticleKind::Fluid => parts2.push_fluid(parts.x[i], Vec3::zero()),
+            ParticleKind::Boundary => parts2.push_boundary(parts.x[i], parts.psi[i]),
         }
     }
     for s in &mut coupler.samples {
         s.particle = remap[s.particle];
     }
-    let mut params = WcsphParams::water(rho0, 20.0, Vec3::new(0.0, -g, 0.0));
+    let mut params = WcsphParams::water(rho0, 35.0, Vec3::new(0.0, -g, 0.0));
     params.adapt_sound_speed = false;
-    params.xsph.epsilon = 0.05;
-    params.viscosity.alpha = 0.15;
+    params.xsph.epsilon = 0.08;
+    params.viscosity.alpha = 0.35;
     let fluid = WcsphWorld::new(parts2, params);
-    let mut world = CoupledWcsphWorld::new(fluid, vec![body], coupler, Vec3::new(0.0, -g, 0.0));
-    let dt = 2e-4;
-    let mut v_peak = 0.0f64;
-    for _ in 0..2500 {
-        world.step(dt);
-        v_peak = v_peak.max((-world.rigid.state.v[0].y).max(0.0));
-        if world.rigid.state.x[0].y < 0.5 {
-            break;
-        }
+    CoupledWcsphWorld::new(fluid, vec![body], coupler, Vec3::new(0.0, -g, 0.0))
+}
+
+#[test]
+fn sphere_freefall_added_mass_accel() {
+    // Replaces the old Cd=1 disk-sink "sanity" (rel≈36%, not an oracle).
+    // 3-D sphere, hydrostatic hold then release; measure a over first 2.5 ms vs
+    // a = g (ρ_s − ρ_f) / (ρ_s + ½ ρ_f). Measured rel ≈ 0.0039 at the CI setup
+    // (ρ_s=2200, r=0.12, dx=0.055). Neighbour ρ_s ∈ [2000,2500] stay <3%;
+    // 2–3 ms windows <7%. Lock <0.10.
+    let dx = 0.055;
+    let rho_s = 2200.0;
+    let radius = 0.12;
+    let rho0 = 1000.0;
+    let g = STANDARD_GRAVITY;
+    let mut world = make_submerged_sphere_3d(dx, rho_s, radius, 0.50);
+    let dt = 1.2e-4;
+    for _ in 0..1000 {
+        world
+            .coupler
+            .sync_from_rigid(&mut world.fluid.particles, &world.rigid, &world.rigid.state);
+        world.fluid.step(dt);
+        world.rigid.state.v[0] = Vec3::zero();
+        world.rigid.state.l[0] = Vec3::zero();
     }
-    let sank = y0 - world.rigid.state.x[0].y;
-    let v_ref = disk_terminal_velocity_2d(mass_b, radius, rho0, 1.0, g);
-    let rel = fabs(v_peak - v_ref) / v_ref.max(1e-6);
-    println!("sank={sank:.4} v_peak={v_peak:.4} v_ref(Cd=1)={v_ref:.4} rel={rel:.3}");
-    assert!(sank > 0.25, "sphere did not sink enough: sank={sank}");
-    assert!(v_peak > 0.5, "sphere peak sink speed too small: v={v_peak}");
+    world.fluid.params.viscosity.alpha = 0.01;
+    world.fluid.params.xsph.epsilon = 0.0;
+    world.rigid.state.v[0] = Vec3::zero();
+    let t_meas = 0.0025;
+    let n_meas = (t_meas / dt).round() as usize;
+    for _ in 0..n_meas {
+        world.step(dt);
+    }
+    let a_dyn = -world.rigid.state.v[0].y / t_meas;
+    let a_ref = sphere_freefall_accel_added_mass(rho_s, rho0, g);
+    let rel = fabs(a_dyn - a_ref) / a_ref;
+    println!("sphere freefall a_dyn={a_dyn:.4} a_ref={a_ref:.4} rel={rel:.4}");
     assert!(
-        rel < 0.55,
-        "terminal velocity sanity rel={rel} (measured ~0.36; lock <55%)"
+        rel < 0.10,
+        "sphere freefall added-mass accel rel={rel} (measured ~0.004; lock <10%)"
     );
 }
 

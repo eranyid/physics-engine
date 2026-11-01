@@ -3,8 +3,9 @@
 Weakly compressible SPH (WCSPH), Position Based Fluids (PBF), and divergence-free
 SPH (DFSPH) for 3-D liquids, with a 2-D mode for analytic tests. Clean-room from
 published formulas — see [`THIRD_PARTY.md`](../THIRD_PARTY.md). Optional kernel
-correction (Shepard / gradient) and Akinci (2013) surface tension. **No**
-free-surface mesh reconstruction; **no** fluid↔rigid coupling (`pe-core` untouched).
+correction (Shepard / gradient) and Akinci (2013) surface tension. Akinci (2012)
+two-way fluid↔rigid coupling injects loads into `pe-core` via `ExternalLoads`.
+**No** free-surface mesh reconstruction.
 
 ## Units and frames
 
@@ -101,8 +102,8 @@ Cubic spline for both `W` and `∇W` (paper requirement).
 | --- | --- |
 | Free-surface meshing | Out of scope |
 | GPU / multi-thread | Deterministic single-thread default |
-| Free-surface heave zero-crossings | WCSPH float is overdamped; oracle uses stiffness-derived period |
 | Dynamic Archimedes long-term | Transient draft lock at fixed step window; FS bias grows later |
+| Stokes disk terminal (2-D) | Stokes paradox / no unbounded 2-D Stokes drag; Cd=1 sink dropped |
 
 ## Validation (measured numbers)
 
@@ -235,15 +236,38 @@ DFSPH used for penetration / coupling hash.
 | Oracle | Measured (Linux x86_64) | CI lock |
 | --- | --- | --- |
 | Archimedes draft (`ρ_b/ρ_w`, WCSPH, `dx=0.05`, 2000×`2.5e-4`) | **rel ≈ 0.0653** | **&lt; 0.10** |
-| Heave period via bottom-face stiffness `k=(F₊−F₋)/(2δ)` | **rel_T ≈ 0.504** (`T≈0.954` vs `0.635`) | **&lt; 0.60** |
-| Sphere/disk sink peak `v` vs Cd=1 drag balance (2-D) | **rel ≈ 0.358** (`v_peak≈1.59` vs `2.48`); sank ≈0.39 m | **&lt; 0.55** + sank &gt; 0.25 m |
+| Heave free oscillation vs `2π√((m+m_a)/(ρ g A))`, `m_a=ρ π B²/8` | **rel ≈ 0.0739** (`T≈0.776` vs `0.838`, 5 crossings) | **&lt; 0.15** |
+| Sphere freefall accel vs `g(ρ_s−ρ_f)/(ρ_s+½ρ_f)` (3-D, 2.5 ms) | **rel ≈ 0.0039** | **&lt; 0.10** |
 | Closed fluid+body momentum (no walls/gravity) | **‖ΔP‖ ≈ 2×10⁻¹⁴** | **&lt; 1×10⁻³** |
 | Box penetration (WCSPH / DFSPH) | **max ≈ 0.080 / 0.046** on `dx=0.05` | **&lt; 2 dx** |
 | Coupling hash | `e9a6a84fef4ce9d5` | cross-OS CI |
 
-Heave note: free-surface WCSPH float is overdamped (no clean `y(t)` zero-crossings);
-the oracle locks the stiffness-derived period against `2π√(m/(ρ g A))`. Do not
-silently loosen locks.
+**Archimedes dx notes.** Fixed `t=0.5` protocol (2000×`2.5e-4` at `dx=0.05`):
+
+| `dx` | draft rel @ `t=0.5` | notes |
+| --- | --- | --- |
+| 0.06 | unstable (blow-up) | too coarse for soft Akinci float |
+| **0.05** | **0.0653** | **CI lock** |
+| 0.048 | 0.040 (large `\|v_y\|`) | crossing equilibrium, not settled |
+| 0.045 | large (phase) | same physical-time undersamples settle |
+
+Instantaneous draft during settle crosses within **≪1%** at `dx=0.05` (`best≈0.0002`
+@ `t≈0.33`) and `dx=0.045` (`best≈0.0035`). Lock stays **&lt;0.10** ≈ 1.5× the CI
+snapshot (do not loosen).
+
+**Heave.** After a 0.5 s float settle, drop viscosity to `α=0.01`, kick `Δy=0.04`,
+and measure the damped period from successive demeaned up-crossings. Reference
+includes 2-D barge added mass `m_a = ρ π B²/8`. `dx=0.05` is the underdamped sweet
+spot (rel≈0.074); coarser fails to oscillate, finer is not monotone better — lock
+at the CI `dx`. Lock **&lt;0.15** ≈ 2× measured.
+
+**Sphere freefall (replaces Cd=1 sink).** Old 2-D disk peak-`v` vs Cd=1 (rel≈36%)
+was not an oracle — Cd is not 1, and 2-D Stokes has no unbounded terminal speed.
+New case: submerged 3-D sphere, hydrostatic hold (~1000 steps), release, measure
+`a ≈ −Δv_y/Δt` over the first **2.5 ms** against potential-flow added-mass
+`a = g(ρ_s−ρ_f)/(ρ_s+½ρ_f)`. CI setup `dx=0.055`, `ρ_s=2200`, `r=0.12`:
+**rel≈0.0039**. Neighbour `ρ_s∈[2000,2500]` stay &lt;3%; 2–3 ms windows &lt;7%.
+Lock **&lt;0.10**. Do not silently loosen locks.
 
 ### Other checks
 
