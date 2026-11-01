@@ -4,13 +4,14 @@
 //! it in `_physics_process`. Child [`PeRigidBody3D`] nodes sync transforms from
 //! the simulation.
 //!
-//! **Unverified in the Godot editor** in CI — see `docs/GODOT.md`. This crate is
-//! compile-checked on Linux when the `godot` crate builds.
+//! Gravity defaults to Godot Y-up (`(0, −g, 0)`). CI runs a headless drop test
+//! — see `docs/GODOT.md`.
 
 use godot::classes::{INode3D, Node3D};
 use godot::prelude::*;
-use pe_collision::shapes::{Material, Shape, Sphere};
+use pe_collision::shapes::{BoxShape, Material, Shape, Sphere};
 use pe_collision::{ContactWorld, StaticCollider};
+use pe_core::diagnostics::state_hash64;
 use pe_core::{RigidBody, World};
 use pe_math::{Quat as PeQuat, Vec3 as PeVec3, STANDARD_GRAVITY};
 use pe_scene::{force_to_box, ForceDesc};
@@ -33,19 +34,20 @@ struct PePhysicsWorld {
     accum: f64,
 }
 
+fn y_up_gravity_world() -> ContactWorld {
+    let gravity = ForceDesc::UniformGravity {
+        g: [0.0, -STANDARD_GRAVITY, 0.0],
+    };
+    let gens: Vec<Box<dyn pe_core::ForceGenerator>> = force_to_box(&gravity).into_iter().collect();
+    ContactWorld::new(World::new(vec![], gens), vec![], vec![], Some(vec![]))
+}
+
 #[godot_api]
 impl INode3D for PePhysicsWorld {
     fn init(base: Base<Node3D>) -> Self {
-        let gravity = ForceDesc::UniformGravity {
-            g: [0.0, 0.0, -STANDARD_GRAVITY],
-        };
-        let gens: Vec<Box<dyn pe_core::ForceGenerator>> =
-            force_to_box(&gravity).into_iter().collect();
-        // Start empty; bodies added via `add_sphere_body` or children.
-        let cw = ContactWorld::new(World::new(vec![], gens), vec![], vec![], Some(vec![]));
         Self {
             base,
-            world: Some(cw),
+            world: Some(y_up_gravity_world()),
             fixed_dt: 1.0 / 60.0,
             accum: 0.0,
         }
@@ -55,20 +57,16 @@ impl INode3D for PePhysicsWorld {
         let Some(cw) = self.world.as_mut() else {
             return;
         };
-        let dt = if self.fixed_dt > 0.0 {
+        if self.fixed_dt > 0.0 {
             self.accum += delta;
             let step = self.fixed_dt;
             while self.accum >= step {
                 cw.step(step);
                 self.accum -= step;
             }
-            return;
         } else if delta > 0.0 && delta.is_finite() {
-            delta
-        } else {
-            return;
-        };
-        cw.step(dt);
+            cw.step(delta);
+        }
     }
 }
 
@@ -101,18 +99,70 @@ impl PePhysicsWorld {
         idx as i64
     }
 
-    /// Add a static ground plane at z = `offset` with normal +Z.
+    /// Add a dynamic box body (half-extents); returns body index.
+    #[func]
+    #[allow(clippy::too_many_arguments)]
+    fn add_box_body(
+        &mut self,
+        mass: f64,
+        hx: f64,
+        hy: f64,
+        hz: f64,
+        px: f64,
+        py: f64,
+        pz: f64,
+        restitution: f64,
+        friction: f64,
+    ) -> i64 {
+        let Some(cw) = self.world.as_mut() else {
+            return -1;
+        };
+        if !(mass > 0.0 && hx >= 0.0 && hy >= 0.0 && hz >= 0.0) {
+            return -1;
+        }
+        let shape = Shape::Box(BoxShape::new(hx, hy, hz));
+        let body = RigidBody::new(mass)
+            .with_inertia(shape.inertia(mass))
+            .with_position(PeVec3::new(px, py, pz));
+        let idx = cw.add_dynamic_body(body, shape, Material::new(restitution, friction));
+        idx as i64
+    }
+
+    /// Add a static ground plane with normal +Y at `y = offset` (Godot Y-up).
     #[func]
     fn add_ground_plane(&mut self, offset: f64, restitution: f64, friction: f64) -> i64 {
         let Some(cw) = self.world.as_mut() else {
             return -1;
         };
         let col = StaticCollider::new(Shape::Plane(pe_collision::shapes::Plane::new(
-            PeVec3::unit_z(),
+            PeVec3::unit_y(),
             offset,
         )))
         .with_material(Material::new(restitution, friction));
         cw.add_static(col) as i64
+    }
+
+    /// Manually step the simulation once (for headless CI scripts).
+    #[func]
+    fn step_once(&mut self, dt: f64) {
+        let Some(cw) = self.world.as_mut() else {
+            return;
+        };
+        if dt > 0.0 && dt.is_finite() {
+            cw.step(dt);
+        }
+    }
+
+    /// FNV-1a 64-bit hash of packed dynamic state as lowercase hex (16 chars).
+    ///
+    /// Matches Rust `state_hash64` / `pe_scene::godot_drop_box_result`. Returned as
+    /// a string so values above `i64::MAX` are not truncated in GDScript.
+    #[func]
+    fn state_hash_hex(&self) -> GString {
+        let Some(cw) = self.world.as_ref() else {
+            return GString::from("0");
+        };
+        GString::from(format!("{:016x}", state_hash64(&cw.world.state)).as_str())
     }
 
     /// Body count.

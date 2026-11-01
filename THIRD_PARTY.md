@@ -162,9 +162,16 @@ Clean-room formulas only — **no** third-party SPH/PBF source translated
 - Macklin, M. & Müller, M. (2013). Position Based Fluids. *ACM TOG* **32** —
   λ density constraints, artificial pressure, vorticity confinement.
 - Ritter, A. (1892). Dam-break shallow-water front `x_f = 2√(g h₀) t`.
-- **Not transcribed:** Martin & Moyce (1952) experimental dam-break tables
-  (no verified primary table in-tree). **Deferred:** DFSPH (Bender & Koschier
-  2015); fluid→rigid force sampling.
+- Bender, J. & Koschier, D. (2015). Divergence-Free SPH for Incompressible and
+  Viscous Fluids. *SCA* / *IEEE TVCG* **23**(3) (2017) — DFSPH constant-density
+  + divergence-free solvers, `α` factors, warm start, CFL (clean-room).
+- Akinci, N., Akinci, G. & Teschner, M. (2013). Versatile surface tension and
+  adhesion for SPH fluids. *ACM TOG* **32** — cohesion + curvature (optional).
+- Bonet, J. & Lok, T.-S. L. (1999) / CSPM — Shepard filter and gradient
+  correction (optional kernel renormalisation).
+- **Not transcribed:** Martin & Moyce (1952) / Koshizuka–Oka (1996) experimental
+  dam-break tables (no verified primary table in-tree). **Deferred:**
+  fluid→rigid force sampling.
 
 ### M8 note (`pe-scene`, `pe-ffi`, Godot GDExtension)
 

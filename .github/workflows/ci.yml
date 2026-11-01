@@ -88,8 +88,8 @@ jobs:
       - name: Build lib + run C test + header drift
         run: ./crates/pe-ffi/c_tests/run_c_test.sh
 
-  pe-godot-build:
-    name: pe-godot compile check (Linux)
+  pe-godot-headless:
+    name: pe-godot headless drop test (Linux)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -99,9 +99,19 @@ jobs:
         with:
           toolchain: "1.99.1"
 
-      - name: cargo build -p pe-godot
-        run: cargo build -p pe-godot
-        # Godot editor / headless is NOT run here — see docs/GODOT.md.
+      - name: Cache pinned Godot 4.3-stable
+        uses: actions/cache@v4
+        with:
+          path: .godot-ci
+          key: godot-4.3-stable-linux-x86_64-fd52bb4b
+
+      - name: Download Godot (verify official SHA-512)
+        run: ./godot/ci/download_godot.sh
+
+      - name: Headless drop test (y tolerance + state hash)
+        run: ./godot/ci/run_headless_drop.sh
+        # Required job: Linux headless Godot 4.3-stable actually loads the
+        # GDExtension and runs ci_drop_test.tscn. Measured results: docs/GODOT.md.
 
   maturin-pytest:
     name: maturin wheel + oracle pytest
@@ -175,15 +185,32 @@ jobs:
             exit 1
           fi
 
-      - name: Compute canonical scene save/load/continue hash
+      - name: Compute canonical scene save/load/continue hashes
         shell: bash
         run: |
           set -euo pipefail
-          HASH=$(cargo run -p pe-scene --bin scene_hash --release | tr -d '\r\n' | tail -n1)
+          OUT=$(cargo run -p pe-scene --bin scene_hash --release 2>/dev/null | tr -d '\r')
+          HASH=$(echo "$OUT" | sed -n '1p')
+          HASH_CONVEX=$(echo "$OUT" | sed -n '2p')
+          HASH_GODOT=$(echo "$OUT" | sed -n '3p')
           echo "Canonical scene round-trip hash on ${{ matrix.os }}: $HASH"
+          echo "Canonical scene convex round-trip hash on ${{ matrix.os }}: $HASH_CONVEX"
+          echo "Godot drop-box hash on ${{ matrix.os }}: $HASH_GODOT"
           EXPECTED=50d52b2193aa528c
+          EXPECTED_CONVEX=4ca980096c036ade
+          EXPECTED_GODOT=a0d625f02641a420
           if [ "$HASH" != "$EXPECTED" ]; then
             echo "::error::Scene round-trip hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+          if [ "$HASH_CONVEX" != "$EXPECTED_CONVEX" ]; then
+            echo "::error::Scene convex round-trip hash mismatch on ${{ matrix.os }}: got $HASH_CONVEX expected $EXPECTED_CONVEX"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+          if [ "$HASH_GODOT" != "$EXPECTED_GODOT" ]; then
+            echo "::error::Godot drop hash mismatch on ${{ matrix.os }}: got $HASH_GODOT expected $EXPECTED_GODOT"
             echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
             exit 1
           fi
@@ -349,6 +376,19 @@ jobs:
           EXPECTED=9d9e0da856fd43d4
           if [ "$HASH" != "$EXPECTED" ]; then
             echo "::error::Fluid determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+
+      - name: Compute canonical DFSPH-tank hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-fluid --bin dfsph_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical DFSPH hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=f1f2825b5eeaab0d
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::DFSPH determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
             echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
             exit 1
           fi

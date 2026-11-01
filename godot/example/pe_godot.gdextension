@@ -4,9 +4,13 @@ compatibility_minimum = 4.3
 reloadable = true
 
 [libraries]
-linux.debug.x86_64 = "res://../../target/debug/libpe_godot.so"
-linux.release.x86_64 = "res://../../target/release/libpe_godot.so"
-macos.debug = "res://../../target/debug/libpe_godot.dylib"
-macos.release = "res://../../target/release/libpe_godot.dylib"
-windows.debug.x86_64 = "res://../../target/debug/pe_godot.dll"
-windows.release.x86_64 = "res://../../target/release/pe_godot.dll"
+# Headless / editor may select linux.x86_64 or linux.{debug,release}.x86_64.
+linux.x86_64 = "res://bin/libpe_godot.so"
+linux.debug.x86_64 = "res://bin/libpe_godot.so"
+linux.release.x86_64 = "res://bin/libpe_godot.so"
+macos.universal = "res://bin/libpe_godot.dylib"
+macos.debug = "res://bin/libpe_godot.dylib"
+macos.release = "res://bin/libpe_godot.dylib"
+windows.x86_64 = "res://bin/pe_godot.dll"
+windows.debug.x86_64 = "res://bin/pe_godot.dll"
+windows.release.x86_64 = "res://bin/pe_godot.dll"

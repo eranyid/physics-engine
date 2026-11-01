@@ -32,7 +32,7 @@ physics-engine/
     pe-ballistics/             # point-mass ballistics, ammo profiles, projectile SoA
     pe-materials/              # constitutive models (elastic/plastic/thermal)
     pe-soft/                   # soft bodies / FEM / XPBD cloth-style (later)
-    pe-fluid/                  # particles / SPH / PBF (M11 partial; DFSPH later)
+    pe-fluid/                  # particles / SPH / PBF / DFSPH (M11)
     pe-scene/                  # serialization, scene graph, sleeping metadata
     pe-ffi/                    # stable C ABI for GDExtension and others
   python/                      # PyO3 crate → maturin wheel (`physics_engine_rs`)
@@ -222,7 +222,7 @@ ported early because the Python oracle already exists.
 | **M8** | Scene I/O + C ABI | Round-trip serialization; `pe-ffi` headers; smoke GDExtension optional | **done** (pe-scene + pe-ffi + godot/; soft-body track also shipped as **M8 soft** / `pe-soft`) |
 | **M9** | Waves / hydrodynamics v1 | Airy + Stokes/Gerstner/spectra + buoyancy coupling (Morison later) | **done** (Morison shipped in M11 hydro follow-on) |
 | **M10** | Materials + soft v1 | Elastic validation; one soft demo with analytic check | **done** (shipped as M8 soft / `pe-soft`) |
-| **M11** | Fluids / blast v1 *or* deferred aero/hydro | Particle hydrostatic + blast scaling; Morison/seakeeping/BEM | **partial+** (blast earlier; **`pe-fluid` SPH/PBF shipped**; Morison/seakeeping/BEM done; DFSPH / rigid coupling deferred) |
+| **M11** | Fluids / blast v1 *or* deferred aero/hydro | Particle hydrostatic + blast scaling; Morison/seakeeping/BEM | **partial+** (blast earlier; **`pe-fluid` SPH/PBF/DFSPH shipped**; Morison/seakeeping/BEM done; rigid coupling deferred) |
 
 ### M1–M2 as built (summary)
 
@@ -291,11 +291,15 @@ ported early because the Python oracle already exists.
 - New crates `pe-scene` (JSON/RON/`PESC` binary; bit-exact state+warm-cache restore)
   and `pe-ffi` (opaque `PeWorld*`, SoA transforms, raycast/overlap, contacts,
   `catch_unwind`, cbindgen header + C smoke in CI).
-- `godot/` GDExtension (`godot` / gdext, MPL-2.0 dependency): `PePhysicsWorld` /
-  `PeRigidBody3D`; Linux **compile check** in CI. Godot editor/headless **not** run
+- **Scene schema v2:** convex hulls, rounded shapes, body bullet, fuller CCD
+  params; v1 fixtures migrate; unknown-field / version errors; locked pyramid +
+  convex round-trip hashes (`docs/SCENE.md`).
+- `godot/` GDExtension (`godot` / gdext, MPL-2.0): `PePhysicsWorld` /
+  `PeRigidBody3D`; Linux **headless drop test** in CI (pinned Godot 4.3-stable,
+  SHA-512 verified) — final `y≈0.2499`, hash `a0d625f02641a420`
   (`docs/GODOT.md`).
 - Docs: [`SCENE.md`](SCENE.md), [`FFI.md`](FFI.md), [`GODOT.md`](GODOT.md).
-- Determinism: scene save/load/continue hash locked (= collision pyramid hash).
+- Determinism: scene save/load/continue hashes locked (pyramid + convex + Godot).
 
 ### M7 as built (summary)
 

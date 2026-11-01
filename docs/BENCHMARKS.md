@@ -154,9 +154,10 @@ Neighbour-list reuse across PBF iterations (default on):
 
 | Benchmark | Workload | Before reuse | After reuse | Approx. rate (after) |
 | --- | --- | --- | --- | --- |
-| `fluid_tank_hash` | canonical PBF 4³ tank, 40 steps | ~86.4 ms | **~67.5 ms** (−22%) | — |
-| `pbf_1k_particles_10_steps` | ~1000 fluid + boundary, 10 PBF steps | ~250 ms | **~183 ms** (−27%) | ~5.5×10⁴ particle·steps/s |
-| `wcsph_256_particles_20_steps` | 8×8×4 WCSPH, 20 steps | ~41.9 ms | ~41.4 ms (noise) | ~1.2×10⁵ particle·steps/s |
+| `fluid_tank_hash` | canonical PBF 4³ tank, 40 steps | ~86.4 ms | **~73.3 ms** | — |
+| `pbf_1k_particles_10_steps` | ~1000 fluid + boundary, 10 PBF steps | ~250 ms | **~204 ms** | ~4.9×10⁴ particle·steps/s |
+| `wcsph_256_particles_20_steps` | 8×8×4 WCSPH, 20 steps | ~41.9 ms | **~49.2 ms** | ~1.0×10⁵ particle·steps/s |
+| `dfsph_tank_hash` | canonical DFSPH 4³ tank, 40 steps | — | **~186 ms** | — |
 
 Re-record with `cargo bench -p pe-fluid --bench fluid` after solver changes.
 

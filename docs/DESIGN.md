@@ -22,7 +22,7 @@ invariants that the Rust port must preserve (units, frames, numerics, test bar).
 | `src/physics_engine/` (Python) | Reference oracle; analytic tests; slow/energy runs |
 | `crates/pe-math`, `pe-core`, `pe-collision`, `pe-aero`, `pe-hydro`, `pe-space`, `pe-blast`, `pe-ballistics`, `pe-soft` (Rust) | Stages 1–3 + space/blast/soft production core; analytic + Criterion |
 | `python/` → `physics_engine_rs` | PyO3 abi3 wheel; GIL released on step; oracle harness |
-| Godot GDExtension | `godot/` + `pe-ffi` C ABI (M8; compile-checked — see docs/GODOT.md) |
+| Godot GDExtension | `godot/` + `pe-ffi` C ABI (M8; Linux headless drop+hash in CI — see docs/GODOT.md) |
 
 Determinism / oracle tolerances: [DETERMINISM.md](DETERMINISM.md). Baselines:
 [BENCHMARKS.md](BENCHMARKS.md).
@@ -37,7 +37,7 @@ crates/pe-aero/       ISA atmosphere, WingPolar/stall, thrust, AircraftAero
 crates/pe-hydro/      Box/Cylinder/Sphere/Mesh hulls, Buoyancy, GM/GZ, IMO IS Code, aero_hydro_hash
 crates/pe-soft/       XPBD soft bodies / cloth / rope / tet FEM / materials
                       (see docs/SOFT.md, docs/MATERIALS.md — plasticity/fracture/thermal)
-crates/pe-fluid/      SPH (WCSPH) + PBF particle fluids (3-D / 2-D tests), fluid_hash
+crates/pe-fluid/      SPH (WCSPH) + PBF + DFSPH particle fluids (3-D / 2-D tests), fluid_hash / dfsph_hash
 python/               PyO3 module physics_engine_rs (abi3 ≥ 3.10) — World + ContactWorld + aero/hydro + soft + fluid
 ```
 

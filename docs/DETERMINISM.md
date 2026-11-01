@@ -39,8 +39,10 @@ Cross-check helpers:
   `physics_engine_rs.canonical_blast_hash()`
 - Ballistics: `cargo run -p pe-ballistics --bin ballistics_hash --release` /
   `physics_engine_rs.canonical_ballistics_hash()`
-- Fluids: `cargo run -p pe-fluid --bin fluid_hash --release` /
+- Fluids (PBF): `cargo run -p pe-fluid --bin fluid_hash --release` /
   `physics_engine_rs.canonical_fluid_hash()`
+- Fluids (DFSPH): `cargo run -p pe-fluid --bin dfsph_hash --release` /
+  `physics_engine_rs.canonical_dfsph_hash()`
 - M9 wave-body: `cargo run -p pe-hydro --bin wave_body_hash --release` /
   `physics_engine_rs.canonical_wave_body_hash()`
 - M8 soft bodies: `cargo run -p pe-soft --bin soft_hash --release` /
@@ -67,25 +69,25 @@ Scenario (must stay in sync in the binary, Rust test, and Python helper):
 | macOS (CI) | same expected | CI asserts equality |
 | Windows (CI) | same expected | CI asserts equality |
 
-### Canonical scene save/load/continue hash (locked)
+### Canonical scene save/load/continue hashes (locked)
 
-Scenario (must stay in sync with `pe_scene::canonical_scene_roundtrip_hash` /
-`scene_hash` binary):
+`cargo run -p pe-scene --bin scene_hash --release` prints three lines:
 
-- Same 10-box pyramid as the stage-2 collision hash.
-- Run **300** contact steps @ `dt = 1/240`, capture scene (state + warm cache) to
-  binary, load, run **300** more.
-- Must match an uninterrupted **600**-step run bit-exactly.
-- Hash: FNV-1a 64 over packed dynamic state (equals stage-2 collision hash when
-  restore is correct).
+1. **Pyramid** — same 10-box scene as stage-2; 300 steps → binary capture → load →
+   300 more; must match uninterrupted 600 (`50d52b2193aa528c`).
+2. **Convex v2** — M6 hull+capsule+rounded scene via schema v2 serialize; same
+   300+300 continue (`4ca980096c036ade` = stage-2 convex hash).
+3. **Godot drop** — Y-up box on +Y plane, 180×`dt=1/60` (`a0d625f02641a420`);
+   final COM `y ≈ 0.2499` (half-extent 0.25).
 
-| Platform | Hash (hex) | Status |
-| --- | --- | --- |
-| Linux x86_64 (CI + local) | `50d52b2193aa528c` | locked |
-| macOS (CI) | same expected | CI asserts equality |
-| Windows (CI) | same expected | CI asserts equality |
+Schema v1 fixtures migrate to v2; pyramid hash is unchanged when v2-only shapes
+are unused. See [`SCENE.md`](SCENE.md), [`GODOT.md`](GODOT.md).
 
-Helper: `cargo run -p pe-scene --bin scene_hash --release`.
+| Platform | Pyramid | Convex | Godot drop | Status |
+| --- | --- | --- | --- | --- |
+| Linux x86_64 (CI + local) | `50d52b2193aa528c` | `4ca980096c036ade` | `a0d625f02641a420` | locked |
+| macOS (CI) | same | same | same | CI asserts equality |
+| Windows (CI) | same | same | same | CI asserts equality |
 
 ### Canonical stage-2 collision hash (locked)
 
@@ -324,6 +326,29 @@ Scenario (`pe_fluid::fluid_tank_hash`, `fluid_hash` binary,
 | Windows (CI) | same expected | CI asserts equality |
 
 Helper: `cargo run -p pe-fluid --bin fluid_hash --release`.
+
+### Canonical DFSPH-tank hash (locked)
+
+Scenario (`pe_fluid::dfsph_tank_hash`, `dfsph_hash` binary,
+`physics_engine_rs.canonical_dfsph_hash()`):
+
+- DFSPH 3-D tank: 4×4×4 fluid lattice (`dx=0.05`, `h=2dx`, `ρ₀=1000`, mass
+  calibrated to cubic-spline lattice rest density) in an Akinci boundary shell
+  with recomputed `ψ`; gravity −z; compression-only density/divergence solvers;
+  warm start on; XSPH `ε=0.05`; max 8 density + 8 divergence iterations;
+  tolerances 1%.
+- 40 steps @ `dt = 1/120` (adaptive CFL off for the hash).
+- Hash: FNV-1a 64 over fluid particle `(x, v)` IEEE bits in index order.
+- Neighbour search: sorted uniform-grid cell lists (no `HashMap` iteration).
+- Elementary functions: portable `pe_math::libm_ops` only; no FMA on the step path.
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `f1f2825b5eeaab0d` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+Helper: `cargo run -p pe-fluid --bin dfsph_hash --release`.
 
 If a platform ever diverges, **do not silently loosen**: record the OS, toolchain,
 exact first differing packed index / float bits, and root cause (usually accidental
