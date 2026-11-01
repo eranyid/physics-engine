@@ -15,8 +15,17 @@ fn main() {
     // 8 m × 5 m × 3 m: room (x < 4) + doorway + corridor (y 1.5..3.0).
     let mut s = BlastScene::new(Vec3::zero(), Vec3::new(8.0, 5.0, 3.0), dx);
     s.fill_ground(0.1);
-    // Ceiling, then the x = 4 partition with a door.
-    s.grid.boundary[5] = Boundary::Wall;
+    // Closed room: outer walls at x = 0, y = 0, y = 5 and a ceiling; the
+    // corridor end (x = 8) stays open (outflow).
+    s.grid.boundary = [
+        Boundary::Wall,
+        Boundary::Outflow,
+        Boundary::Wall,
+        Boundary::Wall,
+        Boundary::Wall,
+        Boundary::Wall,
+    ];
+    // The x = 4 partition with a door.
     s.fill_aabb(Vec3::new(3.9, 0.0, 0.0), Vec3::new(4.1, 5.0, 3.0));
     s.clear_aabb(Vec3::new(3.85, 2.0, 0.1), Vec3::new(4.15, 3.0, 2.1));
     // Corridor walls beyond the door.
