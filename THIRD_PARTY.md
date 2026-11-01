@@ -52,6 +52,18 @@ IMO IS Code criteria are from MSC.267(85) (regulatory text — criteria encoded 
 pure thresholds, not copied source). Lanchester phugoid and elliptic-wing
 formulas are textbook identities. No third-party simulation code was copied.
 
+### M12 / 6-DOF aero (`pe-aero::fdm`)
+
+Navion geometry, mass, and nondimensional stability / control derivatives are
+taken as **published numbers only** (clean-room code) from:
+
+- Nelson, R. C., *Flight Stability and Automatic Control*, Appendix B Table B.1
+  (cites Teper STI TR 176-1 and Heffley & Jewell NASA CR-2144)
+- NASA TN D-6643 (1972) Table I — wing geometry (public domain)
+- NASA CR-2144 — handling-qualities data source cited by Nelson
+
+No JSBSim (LGPL) or other simulation source was copied or derived.
+
 ### M7 note (`pe-space`)
 
 Algorithms implemented clean-room from published papers / textbooks (coefficients

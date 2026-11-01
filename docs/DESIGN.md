@@ -55,6 +55,10 @@ Mach ≈ 1 singularities are not modelled (no compressibility).
 PM/JONSWAP spectral sum) coupled into `Buoyancy`; `pe-aero` compressibility
 helpers, Dryden/steady wind, NASA TM flat-Earth check-cases 1–3.
 
+**6-DOF FDM:** `pe-aero::fdm` stability-derivative body forces/moments, thrust
+offset, trim, longitudinal linearisation / eigenmodes, Navion (Nelson) oracles —
+see [`AERO.md`](AERO.md).
+
 **M11 Morison / seakeeping / BEM:** `pe-hydro::morison`, `pe-hydro::seakeeping`
 (STF heave/pitch strip theory); `pe-aero::bem` (Glauert BEMT + Prandtl tip loss).
 Docs: [`SEAKEEPING.md`](SEAKEEPING.md), [`ROTOR.md`](ROTOR.md). Soft bodies /

@@ -149,10 +149,12 @@ Sizes are relative engineering scope, not calendar schedules.
 ### D4 — Atmosphere & aerodynamics (exists in Python)
 
 - **Models:** ISA; wing polar + stall; thrust; pitch derivatives; compressibility /
-  Dryden (M9); BEM rotors (M11).
+  Dryden (M9); BEM rotors (M11); **6-DOF stability-derivative FDM** (trim,
+  linearisation, eigenmodes — see `docs/AERO.md`).
 - **Validation:** ISA tables; trim L=W, T=D; \((L/D)_{\max}\); dive terminal V;
-  actuator-disk \(v_h\); BEM hover FM band.
-- **Effort:** S port; M for 6-DOF aero / compressibility later (partially done).
+  actuator-disk \(v_h\); BEM hover FM band; Navion phugoid vs Lanchester/Nelson;
+  coordinated-turn identities; FDM hash lock.
+- **Effort:** S port; M for 6-DOF aero / compressibility (**6-DOF FDM shipped**).
 
 ### D5 — Hydrostatics & ships (exists in Python)
 

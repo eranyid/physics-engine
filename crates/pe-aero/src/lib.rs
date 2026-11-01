@@ -1,5 +1,5 @@
 //! Atmosphere, wing polar / stall, thrust, compressibility, Dryden wind, NASA check cases,
-//! and blade-element / momentum (BEM) rotors.
+//! blade-element / momentum (BEM) rotors, and 6-DOF flight dynamics.
 //!
 //! Conventions match the Python reference oracle (`src/physics_engine/atmosphere.py`,
 //! `aero.py`): SI units, body +x nose / +y right / +z up, α = atan2(−v_z, v_x).
@@ -8,8 +8,11 @@
 //!
 //! **M11:** [`bem`] Glauert BEMT + Prandtl tip loss — see `docs/ROTOR.md`.
 //!
-//! **Deferred:** sideslip / lateral-directional derivatives, ground effect,
-//! swirl induction `a'`, full 2nd-order Dryden v/w filters.
+//! **6-DOF FDM:** [`fdm`] stability-derivative forces/moments, trim, linearisation,
+//! eigenmodes — see `docs/AERO.md`.
+//!
+//! **Deferred:** ground effect, swirl induction `a'`, full 2nd-order Dryden v/w
+//! filters, `α̇` derivatives, certified airfoil polars.
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
@@ -19,6 +22,7 @@ pub mod atmosphere;
 pub mod bem;
 pub mod check_cases;
 pub mod compressibility;
+pub mod fdm;
 pub mod force;
 pub mod helpers;
 pub mod polar;
@@ -43,6 +47,13 @@ pub use compressibility::{
     ackeret_cl, isentropic, karman_tsien, normal_shock, prandtl_glauert, prandtl_glauert_factor,
     Isentropic, NormalShock, PG_MACH_CLAMP,
 };
+pub use fdm::{
+    air_angles, body_rates_hat, classify_longitudinal_modes, coordinated_turn_load_factor,
+    coordinated_turn_rate, eval_aero_body, linearise_longitudinal, navion_nelson,
+    phugoid_approximation, trim_steady_level, ComplexEigen, ControlInputs, LongitudinalModes,
+    LongitudinalStateSpace, NavionData, SixDofAero, SixDofForces, SixDofModel,
+    StabilityDerivatives, TrimGuess, TrimResult, TrimStatus,
+};
 pub use force::{AirData, AircraftAero};
 pub use helpers::{
     lanchester_phugoid_period, level_flight_trim, level_flight_trim_earth,
@@ -51,3 +62,5 @@ pub use helpers::{
 pub use polar::{dynamic_pressure, PolarError, WingPolar};
 pub use thrust::{FixedThrust, JetThrust, PropellerThrust};
 pub use turbulence::{DrydenParams, DrydenTurbulence, SteadyWind, WindField};
+
+pub mod scenarios;
