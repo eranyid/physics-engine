@@ -348,7 +348,9 @@ ported early because the Python oracle already exists.
   1-D Euler HLLC/MUSCL/SSP-RK2 (Sod), rigid-body Friedlander loads, Gurney/Mott.
 - Ballistics: `AmmoProfile` (serde), SoA `ProjectileSystem` (per-shot RNG), ISA +
   Dryden wind, Coriolis/Eötvös, spin/Magnus models, hit-scan, Poncelet /
-  Recht–Ipson, ballistic tables; cross-OS 100-bullet volley hash.
+  Recht–Ipson, ballistic tables; **G1/G7 JBM/BRL Cd tables** (linear interp,
+  BC scaling); sourced cartridge rows + py_ballisticcalc drop/TOF oracle;
+  cross-OS 100-bullet volley hash (`a9ec62a39bbd3dc4`).
 - PyO3 + Python tests; Criterion benches recorded in [`BENCHMARKS.md`](BENCHMARKS.md).
 
 ### M8 soft / materials (`pe-soft`) as built
@@ -358,8 +360,9 @@ ported early because the Python oracle already exists.
   (Macklin & Müller 2021) / shape matching / pressure; static plane/sphere/box +
   deterministic spatial-hash self-collision. Docs: [`SOFT.md`](SOFT.md).
 - `Material` table (density, E, ν, friction, restitution, yield, H, thermal k/c_p/α,
-  fracture thresholds) — all built-ins `verified: false` / nominal; E,ν → Lamé and
-  XPBD compliance helpers. Docs: [`MATERIALS.md`](MATERIALS.md).
+  fracture thresholds) — demo rows `verified: false`; handbook rows
+  (`steel_aisi1020`, `aluminum_6061_t6`, …) `verified: true` with MatWeb/ASM/CRC
+  citations. Docs: [`MATERIALS.md`](MATERIALS.md).
 - Analytic oracles: catenary rope, spring period, axial `FL/(EA)`, tet volume,
   cantilever vs Euler–Bernoulli (honest tolerances), cloth energy, zero-compliance
   rigid limit, energy bounds, substep study. Cross-OS soft hash CI.
@@ -369,8 +372,8 @@ ported early because the Python oracle already exists.
 - PyO3 `SoftWorld` returning NumPy `(n,3)` arrays; pytest in
   `tests/test_soft_rust.py`. Criterion benches in [`BENCHMARKS.md`](BENCHMARKS.md).
 - **Deferred:** corotational FEM; full per-step FEM plastic XPBD coupling;
-  cohesive fracture; implicit thermal; rigid two-way coupling; verified handbook
-  rows.
+  cohesive fracture; implicit thermal; rigid two-way coupling; more handbook
+  species cells (wood/elastomer).
 
 **Rule.** No milestone merges without: (1) analytic or published benchmark tests,
 (2) oracle or cross-impl diff where a Python reference exists, (3) CI green.

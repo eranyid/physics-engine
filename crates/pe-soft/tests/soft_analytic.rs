@@ -40,11 +40,20 @@ fn material_lame_and_compliance_mapping() {
 }
 
 #[test]
-fn builtin_materials_are_unverified_nominal() {
+fn builtin_materials_verified_require_citation() {
     for m in builtin_materials() {
-        assert!(!m.verified);
         assert!(m.density > 0.0 && m.youngs_modulus > 0.0);
+        if m.verified {
+            assert!(
+                !m.source_note.trim().is_empty(),
+                "{} verified without citation",
+                m.name
+            );
+        }
     }
+    // Prior demo rows remain nominal.
+    assert!(!material_by_name("steel_nominal").unwrap().verified);
+    assert!(material_by_name("steel_aisi1020").unwrap().verified);
 }
 
 /// Run a spring-mass oscillator; return (period, amplitude_peaks).

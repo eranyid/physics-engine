@@ -7,9 +7,9 @@
 //! Eötvös, spin-drift / Magnus engineering models, terminal impact helpers, and
 //! tunneling-free hit-scan against `pe-collision` shapes (read-only).
 //!
-//! **Not in scope:** ammunition design or manufacture; G1/G7 standard drag tables
-//! were **not** verified from a primary BRL source — an analytic `C_D(M)` stand-in
-//! is used (see [`drag`], [`docs/AMMO.md`](../../docs/AMMO.md)).
+//! **Drag:** published G1/G7 Cd–Mach tables (JBM/BRL transcription) with linear
+//! interpolation and classical BC scaling; see [`drag`], [`g1g7_tables`],
+//! [`docs/BALLISTICS.md`](../../docs/BALLISTICS.md), [`docs/AMMO.md`](../../docs/AMMO.md).
 //!
 //! # Determinism
 //!
@@ -24,6 +24,8 @@
 pub mod ammo;
 pub mod drag;
 pub mod earth;
+#[allow(clippy::approx_constant)] // Cd table knots, not f64::consts
+pub mod g1g7_tables;
 pub mod hitscan;
 pub mod impact;
 pub mod oracles;
@@ -37,8 +39,9 @@ pub use ammo::{
     AMMO_PROFILE_VERSION,
 };
 pub use drag::{
-    analytic_cd, analytic_cd_params, area_from_bc_si, caliber_area, drag_force_magnitude,
-    DragModelRef, DragTable,
+    analytic_cd, analytic_cd_params, area_from_bc_si, bc_imperial_to_si, bc_si_to_imperial,
+    caliber_area, drag_force_magnitude, g1_table, g7_table, standard_cd, DragModelRef, DragTable,
+    BC_LB_IN2_TO_KG_M2,
 };
 pub use earth::{
     freefall_eastward_deflection, gravity_magnitude, LocalFrame, EARTH_OMEGA, EARTH_RADIUS_M,

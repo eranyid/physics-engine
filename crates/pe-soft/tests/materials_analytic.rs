@@ -369,6 +369,20 @@ fn materials_table_additions_and_flags() {
         assert!(m.thermal_expansion > 0.0 || need.contains("unused"));
         assert!(m.hardening_modulus >= 0.0);
     }
+    for need in [
+        "steel_aisi1020",
+        "aluminum_6061_t6",
+        "copper_c11000",
+        "titanium_ti6al4v",
+        "glass_soda_lime",
+        "concrete_normal_weight",
+        "water_20c",
+    ] {
+        assert!(names.contains(&need), "missing handbook row {need}");
+        let m = material_by_name(need).unwrap();
+        assert!(m.verified, "{need} should be verified with citation");
+        assert!(!m.source_note.trim().is_empty());
+    }
 }
 
 #[test]

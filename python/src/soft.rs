@@ -37,7 +37,7 @@ fn canonical_materials_hash() -> u64 {
     materials_canonical_hash()
 }
 
-/// List built-in material names (all `verified=false` / nominal).
+/// List built-in material names (nominal + handbook; see `verified` flag).
 #[pyfunction]
 fn soft_material_names() -> Vec<String> {
     builtin_materials()

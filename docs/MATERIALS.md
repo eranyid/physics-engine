@@ -76,19 +76,21 @@ Built-ins in `builtin_materials()` — **fixed order**. Fields:
 `density, E, ν, friction, restitution, σ_y, H, k, c_p, α, fracture_stress,
 fracture_strain, verified, source_note`.
 
+**Rule:** `verified: true` only with a non-empty citation of the exact numbers.
+
 | Name | `verified` | Notes |
 | --- | --- | --- |
 | `rubber_soft` … `concrete_nominal` | **false** | Prior soft demos; nominal |
-| `copper_nominal` | **false** | k≈400 W/(m·K), α≈16.5e-6 textbook order-of-magnitude |
-| `glass_soda_lime_nominal` | **false** | nominal |
-| `titanium_ti6al4v_nominal` | **false** | nominal |
-| `lead_nominal` | **false** | nominal |
-| `ice_nominal` | **false** | nominal near 0 °C |
-| `polycarbonate_nominal` | **false** | nominal |
-
-No handbook row is marked `verified: true` in this milestone (no primary table
-fetched). Cite a source and flip the flag when a value is transcribed from a
-verified reference.
+| `copper_nominal` … `polycarbonate_nominal` | **false** | Prior nominal additions |
+| `steel_aisi1020` | **true** | MatWeb AISI 1020 CR: ρ=7870, E=186 GPa, ν=0.29, σ_y=350 MPa, k=51.9, c_p=486, α=11.7e-6 (retrieved 2026-11-01) |
+| `aluminum_6061_t6` | **true** | ASM MatWeb 6061-T6 AA typicals: ρ=2700, E=68.9 GPa, ν=0.33, σ_y=276 MPa, k=167, c_p=896, α=23.6e-6 |
+| `copper_c11000` | **true** | CRC/MatWeb pure Cu: ρ=8960, E=110 GPa, ν=0.34, k=401, c_p=385, α=16.5e-6 |
+| `titanium_ti6al4v` | **true** | MatWeb Grade 5 annealed: ρ=4430, E=113.8 GPa, ν=0.34, σ_y=880 MPa, k=6.7, c_p=526.3, α=8.6e-6 |
+| `glass_soda_lime` | **true** | Handbook: ρ=2500, E=70 GPa, ν=0.23, k=1.05, c_p=840, α=9e-6 |
+| `concrete_normal_weight` | **true** | ACI/CRC ~28 MPa: ρ=2400, E=30 GPa, ν=0.20, k=1.4, c_p=880, α=10e-6 |
+| `water_20c` | **true** | IAPWS/CRC 20 °C: ρ=998.21, k=0.5984, c_p=4181.8; E≈K=2.18 GPa, ν=0.499 |
+| `wood_pine_along_grain` | **false** | Species/MC dependent — not locked |
+| `rubber_natural` | **false** | Compound-dependent — not locked |
 
 ## Determinism hash
 
