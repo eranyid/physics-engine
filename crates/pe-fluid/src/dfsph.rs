@@ -56,6 +56,14 @@ pub struct DfsphParams {
     pub adaptive_dt: bool,
     /// Warm-start pressure stiffness across steps (paper §3.2–3.3).
     pub warm_start: bool,
+    /// Optional free-slip plane `x ≥ xmin` (inward normal +x). `None` = off.
+    pub free_slip_xmin: Option<f64>,
+    /// Optional free-slip plane `y ≥ ymin` (inward normal +y).
+    pub free_slip_ymin: Option<f64>,
+    /// Optional free-slip plane `x ≤ xmax`.
+    pub free_slip_xmax: Option<f64>,
+    /// Optional free-slip plane `y ≤ ymax`.
+    pub free_slip_ymax: Option<f64>,
 }
 
 impl Default for DfsphParams {
@@ -73,6 +81,10 @@ impl Default for DfsphParams {
             cfl_lambda: 0.4,
             adaptive_dt: true,
             warm_start: true,
+            free_slip_xmin: None,
+            free_slip_ymin: None,
+            free_slip_xmax: None,
+            free_slip_ymax: None,
         }
     }
 }
@@ -544,6 +556,59 @@ impl DfsphWorld {
         dt_v.min(dt_f).clamp(1e-6, 1e-2)
     }
 
+    /// Project fluid positions/velocities onto optional free-slip AABB planes.
+    fn apply_free_slip_walls(&mut self) {
+        let xmin = self.params.free_slip_xmin;
+        let ymin = self.params.free_slip_ymin;
+        let xmax = self.params.free_slip_xmax;
+        let ymax = self.params.free_slip_ymax;
+        if xmin.is_none() && ymin.is_none() && xmax.is_none() && ymax.is_none() {
+            return;
+        }
+        let n = self.particles.len();
+        for i in 0..n {
+            if self.particles.kind[i] != ParticleKind::Fluid {
+                continue;
+            }
+            let mut x = self.particles.x[i];
+            let mut v = self.v_star[i];
+            if let Some(b) = xmin {
+                if x.x < b {
+                    x.x = b;
+                    if v.x < 0.0 {
+                        v.x = 0.0;
+                    }
+                }
+            }
+            if let Some(b) = ymin {
+                if x.y < b {
+                    x.y = b;
+                    if v.y < 0.0 {
+                        v.y = 0.0;
+                    }
+                }
+            }
+            if let Some(b) = xmax {
+                if x.x > b {
+                    x.x = b;
+                    if v.x > 0.0 {
+                        v.x = 0.0;
+                    }
+                }
+            }
+            if let Some(b) = ymax {
+                if x.y > b {
+                    x.y = b;
+                    if v.y > 0.0 {
+                        v.y = 0.0;
+                    }
+                }
+            }
+            self.particles.x[i] = x;
+            self.v_star[i] = v;
+        }
+    }
+
     /// Fixed-`dt` DFSPH step (ignores adaptive flag).
     pub fn step(&mut self, dt: f64) {
         self.ensure_buffers();
@@ -576,12 +641,14 @@ impl DfsphWorld {
                 self.particles.x[i].z = 0.0;
             }
         }
+        self.apply_free_slip_walls();
 
         self.rebuild_neighbours();
         self.compute_density();
         self.compute_alpha();
 
         self.correct_divergence_error(dt);
+        self.apply_free_slip_walls();
 
         for i in 0..n {
             if self.particles.kind[i] == ParticleKind::Fluid {

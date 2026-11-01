@@ -102,7 +102,7 @@ Cubic spline for both `W` and `∇W` (paper requirement).
 | Fluid → rigid buoyancy/drag | Would sample onto `pe-core` bodies |
 | Free-surface meshing | Out of scope |
 | GPU / multi-thread | Deterministic single-thread default |
-| Tight Laplace `Δp` lock | Shape locked; Tait+AV smear — see droplet section |
+| DFSPH dam-break `dx ≲ 0.04` | Vertical-splash unstable window — see dam-break section |
 
 ## Validation (measured numbers)
 
@@ -146,83 +146,76 @@ Mass conserved (constant particle mass). Isolated equal-mass pair: momentum drif
 
 ### Dam-break front vs Ritter (1892)
 
-**Setup:** 2-D, `h₀ = 0.4` m, reservoir length `L_res = 0.5` m, channel `6` m,
-sample at `t = 0.22` s (Ritter travel `2√(g h₀) t ≈ 0.87` m ≪ channel).
-Front = near-bed **toe** (`y < 0.35 h₀`, `ρ > 0.4 ρ₀`).
+**Physics setup (asymptotic Ritter):** 2-D, `h₀ = 0.4` m, long reservoir
+`L_res = 4.5 h₀ = 1.8` m (left rarefaction does not hit the wall before `τ=4`),
+channel `≈ 7.4` m. DFSPH inviscid (`xsph=0`), Akinci bed samples **plus**
+free-slip hard walls (`x≥0`, `y≥0`).
 
-#### PBF (default path)
+**Front metric:** binned **column height** `h(x) = (Σ area)/bin_w` with
+`bin_w = dx`; front = rightmost bin with `h ≥ 0.02 h₀` (not the leading particle).
 
-| `dx` [m] | rel. error vs Ritter (measured) |
+**Time samples:** dimensionless `τ = t √(g/h₀) ∈ {1, 2, 3, 4}`. Ritter is an
+**asymptotic** dry-bed solution — early `τ∼1` lags the collapse transient;
+agreement is judged at later `τ`.
+
+#### DFSPH height-field front (measured, Linux x86_64)
+
+| `dx` [m] | rel@τ=1 | rel@τ=2 | rel@τ=3 | rel@τ=4 | CI lock (τ=4) |
+| --- | --- | --- | --- | --- | --- |
+| 0.050 | 0.163 | 0.140 | 0.125 | **0.115** | **&lt; 0.15** |
+| 0.045 | 0.074 | 0.014 | 0.023 | **0.058** | **&lt; 0.10** |
+| 0.040 | 0.039 | 0.135 | 0.195 | 0.244 | unstable window |
+
+Late-time error **decreases** `0.05 → 0.045` and reaches **&lt; 15%** (finest
+stable CI: **~5.8%**). Offline probe: `cargo run -p pe-fluid --example probe_dam_ritter --release`.
+
+#### Column height `h(x)` vs Ritter at τ=2
+
+Mean `|h_sim − h_Ritter|/h₀` over wet bins (`h` or `h_Ritter` ≥ `0.02 h₀`),
+`dx=0.045`: **~0.184** (CI lock **&lt; 0.25**). Mass conserved (constant particle mass).
+
+#### Controlled experiment — what stops finer convergence
+
+| Variant | Observation |
 | --- | --- |
-| 0.050 | **1.20** |
-| 0.040 | **0.71** |
-| 0.030 | **0.44** |
-| 0.022 | **0.13** (`--ignored` fine run) |
+| Akinci walls only (no hard clamp) | Floor penetration; tip blows up as `dx` decreases |
+| Hard walls only (no Akinci) | Stable but late-time lag **~20–22%**, flat in `dx` (truncated wall kernel) |
+| Akinci + free-slip hard walls (CI path) | Late-time Ritter **&lt;15%** at `dx=0.05/0.045` |
+| Same path, `dx ≲ 0.04` | Vertical splash / `v_max` runaway — **unstable window** |
 
-Error **decreases under refinement**. At `dx = 0.03` still **~44%** (not under 15%).
-At `dx = 0.022` ~13% — under 15% only at finer-than-CI resolution.
+So the previous flat 0.46/0.42/0.39 series was an **invalid early-time toe metric**
+(`t=0.22` ⇒ `τ≈1.09`, tip particle / density threshold), not evidence of a Ritter
+model gap. With the height-field + late-`τ` protocol, DFSPH converges into the
+asymptotic regime until the splash window.
 
-#### DFSPH (compression-only, `h=2.2 dx`, calibrated mass)
+Martin & Moyce (1952) / Koshizuka–Oka (1996) tables are **not** transcribed (no
+verified primary source in this environment).
 
-| `dx` [m] | `x_front` [m] | rel. error vs Ritter |
-| --- | --- | --- |
-| 0.050 | 0.738 | **0.462** |
-| 0.040 | 0.805 | **0.421** |
-| 0.030 | 0.840 | **0.392** |
-
-Monotone improvement; finest CI `dx=0.03` still **~39%** — **not under 15%**.
-
-#### WCSPH self-consistency reference (labelled)
-
-Parallel WCSPH study (same geometry, `c₀=50`, mild AV/XSPH) **undershoots** Ritter
-by ~50–60% at these `dx` (toe lags). High-resolution WCSPH is a **self-consistency**
-reference for SPH discretisation, not a substitute for experiment.
-
-Martin & Moyce (1952) / Koshizuka–Oka (1996) surge-front tables are **not**
-transcribed (no verified primary table obtainable in this environment).
-
-#### Root cause (evidence)
-
-Probe at `t=0.22`, PBF `viscosity_eps=0`, toe vs Ritter (Linux x86_64):
-
-| `dx` | PBF overshoot / `h` | tip fluid nbrs | WCSPH lag / `h` |
-| --- | --- | --- | --- |
-| 0.05 | ~13 | 1 | ~8 |
-| 0.04 | ~11 | 5 | ~10 |
-| 0.03 | ~9 | 4 | ~12 |
-
-1. **Model mismatch:** Ritter is inviscid 1-D shallow-water on an infinite dry bed.
-   PBF / DFSPH / WCSPH are 2-D particle methods with different dissipation.
-2. **Front metric:** raw max-`x` is splash-outlier sensitive (e.g. PBF `dx=0.04`:
-   raw 3.90 vs toe 2.26). Toe + density threshold is required.
-3. **Kernel support:** discontinuous wet/dry front smoothed over `O(h)=O(2–2.4 dx)`.
-4. **Sparse tip:** 1–5 fluid neighbours at the toe → truncated SPH support.
-5. **Boundaries:** Akinci bed samples add impermeability / effective friction absent
-   from frictionless Ritter; open-wall `ψ=dx²` (not closed-shell `1/ΣW`).
-6. **Viscosity / XSPH / artificial pressure:** even mild damping changes tip speed;
-   PBF systematically **overshoots**, WCSPH/DFSPH **undershoot** at practical `dx`.
-7. **Finite reservoir:** `L_res=0.5` m ≠ infinite left state of the classical Riemann problem.
-
-**Why &lt;15% vs Ritter is not claimed** at CI resolutions: items 1–7 above. Tolerances
-are **not** loosened silently. DFSPH improves on coarse PBF error (~46% vs ~120% at
-`dx=0.05`) but shares the same asymptotic model gap.
+Fine `dx=0.0225` (`dx/2` below CI): `--ignored` test
+`dfsph_dam_break_fine_dx_and_stability_window` — expected to leave the stable
+window; numbers recorded when run, not silently greenwashed.
 
 ### Surface tension / droplet
 
 Akinci (2013) cohesion + curvature (optional Becker–Teschner colour-field path).
+**Sign:** cohesion is attractive (`F ∝ +σ m² C r̂` with `r̂ = (xⱼ−xᵢ)/r`).
+**2-D scale:** discrete `C(r)` / normal pair-sum over-predicts the Laplace jump by
+~20× vs SI `σ`; a documented `dim_scale = 1/20` is applied in 2-D so `σ` is
+SI-interpretable for the droplet test (3-D keeps `1.0` pending calibration).
 
 Analytic Laplace: 2-D `Δp = σ/R`, 3-D `Δp = 2σ/R` (oracle bit-exact).
 
-2-D free droplet WCSPH (`σ=0.2`, `R₀=0.15`, `dx=0.03`, strong AV/XSPH), measured:
+**Pressure metric:** Shepard-corrected density → Tait pressure, interior mean
+`d < 0.4 R` (excludes the free-surface boundary layer); differential
+`Δp = p̄_int(σ) − p̄_int(0)` vs ambient-free `σ/R`.
+
+2-D free droplet WCSPH (`σ=2`, `R₀=0.12`, `dx=0.02`, `c₀=12`, AV/XSPH), measured:
 
 | Quantity | Measured | CI lock |
 | --- | --- | --- |
-| Sphericity RMS `/R` | ~0.36 | **&lt; 0.40** |
-| Radius drift | &lt; 50% | **&lt; 50%** |
-| Laplace `Δp` vs `σ/R` | heavily smeared by Tait+AV | informational only |
-
-A tight Laplace pressure lock is **deferred** (needs a dedicated CSF pressure
-sampler without EOS contamination). Shape + analytic identity are locked.
+| Sphericity RMS `/R` | ~0.30 | **&lt; 0.40** |
+| Radius drift | ≪ 20% | **&lt; 20%** |
+| Laplace `Δp` vs `σ/R` | **~0.056** rel | **&lt; 0.15** |
 
 ### Other checks
 

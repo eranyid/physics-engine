@@ -72,15 +72,18 @@ pub use scenarios::{
     DFSPH_HASH_STEPS, FLUID_HASH_DT, FLUID_HASH_STEPS,
 };
 pub use surface_tension::{
-    cohesion_c, droplet_com_radius, droplet_pressure_jump, droplet_sphericity_error,
-    fill_droplet_2d, laplace_pressure, surface_tension_accel, SurfaceTensionModel,
-    SurfaceTensionParams,
+    cohesion_c, droplet_com_radius, droplet_pressure_jump, droplet_pressure_jump_shepard,
+    droplet_sphericity_error, fill_droplet_2d, laplace_pressure, shepard_density,
+    surface_tension_accel, SurfaceTensionModel, SurfaceTensionParams,
 };
 pub use validation::{
-    dam_break_convergence, dam_break_front_at, dfsph_dam_break_convergence,
-    dfsph_dam_break_front_at, fluid_front_x, fluid_front_x_toe, make_dam_break_2d,
-    make_dfsph_dam_break_2d, ritter_front_rel_error, tait_hydrostatic_profile_error,
-    wcsph_dam_break_front_at,
+    column_heights, dam_break_convergence, dam_break_front_at, dam_break_front_curve_dfsph,
+    dam_break_front_curve_pbf, dam_break_ritter_geometry, dam_break_times_from_tau,
+    dfsph_dam_break_convergence, dfsph_dam_break_front_and_height_at, dfsph_dam_break_front_at,
+    dfsph_dam_break_late_front_by_dx, fluid_front_x, fluid_front_x_height, fluid_front_x_toe,
+    front_x_from_height_field, make_dam_break_2d, make_dfsph_dam_break_2d,
+    make_dfsph_dam_break_akinci_only, ritter_front_rel_error, ritter_height_profile_rel_error,
+    tait_hydrostatic_profile_error, wcsph_dam_break_front_at, DAM_BREAK_TAU_SAMPLES,
 };
 pub use viscosity::{max_speed, pi_ij, MonaghanViscosity, Xsph};
 pub use wcsph::{WcsphParams, WcsphWorld};

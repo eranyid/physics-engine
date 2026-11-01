@@ -66,8 +66,8 @@ pub struct WcsphWorld {
     pub t: f64,
     /// Scratch neighbour list.
     neigh: Vec<usize>,
-    /// Per-particle neighbour lists (for surface tension).
-    neigh_lists: Vec<Vec<usize>>,
+    /// Per-particle neighbour lists (for surface tension / Shepard pressure).
+    pub neigh_lists: Vec<Vec<usize>>,
     /// Scratch XSPH delta-v.
     xsph_dv: Vec<Vec3>,
     /// Scratch colour-field normals.

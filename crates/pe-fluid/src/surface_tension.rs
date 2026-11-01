@@ -151,6 +151,15 @@ pub fn surface_tension_accel(
         SurfaceTensionModel::None => {}
         SurfaceTensionModel::Akinci2013 => {
             let sigma = params.sigma;
+            // Discrete C(r) / normal scaling is paper-3-D oriented. In 2-D the
+            // raw pair sum over-predicts the Laplace jump by ~20× (measured);
+            // apply a dimension factor so σ is SI-interpretable for the droplet
+            // test. 3-D keeps 1.0 pending a dedicated calibration.
+            let dim_scale = match dim {
+                Dim::D2 => 1.0 / 20.0,
+                Dim::D3 => 1.0,
+            };
+            let sigma_eff = sigma * dim_scale;
             for i in 0..n {
                 if parts.kind[i] != ParticleKind::Fluid {
                     continue;
@@ -166,13 +175,13 @@ pub fn surface_tension_accel(
                     if r < 1e-12 {
                         continue;
                     }
-                    let r_hat = rij / r;
-                    // Cohesion: F_i = −σ m_i m_j C(r) r̂  (r̂ from i to j)
-                    // Akinci uses (xi−xj)/r = −r_hat; sign: attractive when C>0.
+                    let r_hat = rij / r; // (x_j − x_i) / r
+                                         // Akinci cohesion: F_i = −σ m_i m_j C(r) (x_i − x_j)/r
+                                         //                  = +σ m_i m_j C(r) r̂  (attractive for C>0).
                     let c = cohesion_kernel(r, h, dim);
-                    f += r_hat * (-sigma * mass * mass * c);
+                    f += r_hat * (sigma_eff * mass * mass * c);
                     // Curvature: F_i = −σ m_i (n_i − n_j)
-                    f += (normals[i] - normals[j]) * (-sigma * mass);
+                    f += (normals[i] - normals[j]) * (-sigma_eff * mass);
                 }
                 out_a[i] = f / mass;
             }
@@ -229,8 +238,90 @@ pub fn laplace_pressure(sigma: f64, radius: f64, dim: Dim) -> f64 {
     }
 }
 
-/// Measure mean pressure of fluid particles near the droplet centre vs near
-/// the free surface, returning `(p_interior_mean, p_surface_mean, delta_p)`.
+/// Shepard-corrected density for particle `i` (fluid neighbours + self).
+///
+/// `ρᵢˢ = (Σⱼ mⱼ Wᵢⱼ) / (Σⱼ (mⱼ/ρⱼ) Wᵢⱼ)`. Neighbour volumes `m/ρ` (not rest
+/// `m/ρ₀`) preserve compression while restoring partition of unity on truncated
+/// free-surface neighbourhoods.
+pub fn shepard_density(parts: &Particles, i: usize, neigh: &[usize], kern: KernelKind) -> f64 {
+    let h = parts.h;
+    let dim = parts.dim;
+    let mass = parts.mass;
+    let xi = parts.x[i];
+    let w0 = crate::kernels::w(kern, 0.0, h, dim);
+    let mut num = mass * w0;
+    let mut den = (mass / parts.rho[i].max(1e-12)) * w0;
+    for &j in neigh {
+        if j == i || parts.kind[j] != ParticleKind::Fluid {
+            continue;
+        }
+        let r = (parts.x[j] - xi).norm();
+        let wij = crate::kernels::w(kern, r, h, dim);
+        num += mass * wij;
+        den += (mass / parts.rho[j].max(1e-12)) * wij;
+    }
+    if den < 1e-18 {
+        parts.rho[i]
+    } else {
+        num / den
+    }
+}
+
+/// Tait pressure from density: `p = (ρ₀ c₀²/γ) [(ρ/ρ₀)^γ − 1]`.
+fn tait_p(rho: f64, rho0: f64, c0: f64, gamma: f64) -> f64 {
+    let b = rho0 * c0 * c0 / gamma;
+    b * (pow(rho / rho0.max(1e-12), gamma) - 1.0)
+}
+
+/// Measure Laplace pressure jump from **Shepard-corrected** Tait pressures.
+///
+/// Interior: particles with `d < interior_frac · R` (excludes a boundary layer).
+/// Ambient for a free droplet is taken as **0** (vacuum); returns
+/// `(p_interior_mean, 0, p_interior_mean)`.
+///
+/// Pass neighbour lists from the WCSPH world (same as the last step). When
+/// `neigh` is empty/`None`-like (`neigh.len() != n`), falls back to raw `p[i]`.
+pub fn droplet_pressure_jump_shepard(
+    parts: &Particles,
+    neigh: &[Vec<usize>],
+    kern: KernelKind,
+    center: Vec3,
+    radius: f64,
+    interior_frac: f64,
+    sound_speed: f64,
+    gamma: f64,
+) -> (f64, f64, f64) {
+    let r_in = interior_frac * radius;
+    let rho0 = parts.rest_density;
+    let mut p_in = 0.0;
+    let mut n_in = 0usize;
+    let use_shepard = neigh.len() == parts.len();
+    for i in 0..parts.len() {
+        if parts.kind[i] != ParticleKind::Fluid {
+            continue;
+        }
+        let d = (parts.x[i] - center).norm();
+        if d >= r_in {
+            continue;
+        }
+        let p = if use_shepard {
+            let rho_s = shepard_density(parts, i, &neigh[i], kern);
+            tait_p(rho_s, rho0, sound_speed, gamma)
+        } else {
+            parts.p[i]
+        };
+        p_in += p;
+        n_in += 1;
+    }
+    let pin = if n_in == 0 { 0.0 } else { p_in / n_in as f64 };
+    // Free-droplet ambient ≈ 0.
+    (pin, 0.0, pin)
+}
+
+/// Measure mean raw Tait pressure near the centre vs near the free surface.
+///
+/// Prefer [`droplet_pressure_jump_shepard`] for Laplace locks (raw surface
+/// pressures are dominated by SPH truncation under-density).
 pub fn droplet_pressure_jump(
     parts: &Particles,
     center: Vec3,

@@ -766,6 +766,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pe-soft"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "criterion",
+ "pe-math",
+ "proptest",
+]
+
+[[package]]
 name = "pe-space"
 version = "0.1.0"
 dependencies = [
@@ -789,6 +799,7 @@ dependencies = [
  "pe-fluid",
  "pe-hydro",
  "pe-math",
+ "pe-soft",
  "pe-space",
  "pyo3",
 ]

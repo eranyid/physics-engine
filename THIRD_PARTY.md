@@ -124,6 +124,24 @@ Clean-room formulas only — **no** third-party simulation source translated:
 - **Not used:** G1/G7 standard drag coefficient tables (no verified primary BRL
   transcription in this milestone — analytic `C_D(M)` stand-in instead).
 
+### M8 note (`pe-soft` XPBD soft bodies / materials)
+
+Algorithms implemented clean-room from published papers (formulas only — **no**
+third-party simulation source translated; no NVIDIA PhysX / FleX / Soft Body /
+PositionBasedDynamics source copied):
+
+- Macklin, M., Müller, M., Chentanez, N. (2016). XPBD: Position-Based Simulation
+  of Compliant Constrained Dynamics. *Migraine / SCA* (compliance `α̃ = α/dt²`,
+  multiplier accumulation).
+- Müller, M. et al. (2007). Position Based Dynamics. *J. Vis. Commun. Image
+  Represent.*
+- Macklin, M. (2019). Small Steps in Physics Simulation. (substepping strategy.)
+- Macklin, M. & Müller, M. (2021). A Constraint-based Formulation of Stable
+  Neo-Hookean Elasticity. (XPBD tet FEM constraints.)
+- Müller, M. et al. (2005). Meshless deformations based on shape matching.
+- Material table values are **nominal** with `verified: false` — no handbook
+  constants were fetched from a primary source for this milestone.
+
 ### Particle fluids note (`pe-fluid`)
 
 Clean-room formulas only — **no** third-party SPH/PBF source translated

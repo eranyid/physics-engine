@@ -9,6 +9,7 @@ members = [
     "crates/pe-space",
     "crates/pe-blast",
     "crates/pe-ballistics",
+    "crates/pe-soft",
     "crates/pe-fluid",
     "crates/pe-scene",
     "crates/pe-ffi",
@@ -24,6 +25,7 @@ default-members = [
     "crates/pe-space",
     "crates/pe-blast",
     "crates/pe-ballistics",
+    "crates/pe-soft",
     "crates/pe-fluid",
     "crates/pe-scene",
 ]
@@ -44,6 +46,7 @@ pe-hydro = { path = "crates/pe-hydro" }
 pe-space = { path = "crates/pe-space" }
 pe-blast = { path = "crates/pe-blast" }
 pe-ballistics = { path = "crates/pe-ballistics" }
+pe-soft = { path = "crates/pe-soft" }
 pe-fluid = { path = "crates/pe-fluid" }
 pe-scene = { path = "crates/pe-scene" }
 pe-ffi = { path = "crates/pe-ffi" }
