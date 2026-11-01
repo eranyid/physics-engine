@@ -16,6 +16,7 @@ GDExtension (`godot/`) ship as M8. Python remains the oracle for cross-checks.
 - Scene I/O: [docs/SCENE.md](docs/SCENE.md)
 - C ABI: [docs/FFI.md](docs/FFI.md)
 - Godot: [docs/GODOT.md](docs/GODOT.md)
+- Combat (armor, penetration, ricochet, spall): [docs/COMBAT.md](docs/COMBAT.md)
 
 **Status:** M0–M9 done (incl. M6 convex); M11 Morison / seakeeping / BEM done; soft/fluids parallel tracks.
 - Stage 1: rigid bodies, gravity, drag, springs, integrators, diagnostics (Python + Rust)

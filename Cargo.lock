@@ -691,6 +691,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "pe-combat"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "pe-ballistics",
+ "pe-blast",
+ "pe-collision",
+ "pe-core",
+ "pe-math",
+ "proptest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "pe-core"
 version = "0.1.0"
 dependencies = [

@@ -47,8 +47,9 @@ pub use earth::{
     freefall_eastward_deflection, gravity_magnitude, LocalFrame, EARTH_OMEGA, EARTH_RADIUS_M,
 };
 pub use hitscan::{
-    ray_sphere, segment_sphere, segment_vs_box, segment_vs_capsule, segment_vs_shapes,
-    segment_vs_sphere, Hit, ShapeRef,
+    ray_sphere, segment_sphere, segment_vs_box, segment_vs_capsule, segment_vs_shape,
+    segment_vs_shapes, segment_vs_shapes_excluding, segment_vs_sphere, shape_bounding_radius,
+    shape_exit, Hit, ShapeRef,
 };
 pub use impact::{
     apply_impact_impulse, kinetic_energy, momentum, poncelet_depth, recht_ipson_residual,
@@ -58,7 +59,8 @@ pub use oracles::{
     quadratic_terminal_speed, vacuum_flight_time, vacuum_max_height, vacuum_range,
 };
 pub use projectile::{
-    apply_hit_impulses, HitEvent, MuzzlePose, Projectile, ProjectileSystem, RecoilImpulse, ShotId,
+    apply_hit_impulses, HitEvent, HitOutcome, HitResolver, MuzzlePose, Projectile,
+    ProjectileSystem, RecoilImpulse, ShotId, StopOnHit, MAX_INTERACTIONS_PER_SUBSTEP,
 };
 pub use scenarios::{
     ballistics_volley_hash, ballistics_volley_system, BALLISTICS_HASH_DT, BALLISTICS_HASH_N,
