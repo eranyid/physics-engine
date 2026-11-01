@@ -15,7 +15,10 @@
 //! ```
 //!
 //! This module builds `K(t)` from strip-theory `B(ω)` samples, checks the inverse
-//! transform consistency `B(ω) ↔ K(t)`, and advances a convolution memory ODE.
+//! transforms `B(ω) ↔ K(t)` (cosine) and `A(ω)−A_∞ ↔ K(t)` (sine / Ogilvie),
+//! and advances a convolution memory ODE. Free-decay oracles compare the
+//! time-stepped envelope to the Laplace characteristic pole of the same `K`
+//! (not a single-frequency frozen `B(ω_n)` model — that mismatch is ~20%).
 //!
 //! Determinism: portable [`pe_math::libm_ops`] only; no FMA; fixed sample grids.
 //!
@@ -115,6 +118,181 @@ pub fn damping_from_retardation(k: &RetardationKernel, omega: &[f64]) -> Vec<f64
         out.push(acc);
     }
     out
+}
+
+/// Ogilvie sine transform: `A(ω) − A_∞ = −(1/ω) ∫_0^{T} K(t) sin(ω t) dt`.
+///
+/// Returns the added-mass increment `A(ω) − A_∞` at each sample frequency.
+/// At `ω = 0` the limit is `−∫_0^{T} t K(t) dt`.
+pub fn added_mass_delta_from_retardation(k: &RetardationKernel, omega: &[f64]) -> Vec<f64> {
+    let mut out = Vec::with_capacity(omega.len());
+    let dt = k.dt;
+    let n = k.k.len();
+    for &w in omega {
+        let mut acc = 0.0;
+        for i in 0..n {
+            let t = i as f64 * dt;
+            let weight = if i == 0 || i + 1 == n { 0.5 } else { 1.0 };
+            if w.abs() < 1e-14 {
+                acc += weight * k.k[i] * t * dt;
+            } else {
+                acc += weight * k.k[i] * libm_ops::sin(w * t) * dt;
+            }
+        }
+        if w.abs() < 1e-14 {
+            out.push(-acc);
+        } else {
+            out.push(-acc / w);
+        }
+    }
+    out
+}
+
+/// Laplace transform `K̂(s) = ∫_0^{T} K(t) e^{−s t} dt` with `s = σ + iω`
+/// (returns `(Re, Im)`). Trapezoidal on the kernel grid.
+pub fn laplace_retardation(k: &RetardationKernel, sigma: f64, omega: f64) -> (f64, f64) {
+    let dt = k.dt;
+    let n = k.k.len();
+    let mut re = 0.0;
+    let mut im = 0.0;
+    for i in 0..n {
+        let t = i as f64 * dt;
+        let weight = if i == 0 || i + 1 == n { 0.5 } else { 1.0 };
+        let decay = libm_ops::exp(-sigma * t);
+        let c = libm_ops::cos(omega * t);
+        let s = libm_ops::sin(omega * t);
+        // e^{-(σ+iω)t} = e^{-σt}(cos(ωt) − i sin(ωt))
+        re += weight * k.k[i] * decay * c * dt;
+        im -= weight * k.k[i] * decay * s * dt;
+    }
+    (re, im)
+}
+
+/// Characteristic residual of the free Cummins ODE at pole `λ = −β + i ω_d`:
+///
+/// `(m + A_∞) λ² + λ K̂(λ) + C = 0`, `K̂(λ) = ∫_0^{T} K(t) e^{−λ t} dt`.
+///
+/// Returns `(Re f, Im f)`.
+pub fn cummins_char_residual(
+    mass: f64,
+    kernel: &RetardationKernel,
+    beta: f64,
+    omega_d: f64,
+) -> (f64, f64) {
+    let m = mass + kernel.a_inf;
+    // λ = −β + i ω_d ⇒ K̂(λ) = ∫ K e^{β t} e^{−i ω_d t} dt
+    // = laplace_retardation(σ = −β, ω = ω_d). Finite horizon; K decays.
+    let (k_re, k_im) = laplace_retardation(kernel, -beta, omega_d);
+    // λ² = (−β + iω)² = β² − ω² − 2 i β ω
+    let lam2_re = beta * beta - omega_d * omega_d;
+    let lam2_im = -2.0 * beta * omega_d;
+    // λ K̂ = (−β + iω)(k_re + i k_im)
+    let lam_k_re = -beta * k_re - omega_d * k_im;
+    let lam_k_im = -beta * k_im + omega_d * k_re;
+    (m * lam2_re + lam_k_re + kernel.c, m * lam2_im + lam_k_im)
+}
+
+/// Find the underdamped free-decay pole `λ = −β + i ω_d` of the Cummins
+/// characteristic equation by Newton iteration in `(β, ω_d)`.
+///
+/// `beta0`, `omega0` are initial guesses (e.g. from undamped `√(C/(m+A_∞))`
+/// and a frozen-`B` damping estimate). Returns `(β, ω_d)` or `None` if the
+/// iteration fails to converge.
+pub fn free_decay_pole(
+    mass: f64,
+    kernel: &RetardationKernel,
+    beta0: f64,
+    omega0: f64,
+) -> Option<(f64, f64)> {
+    let mut beta = beta0.max(0.0);
+    let mut omega = omega0.max(1e-6);
+    let h = 1e-6;
+    for _ in 0..40 {
+        let (fr, fi) = cummins_char_residual(mass, kernel, beta, omega);
+        let res = libm_ops::sqrt(fr * fr + fi * fi);
+        if res < 1e-10 * (1.0 + kernel.c.abs()) {
+            return Some((beta, omega));
+        }
+        // Jacobian via central differences
+        let (fr_bp, fi_bp) = cummins_char_residual(mass, kernel, beta + h, omega);
+        let (fr_bm, fi_bm) = cummins_char_residual(mass, kernel, (beta - h).max(0.0), omega);
+        let (fr_wp, fi_wp) = cummins_char_residual(mass, kernel, beta, omega + h);
+        let (fr_wm, fi_wm) = cummins_char_residual(mass, kernel, beta, (omega - h).max(1e-9));
+        let j11 = (fr_bp - fr_bm) / (2.0 * h);
+        let j21 = (fi_bp - fi_bm) / (2.0 * h);
+        let j12 = (fr_wp - fr_wm) / (2.0 * h);
+        let j22 = (fi_wp - fi_wm) / (2.0 * h);
+        let det = j11 * j22 - j12 * j21;
+        if libm_ops::fabs(det) < 1e-30 {
+            return None;
+        }
+        // Solve J δ = −f
+        let db = (-fr * j22 + fi * j12) / det;
+        let dw = (-fi * j11 + fr * j21) / det;
+        beta = (beta + db).max(0.0);
+        omega = (omega + dw).max(1e-9);
+        if libm_ops::sqrt(db * db + dw * dw) < 1e-12 {
+            return Some((beta, omega));
+        }
+    }
+    let (fr, fi) = cummins_char_residual(mass, kernel, beta, omega);
+    let res = libm_ops::sqrt(fr * fr + fi * fi);
+    if res < 1e-6 * (1.0 + kernel.c.abs()) {
+        Some((beta, omega))
+    } else {
+        None
+    }
+}
+
+/// Fit `(β, ω_d)` from a free-decay heave trace via parabolic peak interpolation
+/// and log-decrement / mean period.
+pub fn fit_free_decay_pole(samples: &[f64], dt: f64) -> Option<(f64, f64)> {
+    let mut peaks: Vec<(f64, f64)> = Vec::new();
+    for i in 1..samples.len() - 1 {
+        if samples[i] > samples[i - 1] && samples[i] > samples[i + 1] && samples[i] > 1e-12 {
+            let y0 = samples[i - 1];
+            let y1 = samples[i];
+            let y2 = samples[i + 1];
+            let denom = y0 - 2.0 * y1 + y2;
+            let (t_pk, a_pk) = if libm_ops::fabs(denom) > 1e-30 {
+                let delta = (0.5 * (y0 - y2) / denom).clamp(-0.5, 0.5);
+                let t = (i as f64 + delta) * dt;
+                let a = y1 - 0.25 * (y0 - y2) * delta;
+                (t, a)
+            } else {
+                (i as f64 * dt, y1)
+            };
+            peaks.push((t_pk, a_pk));
+        }
+    }
+    if peaks.len() < 3 {
+        return None;
+    }
+    let mut sum_beta = 0.0;
+    let mut sum_omega = 0.0;
+    let mut n = 0usize;
+    for i in 0..peaks.len() - 1 {
+        let (t0, a0) = peaks[i];
+        let (t1, a1) = peaks[i + 1];
+        if a0 > 0.0 && a1 > 0.0 && t1 > t0 {
+            sum_beta += libm_ops::log(a0 / a1) / (t1 - t0);
+            sum_omega += 2.0 * core::f64::consts::PI / (t1 - t0);
+            n += 1;
+        }
+    }
+    if n == 0 {
+        None
+    } else {
+        Some((sum_beta / n as f64, sum_omega / n as f64))
+    }
+}
+
+/// Instantaneous mechanical energy proxy `½(m+A_∞)v² + ½ C z²` (excludes the
+/// hereditary memory reservoir; still monotone-decreasing for free decay of
+/// lightly damped heave once the kernel has settled).
+pub fn heave_energy_proxy(mass: f64, kernel: &RetardationKernel, z: f64, v: f64) -> f64 {
+    let m = mass + kernel.a_inf;
+    0.5 * m * v * v + 0.5 * kernel.c * z * z
 }
 
 /// Build a heave retardation kernel for a box barge from strip `B₃₃(ω)`.
@@ -286,20 +464,26 @@ impl CumminsHeave {
     }
 }
 
-/// Compare Cummins free-decay envelope to a single-frequency viscous model.
+/// Dual-path free-decay oracle: time-stepped Cummins vs Laplace characteristic
+/// pole of the **same** kernel.
 ///
-/// Uses log-decrement on positive peaks of the Cummins signal versus the
-/// constant-coefficient `β = B(ω_ref)/(2(m+A(ω_ref)))` prediction from strip
-/// matrices at `omega_ref`. Returns `(beta_fd, beta_cummins_fit, rel_err)`.
+/// Returns `(β_td, ω_td, β_pole, ω_pole, rel_β, rel_ω)`.
+///
+/// # Why not `B(ω_n)/(2(m+A_∞))`?
+///
+/// A single-frequency frozen reference uses `A_∞` (or `A(ω_n)`) and `B` at one
+/// frequency, while the convolution carries the full retardation spectrum and
+/// the Kramers–Kronig `A(ω)−A_∞` content of `K(t)`. That mismatch is typically
+/// ~20% on β for the box-barge grids used here — a loose bound, not an oracle.
+/// The Laplace pole of the identical `K` is the matching independent solution.
 #[allow(clippy::too_many_arguments)]
-pub fn free_decay_cummins_vs_fd(
+pub fn free_decay_cummins_vs_pole(
     mass: f64,
     length: f64,
     beam: f64,
     draft: f64,
     rho: f64,
     g: f64,
-    omega_ref: f64,
     z0: f64,
     n_strips: usize,
     dt: f64,
@@ -307,70 +491,60 @@ pub fn free_decay_cummins_vs_fd(
     n_omega: usize,
     omega_max: f64,
     n_kernel: usize,
-) -> (f64, f64, f64) {
-    let stations = box_barge_stations(length, beam, draft, n_strips);
-    let mats = assemble_strip_matrices(&stations, rho, omega_ref, g);
-    let a_ref = mats.a[0][0];
-    let b_ref = mats.b[0][0];
-    let c = mats.c[0][0];
-    let beta_fd = b_ref / (2.0 * (mass + a_ref));
-
+) -> Option<(f64, f64, f64, f64, f64, f64)> {
     let kernel = box_heave_retardation(
         length, beam, draft, rho, g, n_strips, 1e-3, omega_max, n_omega, dt, n_kernel,
     );
-    // Override C with strip restoring (same formula, keep consistency).
-    let mut kernel = kernel;
-    kernel.c = c;
-    // Use A_∞ from kernel; free-decay comparison is approximate because FD
-    // freezes A(ω_ref) while Cummins uses A_∞ + memory.
-    let mut td = CumminsHeave::new(mass, kernel, z0);
+    let m = mass + kernel.a_inf;
+    let omega_undamped = libm_ops::sqrt(kernel.c / m);
+    // Frozen-B guess for Newton only (not the oracle).
+    let stations = box_barge_stations(length, beam, draft, n_strips);
+    let mats = assemble_strip_matrices(&stations, rho, omega_undamped, g);
+    let beta_guess = mats.b[0][0] / (2.0 * m);
+
+    let mut td = CumminsHeave::new(mass, kernel.clone(), z0);
     let samples = td.free_decay(n_steps);
-    let beta_fit = log_decrement_beta(&samples, dt);
-    let rel = if beta_fd.abs() > 1e-30 {
-        libm_ops::fabs(beta_fit - beta_fd) / beta_fd
-    } else {
-        libm_ops::fabs(beta_fit)
-    };
-    (beta_fd, beta_fit, rel)
+    let (beta_td, omega_td) = fit_free_decay_pole(&samples, dt)?;
+    let (beta_pole, omega_pole) =
+        free_decay_pole(mass, &kernel, beta_guess.max(1e-6), omega_undamped)?;
+    let rel_beta = libm_ops::fabs(beta_td - beta_pole) / beta_pole.max(1e-30);
+    let rel_omega = libm_ops::fabs(omega_td - omega_pole) / omega_pole.max(1e-30);
+    Some((
+        beta_td, omega_td, beta_pole, omega_pole, rel_beta, rel_omega,
+    ))
 }
 
-fn log_decrement_beta(samples: &[f64], dt: f64) -> f64 {
-    let mut peaks: Vec<(f64, f64)> = Vec::new();
-    for i in 1..samples.len() - 1 {
-        if samples[i] > samples[i - 1] && samples[i] > samples[i + 1] && samples[i] > 1e-12 {
-            let y0 = samples[i - 1];
-            let y1 = samples[i];
-            let y2 = samples[i + 1];
-            let denom = y0 - 2.0 * y1 + y2;
-            let (t_pk, a_pk) = if libm_ops::fabs(denom) > 1e-30 {
-                let delta = (0.5 * (y0 - y2) / denom).clamp(-0.5, 0.5);
-                let t = (i as f64 + delta) * dt;
-                let a = y1 - 0.25 * (y0 - y2) * delta;
-                (t, a)
-            } else {
-                (i as f64 * dt, y1)
-            };
-            peaks.push((t_pk, a_pk));
-        }
-    }
-    if peaks.len() < 2 {
-        return 0.0;
-    }
-    let mut sum = 0.0;
-    let mut n = 0usize;
-    for i in 0..peaks.len() - 1 {
-        let (t0, a0) = peaks[i];
-        let (t1, a1) = peaks[i + 1];
-        if a0 > 0.0 && a1 > 0.0 && t1 > t0 {
-            sum += libm_ops::log(a0 / a1) / (t1 - t0);
-            n += 1;
-        }
-    }
-    if n == 0 {
-        0.0
-    } else {
-        sum / n as f64
-    }
+/// Diagnostic: relative β error of the **incorrect** single-frequency reference
+/// `B(ω_n)/(2(m+A_∞))` vs the time-domain fit (evidence of the old mismatch).
+#[allow(clippy::too_many_arguments)]
+pub fn free_decay_frozen_b_mismatch(
+    mass: f64,
+    length: f64,
+    beam: f64,
+    draft: f64,
+    rho: f64,
+    g: f64,
+    z0: f64,
+    n_strips: usize,
+    dt: f64,
+    n_steps: usize,
+    n_omega: usize,
+    omega_max: f64,
+    n_kernel: usize,
+) -> Option<(f64, f64, f64)> {
+    let kernel = box_heave_retardation(
+        length, beam, draft, rho, g, n_strips, 1e-3, omega_max, n_omega, dt, n_kernel,
+    );
+    let m = mass + kernel.a_inf;
+    let omega_n = libm_ops::sqrt(kernel.c / m);
+    let stations = box_barge_stations(length, beam, draft, n_strips);
+    let mats = assemble_strip_matrices(&stations, rho, omega_n, g);
+    let beta_frozen = mats.b[0][0] / (2.0 * m);
+    let mut td = CumminsHeave::new(mass, kernel, z0);
+    let samples = td.free_decay(n_steps);
+    let (beta_td, _) = fit_free_decay_pole(&samples, dt)?;
+    let rel = libm_ops::fabs(beta_td - beta_frozen) / beta_frozen.max(1e-30);
+    Some((beta_frozen, beta_td, rel))
 }
 
 /// Canonical Cummins scenario hash (FNV-1a over packed heave samples).

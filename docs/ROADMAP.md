@@ -324,7 +324,8 @@ ported early because the Python oracle already exists.
 - `pe-hydro::seakeeping`: STF-style heave/pitch strip RAOs, box-barge helpers,
   constant-coefficient time domain, free-decay β check.
 - `pe-hydro::cummins`: retardation `K(t)` from `B(ω)`, convolution heave ODE;
-  `K↔B` and free-decay oracles; cross-OS `cummins_hash` (`1ee2f57b9c89c3ae`).
+  `K↔B` / sine `A−A_∞` transforms; free-decay TD vs Laplace pole (~0.5%/0.2%);
+  cross-OS `cummins_hash` (`1ee2f57b9c89c3ae`).
 - `pe-aero::bem`: Glauert BEMT, Prandtl tip loss, induced-velocity iteration,
   actuator-disk oracles, `BemRotorForce` generator.
 - Docs: [`SEAKEEPING.md`](SEAKEEPING.md), [`ROTOR.md`](ROTOR.md). Determinism:

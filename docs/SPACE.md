@@ -57,9 +57,15 @@ Butcher checks: row sums `Σⱼ Aᵢⱼ = cᵢ` and `Σ Bᵢ = 1` to `<1e-14`.
 | Check | Tolerance | Measured |
 | --- | --- | --- |
 | Butcher residual | 1e-14 | under |
-| Convergence slope on `y'=y` (fixed step) | 7–9.5 | **7.86** (ratios ~208 / 232) |
+| Convergence slope on `y'=y`, coarse `h∈{1,½,¼}` | 7–9.5 | **7.86** (ratios ~208 / 232) |
+| Convergence slope on `y'=−½y³`, `h∈{½,¼,⅛}` | 7.5–9 | **7.82** (ratios ~156 / 226) |
 | Kepler `e=0.5` one period `\|ΔE/E\|`, `\|ΔL\|/\|L\|` | 1e-10 | **~3.0e-12**, **~7.2e-13** |
 | Arenstorf period closure | 1e-6 | **~8.3e-7** |
+
+Slopes **~7.8–7.9** are a step/tolerance-regime effect (not a wrong tableau):
+in the accessible fixed-step window before the `f64` floor, observed order sits
+just below the pure asymptotic `h⁸` plateau (ideal ratio 256). Finer `y'=y`
+steps hit round-off (~1e-15) before the ratio can climb further.
 
 **IAS15.** Gauss–Radau nodes are derived from `P_8(x)+P_7(x)=0` on `[-1,1]`
 (mapped to `[0,1]`), verified to `1e-15` against the locked table. Adaptive

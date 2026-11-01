@@ -569,7 +569,10 @@ fn dop853_butcher_consistency() {
 
 #[test]
 fn dop853_convergence_order_8_smooth_ode() {
-    // y' = y, y(0)=1 → y(T)=e^T. Choose T and h so n = T/h is exact.
+    // y' = y, y(0)=1 → y(T)=e^T. Coarse h∈{1, 1/2, 1/4} sits below the pure
+    // asymptotic h^8 regime (leading constant + lower-order pollution), so the
+    // measured slope is ~7.86 (ratios ~208/232 vs ideal 256). Finer steps below
+    // approach order 8 until floating-point floors.
     let f = |_t: f64, y: &[f64]| vec![y[0]];
     let t_end: f64 = 2.0;
     let exact = libm_ops::exp(t_end);
@@ -589,7 +592,9 @@ fn dop853_convergence_order_8_smooth_ode() {
     let r01 = errs[0] / errs[1];
     let r12 = errs[1] / errs[2];
     let slope = libm_ops::log(r12) / libm_ops::log(2.0);
-    eprintln!("DOP853 order-8 errs={errs:?} ratios r01={r01:.2} r12={r12:.2} slope={slope:.2}");
+    eprintln!(
+        "DOP853 coarse order-8 errs={errs:?} ratios r01={r01:.2} r12={r12:.2} slope={slope:.2}"
+    );
     assert!(
         r01 > 64.0 && r12 > 64.0,
         "expected ~256 ratios for order 8; got {r01}, {r12} (errs={errs:?})"
@@ -597,6 +602,45 @@ fn dop853_convergence_order_8_smooth_ode() {
     assert!(
         slope > 7.0 && slope < 9.5,
         "convergence slope {slope} (want ~8)"
+    );
+}
+
+#[test]
+fn dop853_fixed_step_order_near_8_nonlinear_ode() {
+    // y' = −½ y³, y(0)=1 → y(t)=(1+t)^{−1/2}. Larger leading truncation than
+    // y'=y, so a moderate fixed-step ladder stays above the f64 floor and the
+    // observed order approaches 8 (the coarse y'=y ladder measures ~7.86).
+    let f = |_t: f64, y: &[f64]| vec![-0.5 * y[0] * y[0] * y[0]];
+    let t_end: f64 = 1.0;
+    let exact = 1.0 / libm_ops::sqrt(1.0 + t_end);
+    // h = 1/2, 1/4, 1/8 → n = 2, 4, 8
+    let hs = [0.5_f64, 0.25, 0.125];
+    let mut errs = [0.0_f64; 3];
+    for (k, &h) in hs.iter().enumerate() {
+        let n = (t_end / h + 0.5) as usize;
+        assert!(((n as f64) * h - t_end).abs() < 1e-15);
+        let mut y = vec![1.0];
+        let mut t = 0.0;
+        for _ in 0..n {
+            y = ode_step_fixed(&f, t, &y, h);
+            t += h;
+        }
+        errs[k] = libm_ops::fabs(y[0] - exact);
+    }
+    let r01 = errs[0] / errs[1];
+    let r12 = errs[1] / errs[2];
+    let slope = libm_ops::log(r12) / libm_ops::log(2.0);
+    eprintln!(
+        "DOP853 nonlinear order-8 errs={errs:?} ratios r01={r01:.2} r12={r12:.2} slope={slope:.2}"
+    );
+    // Ideal ratio 256; require ≳128 and slope near 8.
+    assert!(
+        r01 > 128.0 && r12 > 128.0,
+        "nonlinear-ODE ratios too low for order ~8: {r01}, {r12} (errs={errs:?})"
+    );
+    assert!(
+        slope > 7.5 && slope < 9.0,
+        "nonlinear-ODE slope {slope} (want ~8)"
     );
 }
 

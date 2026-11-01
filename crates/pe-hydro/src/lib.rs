@@ -28,9 +28,10 @@ pub mod seakeeping;
 pub mod waves;
 
 pub use cummins::{
-    box_heave_b33_samples, box_heave_retardation, canonical_cummins_hash, damping_from_retardation,
-    free_decay_cummins_vs_fd, relative_l2, retardation_from_damping, CumminsHeave,
-    RetardationKernel,
+    added_mass_delta_from_retardation, box_heave_b33_samples, box_heave_retardation,
+    canonical_cummins_hash, cummins_char_residual, damping_from_retardation, fit_free_decay_pole,
+    free_decay_cummins_vs_pole, free_decay_frozen_b_mismatch, free_decay_pole, heave_energy_proxy,
+    laplace_retardation, relative_l2, retardation_from_damping, CumminsHeave, RetardationKernel,
 };
 pub use force::{Buoyancy, HullDrag, WaveDrag};
 pub use helpers::{
