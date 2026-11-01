@@ -1,11 +1,7 @@
 //! Adaptive Runge–Kutta–Fehlberg 7(8) (RKF78).
 //!
-//! **Choice vs DOP853:** a full Dormand–Prince 8(7) / DOP853 tableau with dense
-//! output is very large; this module ships the classical **Fehlberg 7(8)**
-//! embedded pair (NASA TR R-287 / Fehlberg 1968) instead. The public alias
-//! [`Dop853`] documents the substitution: same role (high-order adaptive RK),
-//! different tableau. Coefficients are mathematical constants from the paper —
-//! clean-room, not copied from any GPL integrator.
+//! Classical **Fehlberg 7(8)** embedded pair (NASA TR R-287 / Fehlberg 1968).
+//! For the Hairer–Nørsett–Wanner Dormand–Prince 8(5,3) method see [`super::dop853`].
 //!
 //! Step-size control uses a mixed absolute/relative RMS error on the `(x, v)`
 //! state vector.
@@ -24,15 +20,6 @@ use super::accel_buf;
 pub struct Rkf78 {
     /// Step-size / tolerance settings.
     pub ctrl: AdaptiveStep,
-}
-
-/// Alias documenting that callers expecting a DOP853-class adaptive 8th-order
-/// RK get RKF78 here (see module docs).
-pub type Dop853 = Rkf78;
-
-/// Construct the documented DOP853-class stand-in (RKF78).
-pub fn dormand_prince_8_7(ctrl: AdaptiveStep) -> Rkf78 {
-    Rkf78 { ctrl }
 }
 
 /// Free-function one-shot with default tolerances.

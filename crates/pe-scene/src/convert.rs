@@ -4,7 +4,9 @@ use pe_collision::joints::{
     Joint, JointBreak, JointKind, JointLimit, JointMotor, JointSoftParams, WORLD_BODY,
 };
 use pe_collision::shapes::{BoxShape, Capsule, Material, Plane, Shape, Sphere};
-use pe_collision::{BroadPhaseKind, CcdParams, SoftStepParams, SolverMode, StaticCollider};
+use pe_collision::{
+    BroadPhaseKind, CcdParams, ConvexHull, RoundedShape, SoftStepParams, SolverMode, StaticCollider,
+};
 use pe_core::forces::{
     ConstantTorque, ForceGenerator, LinearDrag, NewtonianGravity, QuadraticDrag, Spring,
     UniformGravity,
@@ -50,7 +52,7 @@ pub(crate) fn body_from_desc(d: &BodyDesc) -> Result<RigidBody, SceneError> {
     })
 }
 
-pub(crate) fn body_to_desc(b: &RigidBody) -> BodyDesc {
+pub(crate) fn body_to_desc_with_bullet(b: &RigidBody, bullet: bool) -> BodyDesc {
     BodyDesc {
         mass: b.mass,
         inertia_body: b.inertia_body,
@@ -59,6 +61,7 @@ pub(crate) fn body_to_desc(b: &RigidBody) -> BodyDesc {
         orientation: b.orientation.to_array(),
         angular_velocity: b.angular_velocity.to_array(),
         name: b.name.clone(),
+        bullet,
     }
 }
 
@@ -107,6 +110,57 @@ pub(crate) fn shape_from_desc(d: &ShapeDesc) -> Result<Shape, SceneError> {
             }
             Shape::Plane(Plane::new(v3(*normal), *offset))
         }
+        ShapeDesc::Convex { vertices, radius } => {
+            if !(radius.is_finite() && *radius >= 0.0) {
+                return Err(SceneError::Invalid {
+                    detail: "convex radius must be finite and ≥ 0".into(),
+                });
+            }
+            if vertices.len() < 4 {
+                return Err(SceneError::Invalid {
+                    detail: format!("convex hull needs ≥ 4 vertices, got {}", vertices.len()),
+                });
+            }
+            if vertices.iter().any(|p| p.iter().any(|c| !c.is_finite())) {
+                return Err(SceneError::Invalid {
+                    detail: "convex vertices must be finite".into(),
+                });
+            }
+            let pts: Vec<_> = vertices.iter().map(|a| v3(*a)).collect();
+            let hull = ConvexHull::from_points_with_radius(&pts, *radius).map_err(|e| {
+                SceneError::Invalid {
+                    detail: format!("convex hull build failed: {e:?}"),
+                }
+            })?;
+            Shape::Convex(hull)
+        }
+        ShapeDesc::Rounded { inner, radius } => {
+            if !(radius.is_finite() && *radius >= 0.0) {
+                return Err(SceneError::Invalid {
+                    detail: "rounded radius must be finite and ≥ 0".into(),
+                });
+            }
+            match inner.as_ref() {
+                ShapeDesc::Plane { .. } => {
+                    return Err(SceneError::Invalid {
+                        detail: "rounded inner cannot be a plane".into(),
+                    });
+                }
+                ShapeDesc::Rounded { .. } => {
+                    return Err(SceneError::Invalid {
+                        detail: "nested rounded shapes are not allowed; flatten radii".into(),
+                    });
+                }
+                _ => {}
+            }
+            let core = shape_from_desc(inner)?;
+            if matches!(core, Shape::Plane(_)) {
+                return Err(SceneError::Invalid {
+                    detail: "rounded inner cannot be a plane".into(),
+                });
+            }
+            Shape::Rounded(RoundedShape::new(core, *radius))
+        }
     })
 }
 
@@ -124,12 +178,14 @@ pub(crate) fn shape_to_desc(s: &Shape) -> Result<ShapeDesc, SceneError> {
             normal: p.normal.to_array(),
             offset: p.offset,
         },
-        // M6 convex/rounded assets stay out of schema v1 (see docs/SCENE.md).
-        Shape::Convex(_) | Shape::Rounded(_) => {
-            return Err(SceneError::Invalid {
-                detail: "convex/rounded shapes are not in scene schema v1".into(),
-            });
-        }
+        Shape::Convex(h) => ShapeDesc::Convex {
+            vertices: h.vertices.iter().map(|v| v.to_array()).collect(),
+            radius: h.radius,
+        },
+        Shape::Rounded(rd) => ShapeDesc::Rounded {
+            inner: Box::new(shape_to_desc(&rd.inner)?),
+            radius: rd.radius,
+        },
     })
 }
 
@@ -364,8 +420,10 @@ pub(crate) fn apply_solver(settings: &SolverSettings, cw: &mut pe_collision::Con
     cw.set_allow_sleep(settings.allow_sleep);
     cw.ccd = CcdParams {
         speculative: settings.ccd_speculative,
+        speculative_distance: settings.ccd_speculative_distance,
         toi: settings.ccd_toi,
-        ..CcdParams::default()
+        toi_max_iters: settings.ccd_toi_max_iters,
+        toi_tolerance: settings.ccd_toi_tolerance,
     };
 }
 
@@ -387,7 +445,10 @@ pub(crate) fn solver_from_world(cw: &pe_collision::ContactWorld) -> SolverSettin
         soft_contact_zeta: cw.soft_params.contact_zeta,
         allow_sleep: cw.sleep.enabled,
         ccd_speculative: cw.ccd.speculative,
+        ccd_speculative_distance: cw.ccd.speculative_distance,
         ccd_toi: cw.ccd.toi,
+        ccd_toi_max_iters: cw.ccd.toi_max_iters,
+        ccd_toi_tolerance: cw.ccd.toi_tolerance,
     }
 }
 

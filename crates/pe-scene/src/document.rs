@@ -7,11 +7,11 @@ use pe_math::STANDARD_GRAVITY;
 use serde::{Deserialize, Serialize};
 
 use crate::convert::{
-    apply_solver, apply_state_snapshot, body_from_desc, body_to_desc, force_to_box,
+    apply_solver, apply_state_snapshot, body_from_desc, body_to_desc_with_bullet, force_to_box,
     joint_from_desc, joint_to_desc, material_from_desc, material_to_desc, shape_from_desc,
     shape_to_desc, solver_from_world, state_to_snapshot, static_from_desc, static_to_desc, v3,
 };
-use crate::error::SceneError;
+use crate::error::{map_format_error, SceneError};
 use crate::migrate::migrate_document;
 use crate::types::{
     BodyDesc, ForceDesc, JointDesc, MaterialDesc, RuntimeSnapshot, ShapeDesc, SolverSettings,
@@ -20,6 +20,7 @@ use crate::types::{
 
 /// Full scene: bodies, shapes, materials, joints, forces, solver, optional state.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct SceneDocument {
     /// Schema version (must be migrated to current before instantiate).
     pub schema_version: u32,
@@ -112,45 +113,30 @@ impl SceneDocument {
 
     /// Serialize to pretty JSON.
     pub fn to_json_pretty(&self) -> Result<String, SceneError> {
-        serde_json::to_string_pretty(self).map_err(|e| SceneError::Parse {
-            format: "json",
-            message: e.to_string(),
-        })
+        serde_json::to_string_pretty(self).map_err(|e| map_format_error("json", e.to_string()))
     }
 
     /// Serialize to compact JSON.
     pub fn to_json(&self) -> Result<String, SceneError> {
-        serde_json::to_string(self).map_err(|e| SceneError::Parse {
-            format: "json",
-            message: e.to_string(),
-        })
+        serde_json::to_string(self).map_err(|e| map_format_error("json", e.to_string()))
     }
 
-    /// Parse JSON (never panics).
+    /// Parse JSON (never panics). Runs schema migration to current.
     pub fn from_json(s: &str) -> Result<Self, SceneError> {
-        let doc: Self = serde_json::from_str(s).map_err(|e| SceneError::Parse {
-            format: "json",
-            message: e.to_string(),
-        })?;
+        let doc: Self =
+            serde_json::from_str(s).map_err(|e| map_format_error("json", e.to_string()))?;
         migrate_document(doc)
     }
 
     /// Serialize to RON (pretty).
     pub fn to_ron_pretty(&self) -> Result<String, SceneError> {
-        ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::new()).map_err(|e| {
-            SceneError::Parse {
-                format: "ron",
-                message: e.to_string(),
-            }
-        })
+        ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::new())
+            .map_err(|e| map_format_error("ron", e.to_string()))
     }
 
-    /// Parse RON (never panics).
+    /// Parse RON (never panics). Runs schema migration to current.
     pub fn from_ron(s: &str) -> Result<Self, SceneError> {
-        let doc: Self = ron::from_str(s).map_err(|e| SceneError::Parse {
-            format: "ron",
-            message: e.to_string(),
-        })?;
+        let doc: Self = ron::from_str(s).map_err(|e| map_format_error("ron", e.to_string()))?;
         migrate_document(doc)
     }
 
@@ -179,6 +165,11 @@ impl SceneDocument {
         let world = World::new(bodies, gens);
         let mut cw = ContactWorld::new(world, shapes, statics, Some(mats));
         apply_solver(&self.solver, &mut cw);
+        for (i, b) in self.bodies.iter().enumerate() {
+            if b.bullet {
+                cw.set_bullet(i, true);
+            }
+        }
         for j in &self.joints {
             let joint = joint_from_desc(j)?;
             cw.add_joint(joint);
@@ -265,7 +256,8 @@ impl SceneDocument {
                 angular_velocity: omega,
                 name: String::new(),
             };
-            bodies.push(body_to_desc(&b));
+            let bullet = cw.bullet.get(i).copied().unwrap_or(false);
+            bodies.push(body_to_desc_with_bullet(&b, bullet));
         }
         let shapes: Vec<ShapeDesc> = cw
             .shapes
@@ -350,6 +342,7 @@ impl SceneDocument {
                     orientation: [1.0, 0.0, 0.0, 0.0],
                     angular_velocity: [0.0; 3],
                     name: format!("box{placed}"),
+                    bullet: false,
                 });
                 shapes.push(ShapeDesc::Box {
                     half_extents: [h, h, h],
@@ -424,6 +417,7 @@ pub fn round_trip_continue_hashes() -> Result<(u64, u64), SceneError> {
 /// Locked cross-OS scene round-trip continue hash (must match uninterrupted pyramid).
 ///
 /// Equals [`pe_collision::CANONICAL_COLLISION_HASH`] when restore is bit-exact.
+/// Unchanged by schema v2 when the scene uses only v1 primitives.
 pub const CANONICAL_SCENE_ROUNDTRIP_HASH: u64 = pe_collision::CANONICAL_COLLISION_HASH;
 
 /// Compute the scene continue hash (save after 300, load, 300 more).
@@ -434,4 +428,118 @@ pub fn canonical_scene_roundtrip_hash() -> u64 {
         "save/load/continue diverged from uninterrupted run"
     );
     h_rt
+}
+
+impl SceneDocument {
+    /// Canonical M6 convex scene (hull + capsule + rounded box) as a schema-v2 document.
+    pub fn canonical_convex_document() -> Self {
+        // Capture from the locked pe-collision scenario so hashes stay identical.
+        let cw = pe_collision::canonical_convex_world();
+        let forces = vec![ForceDesc::UniformGravity {
+            g: [0.0, 0.0, -STANDARD_GRAVITY],
+        }];
+        let mut doc = SceneDocument::capture(&cw, forces).expect("capture convex world");
+        // Drop runtime/state so instantiate rebuilds from body poses (matches hash helper).
+        doc.state = None;
+        doc.runtime = None;
+        doc
+    }
+}
+
+/// Save/load/continue hashes for the M6 convex scene (300 + 300 vs 600).
+pub fn convex_round_trip_continue_hashes() -> Result<(u64, u64), SceneError> {
+    let scene = SceneDocument::canonical_convex_document();
+    let dt = 1.0 / 240.0;
+
+    let mut full = scene.instantiate()?;
+    for _ in 0..600 {
+        full.step(dt);
+    }
+    let h_full = state_hash64(&full.world.state);
+
+    let mut a = scene.instantiate()?;
+    for _ in 0..300 {
+        a.step(dt);
+    }
+    let mid = SceneDocument::capture(&a, scene.forces.clone())?;
+    let bytes = mid.to_binary()?;
+    let mid2 = SceneDocument::from_binary(&bytes)?;
+    let mut b = mid2.instantiate()?;
+    for _ in 0..300 {
+        b.step(dt);
+    }
+    let h_rt = state_hash64(&b.world.state);
+    Ok((h_rt, h_full))
+}
+
+/// Locked convex scene round-trip hash (= [`pe_collision::CANONICAL_CONVEX_HASH`]).
+pub const CANONICAL_SCENE_CONVEX_ROUNDTRIP_HASH: u64 = pe_collision::CANONICAL_CONVEX_HASH;
+
+/// Convex scene continue hash (must match uninterrupted M6 convex run).
+pub fn canonical_scene_convex_roundtrip_hash() -> u64 {
+    let (h_rt, h_full) = convex_round_trip_continue_hashes().expect("convex scene round-trip");
+    assert_eq!(
+        h_rt, h_full,
+        "convex save/load/continue diverged from uninterrupted run"
+    );
+    h_rt
+}
+
+/// Godot CI drop scenario: box on ground plane, Y-up gravity (Godot convention).
+///
+/// Half-extent 0.25 m, start at `y = 2`, `dt = 1/60`, 180 steps. Returns
+/// `(final_y, state_hash64)`.
+pub fn godot_drop_box_result() -> (f64, u64) {
+    let h = 0.25;
+    let inertia = pe_collision::shapes::BoxShape::new(h, h, h).inertia(1.0);
+    let doc = SceneDocument {
+        schema_version: SCENE_SCHEMA_VERSION,
+        bodies: vec![BodyDesc {
+            mass: 1.0,
+            inertia_body: inertia,
+            position: [0.0, 2.0, 0.0],
+            velocity: [0.0; 3],
+            orientation: [1.0, 0.0, 0.0, 0.0],
+            angular_velocity: [0.0; 3],
+            name: "drop_box".into(),
+            bullet: false,
+        }],
+        shapes: vec![ShapeDesc::Box {
+            half_extents: [h, h, h],
+        }],
+        materials: vec![MaterialDesc {
+            restitution: 0.0,
+            friction: 0.5,
+        }],
+        statics: vec![StaticDesc {
+            shape: ShapeDesc::Plane {
+                normal: [0.0, 1.0, 0.0],
+                offset: 0.0,
+            },
+            position: [0.0; 3],
+            orientation: [1.0, 0.0, 0.0, 0.0],
+            material: MaterialDesc {
+                restitution: 0.0,
+                friction: 1.0,
+            },
+        }],
+        joints: Vec::new(),
+        forces: vec![ForceDesc::UniformGravity {
+            g: [0.0, -STANDARD_GRAVITY, 0.0],
+        }],
+        solver: SolverSettings {
+            iterations: 20,
+            ..SolverSettings::default()
+        },
+        state: None,
+        runtime: None,
+    };
+    let mut cw = doc.instantiate().expect("godot drop scene");
+    let dt = 1.0 / 60.0;
+    for _ in 0..180 {
+        cw.step(dt);
+    }
+    let y = cw.world.state.x[0].y;
+    let hash = state_hash64(&cw.world.state);
+    (y, hash)
 }

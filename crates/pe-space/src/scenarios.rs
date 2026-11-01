@@ -5,7 +5,7 @@ use pe_math::Vec3;
 use crate::diagnostics::state_hash64;
 use crate::field::{CentralMu, NBodyPointMass};
 use crate::integrator::{AdaptiveStep, Integrator};
-use crate::integrators::{Ias15, Leapfrog};
+use crate::integrators::{Dop853, Ias15, Leapfrog};
 use crate::kepler::{elements_to_state, orbital_period, KeplerElements};
 use crate::state::NBodyState;
 
@@ -92,6 +92,36 @@ pub fn ias15_hash() -> u64 {
     let mut t = 0.0;
     let mut accepted = 0usize;
     while accepted < IAS15_HASH_STEPS {
+        let res = integ.step(&field, &mut state, t, integ.ctrl.dt);
+        if res.dt_taken <= 0.0 {
+            break;
+        }
+        t = res.t;
+        state.after_step();
+        accepted += 1;
+    }
+    state_hash64(&state)
+}
+
+/// Number of **accepted** DOP853 steps in the hash scenario.
+pub const DOP853_HASH_STEPS: usize = 48;
+
+/// DOP853 hash scenario: same IC as IAS15; 48 accepted adaptive steps.
+pub fn dop853_hash() -> u64 {
+    let mu = crate::constants::EARTH_MU;
+    let mut state = ias15_hash_state();
+    let field = CentralMu::new(mu);
+    let period = orbital_period(mu, 1.0e7);
+    let mut integ = Dop853::new(AdaptiveStep {
+        dt: period / 80.0,
+        dt_min: 1e-6,
+        dt_max: period / 5.0,
+        atol: 1e-10,
+        rtol: 1e-10,
+    });
+    let mut t = 0.0;
+    let mut accepted = 0usize;
+    while accepted < DOP853_HASH_STEPS {
         let res = integ.step(&field, &mut state, t, integ.ctrl.dt);
         if res.dt_taken <= 0.0 {
             break;

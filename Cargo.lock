@@ -800,6 +800,7 @@ dependencies = [
  "pe-fluid",
  "pe-hydro",
  "pe-math",
+ "pe-scene",
  "pe-soft",
  "pe-space",
  "pyo3",

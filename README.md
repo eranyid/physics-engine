@@ -50,6 +50,7 @@ cargo run -p pe-core --bin canonical_hash --release
 cargo run -p pe-collision --bin collision_hash --release
 cargo run -p pe-hydro --bin aero_hydro_hash --release
 cargo run -p pe-soft --bin soft_hash --release
+cargo run -p pe-soft --bin materials_hash --release
 cargo run -p pe-hydro --bin m11_hash --release
 ```
 

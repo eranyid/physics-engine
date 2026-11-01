@@ -13,3 +13,6 @@ dist/
 !.cargo/config.toml
 *.whl
 .venv/
+.godot-ci/
+godot/example/.godot/
+godot/example/bin/

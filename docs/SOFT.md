@@ -43,11 +43,13 @@ quasistatic loads (not cleared automatically).
 ## Materials
 
 `Material { density, youngs_modulus, poisson_ratio, friction, restitution,
-yield_strength, thermal_conductivity, specific_heat, verified, source_note }`.
+yield_strength, hardening_modulus, thermal_conductivity, specific_heat,
+thermal_expansion, fracture_stress, fracture_strain, verified, source_note }`.
 
 Built-in table (`rubber_*`, `silicone`, `cloth_cotton`, `rope_nylon`, `jelly`,
-`steel_nominal`, …): **every entry has `verified: false`** — nominal demo
-orders of magnitude only. Do not treat as handbook data.
+`steel_nominal`, `copper_nominal`, …): **every entry has `verified: false`** —
+nominal demo orders of magnitude only. Do not treat as handbook data.
+Details and measured oracles: [`MATERIALS.md`](MATERIALS.md).
 
 Conversions (unit-tested):
 
@@ -55,8 +57,10 @@ Conversions (unit-tested):
 - Stretch compliance: `α = L₀ / (E A)` for a uniaxial segment
 - Volume compliance (helper): `α ≈ 1 / (K V₀)` with `K = λ + 2μ/3`
 
-Yield / thermal fields are stored for later plasticity / heat modules and are
-**unused** by the XPBD stepper in v1.
+Plasticity (J2), fracture (max principal), and thermal conduction/expansion are
+implemented as modules used by materials-track tests and optional callers; the
+default XPBD `SoftWorld::step` remains elastic XPBD (fracture/thermal applied
+when the caller invokes them).
 
 ## Analytic validation (measured)
 
@@ -113,13 +117,21 @@ w.run(1.0, 1/60)
 print(w.x().shape)  # (n, 3) NumPy
 ```
 
-## Deferred (not in v1)
+## Materials track (this PR)
 
-- Plasticity, fracture, tearing
-- Thermal conduction / thermo-mechanical coupling
+See [`MATERIALS.md`](MATERIALS.md): J2 plasticity (&lt;1% uniaxial), fracture
+(&lt;2% threshold), thermal Fourier (&lt;2%), material table additions, locked
+`materials_hash`.
+
+## Deferred
+
+- Full per-step FEM plastic coupling inside XPBD (constitutive map shipped)
+- Cohesive fracture / crack paths; tearing UI
+- Implicit thermal; radiation/convection BCs
 - Two-way coupling to rigid `ContactWorld` / joints
 - Anisotropic cloth (warp/weft), wet cloth, continuous collision for thin sheets
 - GPU / SIMD particle loops
+- `verified: true` handbook rows with primary sources
 
 ## References (formulas only — clean-room)
 
@@ -128,3 +140,5 @@ print(w.x().shape)  # (n, 3) NumPy
 - Macklin (2019). Small Steps in Physics Simulation.
 - Macklin & Müller (2021). A Constraint-based Formulation of Stable Neo-Hookean Elasticity.
 - Müller et al. (2005). Meshless deformations based on shape matching.
+- Simo & Hughes — J2 return mapping / isotropic hardening (textbook identities).
+- Fourier — 1-D heat equation fundamental mode (textbook).

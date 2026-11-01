@@ -3,11 +3,14 @@
 use pe_math::Vec3;
 use pe_space::constants::{EARTH_J2, EARTH_MU, EARTH_RADIUS};
 use pe_space::diagnostics::{angular_momentum, kinetic_energy, total_energy};
+use pe_space::dop853_hash;
 use pe_space::field::{CentralMu, GravityField, NBodyPointMass};
 use pe_space::figure_eight_hash;
 use pe_space::ias15_hash;
 use pe_space::integrator::{AdaptiveStep, Integrator};
-use pe_space::integrators::{Ias15, Leapfrog, Rk4, Whfast, WhfastCoords, Yoshida4};
+use pe_space::integrators::{
+    Dop853, Ias15, Leapfrog, Rk4, Whfast, WhfastCoords, WhfastCorrector, Yoshida4,
+};
 use pe_space::kepler::{
     elements_to_state, orbital_period, propagate_universal, state_to_elements, KeplerElements,
 };
@@ -61,6 +64,12 @@ fn canonical_space_hash() -> u64 {
 #[pyfunction]
 fn canonical_ias15_hash() -> u64 {
     ias15_hash()
+}
+
+/// Canonical DOP853 eccentric-Kepler hash (cross-OS determinism).
+#[pyfunction]
+fn canonical_dop853_hash() -> u64 {
+    dop853_hash()
 }
 
 /// Orbital period `T = 2π √(a³/μ)` [s].
@@ -184,10 +193,18 @@ fn nbody_integrate(
     let mut state = state_from_lists(masses, positions, velocities)?;
     if !matches!(
         integrator,
-        "leapfrog" | "yoshida4" | "rk4" | "ias15" | "whfast" | "whfast_helio"
+        "leapfrog"
+            | "yoshida4"
+            | "rk4"
+            | "ias15"
+            | "dop853"
+            | "whfast"
+            | "whfast_helio"
+            | "whfast_c5"
+            | "whfast_c11"
     ) {
         return Err(PyValueError::new_err(format!(
-            "unknown integrator {integrator:?}; expected leapfrog|yoshida4|rk4|ias15|whfast|whfast_helio"
+            "unknown integrator {integrator:?}; expected leapfrog|yoshida4|rk4|ias15|dop853|whfast|whfast_helio|whfast_c5|whfast_c11"
         )));
     }
     let integ_name = integrator.to_string();
@@ -223,9 +240,28 @@ fn nbody_integrate(
                 });
                 integ.integrate_to(field, &mut state, 0.0, t_end, dt);
             }
+            "dop853" => {
+                let mut integ = Dop853::new(AdaptiveStep {
+                    dt,
+                    ..AdaptiveStep::default()
+                });
+                integ.integrate_to(field, &mut state, 0.0, t_end, dt);
+            }
             "whfast" => {
                 let mut integ = Whfast::new(g, WhfastCoords::Jacobi);
                 integ.integrate_to(field, &mut state, 0.0, t_end, dt);
+            }
+            "whfast_c5" => {
+                let mut integ =
+                    Whfast::new(g, WhfastCoords::Jacobi).with_corrector(WhfastCorrector::Order5);
+                let n = (t_end / dt).round() as usize;
+                integ.integrate_corrected(field, &mut state, 0.0, dt, n);
+            }
+            "whfast_c11" => {
+                let mut integ =
+                    Whfast::new(g, WhfastCoords::Jacobi).with_corrector(WhfastCorrector::Order11);
+                let n = (t_end / dt).round() as usize;
+                integ.integrate_corrected(field, &mut state, 0.0, dt, n);
             }
             "whfast_helio" => {
                 let mut integ = Whfast::new(g, WhfastCoords::DemocraticHeliocentric);
@@ -308,6 +344,7 @@ fn figure_eight_period_error(steps: usize, integrator: &str) -> PyResult<f64> {
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(canonical_space_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_ias15_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(canonical_dop853_hash, m)?)?;
     m.add_function(wrap_pyfunction!(kepler_period, m)?)?;
     m.add_function(wrap_pyfunction!(kepler_elements_to_state, m)?)?;
     m.add_function(wrap_pyfunction!(kepler_state_to_elements, m)?)?;

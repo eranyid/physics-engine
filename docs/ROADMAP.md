@@ -165,7 +165,7 @@ Sizes are relative engineering scope, not calendar schedules.
 
 - **Models:** point-mass n-body; optional central + J2; Kepler/Lambert helpers;
   SRP / drag / third-body; non-inertial frames later. (**M7 shipped** in `pe-space` —
-  IAS15 + WHFast landed; DOP853 still RKF78 stand-in.)
+  IAS15 + WHFast + real DOP853 + WHFast correctors landed.)
 - **Validation:** Kepler two-body; figure-eight / Pythagorean conservation; J₂ nodal
   rate; sun-synchronous inclination; energy/L property tests. SPICE ephemeris later.
 - **Effort:** M.
@@ -174,7 +174,7 @@ Sizes are relative engineering scope, not calendar schedules.
 
 - **Models:** linear Airy / Stokes II / Gerstner + spectral (PM/JONSWAP) in
   `pe-hydro` (**shipped**); Morison forces (**shipped** M11); STF strip heave/pitch
-  (**shipped** M11). Panel / Cummins memory later.
+  (**shipped** M11). Cummins retardation memory shipped.
 - **Validation:** Airy elevation/kinematics + dispersion oracles; spectral `H_s`;
   wave-coupled buoyancy heave; Morison closed-form pile force; long-wave heave RAO→1.
 - **Effort:** L (v1 waves + M11 Morison/seakeeping done).
@@ -291,40 +291,47 @@ ported early because the Python oracle already exists.
 - New crates `pe-scene` (JSON/RON/`PESC` binary; bit-exact state+warm-cache restore)
   and `pe-ffi` (opaque `PeWorld*`, SoA transforms, raycast/overlap, contacts,
   `catch_unwind`, cbindgen header + C smoke in CI).
-- `godot/` GDExtension (`godot` / gdext, MPL-2.0 dependency): `PePhysicsWorld` /
-  `PeRigidBody3D`; Linux **compile check** in CI. Godot editor/headless **not** run
+- **Scene schema v2:** convex hulls, rounded shapes, body bullet, fuller CCD
+  params; v1 fixtures migrate; unknown-field / version errors; locked pyramid +
+  convex round-trip hashes (`docs/SCENE.md`).
+- `godot/` GDExtension (`godot` / gdext, MPL-2.0): `PePhysicsWorld` /
+  `PeRigidBody3D`; Linux **headless drop test** in CI (pinned Godot 4.3-stable,
+  SHA-512 verified) — final `y≈0.2499`, hash `a0d625f02641a420`
   (`docs/GODOT.md`).
 - Docs: [`SCENE.md`](SCENE.md), [`FFI.md`](FFI.md), [`GODOT.md`](GODOT.md).
-- Determinism: scene save/load/continue hash locked (= collision pyramid hash).
+- Determinism: scene save/load/continue hashes locked (pyramid + convex + Godot).
 
 ### M7 as built (summary)
 
 - New crate `crates/pe-space`: `GravityField` + N-body `Integrator` traits (SI; μ used
-  directly); Leapfrog, Yoshida4, RK4, adaptive **RKF78** (DOP853 stand-in), **IAS15**
-  (Rein & Spiegel 2015), **WHFast**-style Wisdom–Holman (Jacobi / democratic-heliocentric);
-  compensated Neumaier positions + origin rebase; Kepler elements ↔ state, Stumpff /
-  universal propagation, Lambert (Izzo 2015 geometry); J₂, cannonball SRP, third-body,
-  ISA/exponential drag.
+  directly); Leapfrog, Yoshida4, RK4, adaptive **RKF78**, real **DOP853**
+  (Hairer/SciPy BSD tables), **IAS15** (Rein & Spiegel 2015), **WHFast**-style
+  Wisdom–Holman (Jacobi / democratic-heliocentric) with Wisdom (2006) symplectic
+  correctors (orders 3/5/7/11); compensated Neumaier positions + origin rebase;
+  Kepler elements ↔ state, Stumpff / universal propagation, Lambert (Izzo 2015
+  geometry); J₂, cannonball SRP, third-body, ISA/exponential drag.
 - Clean-room from published papers only — no REBOUND / nyx-space / JSBSim code
-  (`docs/SPACE.md`, `THIRD_PARTY.md`).
+  (`docs/SPACE.md`, `THIRD_PARTY.md`). DOP853 coefficients attributed to SciPy BSD.
 - Determinism: portable `libm`, no FMA / `HashMap` iteration; cross-OS figure-eight +
-  IAS15 hash CI.
+  IAS15 + DOP853 hash CI.
 - Tests: Rust analytic + proptest; Python `tests/test_space_rust.py`. Criterion benches in
   `docs/BENCHMARKS.md`.
-- Follow-up (deferred): Hairer DOP853 tableau + order tests; WHFast symplectic correctors.
 
 ### M11 Morison / seakeeping / BEM as built (summary)
 
 - `pe-hydro::morison`: relative-velocity Morison, Airy closed-form inertia/drag
   oracles, segment convergence; `MorisonForce` generator.
 - `pe-hydro::seakeeping`: STF-style heave/pitch strip RAOs, box-barge helpers,
-  constant-coefficient time domain (no Cummins), free-decay β check.
+  constant-coefficient time domain, free-decay β check.
+- `pe-hydro::cummins`: retardation `K(t)` from `B(ω)`, convolution heave ODE;
+  `K↔B` / sine `A−A_∞` transforms; free-decay TD vs Laplace pole (~0.5%/0.2%);
+  cross-OS `cummins_hash` (`1ee2f57b9c89c3ae`).
 - `pe-aero::bem`: Glauert BEMT, Prandtl tip loss, induced-velocity iteration,
   actuator-disk oracles, `BemRotorForce` generator.
 - Docs: [`SEAKEEPING.md`](SEAKEEPING.md), [`ROTOR.md`](ROTOR.md). Determinism:
   cross-OS `m11_hash` (`83aebe96f5cb8e4c`). PyO3 + pytest; Criterion hooks in
   [`BENCHMARKS.md`](BENCHMARKS.md).
-- **Deferred:** Cummins memory; 6-DOF seakeeping; MacCamy–Fuchs; Vugts tables;
+- **Deferred:** 6-DOF seakeeping / multi-DOF Cummins; MacCamy–Fuchs; Vugts tables;
   swirl induction `a'`; certified airfoil polars.
 
 ### Blast / ballistics track
@@ -346,15 +353,20 @@ ported early because the Python oracle already exists.
   (Macklin 2019), distance / bend / volume / tetra StVK & stable neo-Hookean
   (Macklin & Müller 2021) / shape matching / pressure; static plane/sphere/box +
   deterministic spatial-hash self-collision. Docs: [`SOFT.md`](SOFT.md).
-- `Material` table (density, E, ν, friction, restitution, yield, thermal) — all
-  built-ins `verified: false` / nominal; E,ν → Lamé and XPBD compliance helpers.
+- `Material` table (density, E, ν, friction, restitution, yield, H, thermal k/c_p/α,
+  fracture thresholds) — all built-ins `verified: false` / nominal; E,ν → Lamé and
+  XPBD compliance helpers. Docs: [`MATERIALS.md`](MATERIALS.md).
 - Analytic oracles: catenary rope, spring period, axial `FL/(EA)`, tet volume,
   cantilever vs Euler–Bernoulli (honest tolerances), cloth energy, zero-compliance
   rigid limit, energy bounds, substep study. Cross-OS soft hash CI.
+- **Materials track:** J2 plasticity (&lt;1% uniaxial), max-principal fracture
+  (&lt;2%), lumped thermal + Fourier (&lt;2%) + free expansion; locked
+  `materials_hash` CI; PyO3 helpers + pytest.
 - PyO3 `SoftWorld` returning NumPy `(n,3)` arrays; pytest in
   `tests/test_soft_rust.py`. Criterion benches in [`BENCHMARKS.md`](BENCHMARKS.md).
-- **Deferred:** corotational FEM, plasticity, fracture, thermal coupling, rigid
-  two-way coupling.
+- **Deferred:** corotational FEM; full per-step FEM plastic XPBD coupling;
+  cohesive fracture; implicit thermal; rigid two-way coupling; verified handbook
+  rows.
 
 **Rule.** No milestone merges without: (1) analytic or published benchmark tests,
 (2) oracle or cross-impl diff where a Python reference exists, (3) CI green.

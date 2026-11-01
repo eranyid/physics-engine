@@ -22,3 +22,7 @@ harness = false
 [[bin]]
 name = "soft_hash"
 path = "src/bin/soft_hash.rs"
+
+[[bin]]
+name = "materials_hash"
+path = "src/bin/materials_hash.rs"

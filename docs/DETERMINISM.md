@@ -47,6 +47,8 @@ Cross-check helpers:
   `physics_engine_rs.canonical_wave_body_hash()`
 - M8 soft bodies: `cargo run -p pe-soft --bin soft_hash --release` /
   `physics_engine_rs.canonical_soft_hash()`
+- Materials track: `cargo run -p pe-soft --bin materials_hash --release` /
+  `physics_engine_rs.canonical_materials_hash()`
 - M11 Morison+BEM: `cargo run -p pe-hydro --bin m11_hash --release` /
   `physics_engine_rs.canonical_m11_hash()`
 
@@ -67,25 +69,25 @@ Scenario (must stay in sync in the binary, Rust test, and Python helper):
 | macOS (CI) | same expected | CI asserts equality |
 | Windows (CI) | same expected | CI asserts equality |
 
-### Canonical scene save/load/continue hash (locked)
+### Canonical scene save/load/continue hashes (locked)
 
-Scenario (must stay in sync with `pe_scene::canonical_scene_roundtrip_hash` /
-`scene_hash` binary):
+`cargo run -p pe-scene --bin scene_hash --release` prints three lines:
 
-- Same 10-box pyramid as the stage-2 collision hash.
-- Run **300** contact steps @ `dt = 1/240`, capture scene (state + warm cache) to
-  binary, load, run **300** more.
-- Must match an uninterrupted **600**-step run bit-exactly.
-- Hash: FNV-1a 64 over packed dynamic state (equals stage-2 collision hash when
-  restore is correct).
+1. **Pyramid** — same 10-box scene as stage-2; 300 steps → binary capture → load →
+   300 more; must match uninterrupted 600 (`50d52b2193aa528c`).
+2. **Convex v2** — M6 hull+capsule+rounded scene via schema v2 serialize; same
+   300+300 continue (`4ca980096c036ade` = stage-2 convex hash).
+3. **Godot drop** — Y-up box on +Y plane, 180×`dt=1/60` (`a0d625f02641a420`);
+   final COM `y ≈ 0.2499` (half-extent 0.25).
 
-| Platform | Hash (hex) | Status |
-| --- | --- | --- |
-| Linux x86_64 (CI + local) | `50d52b2193aa528c` | locked |
-| macOS (CI) | same expected | CI asserts equality |
-| Windows (CI) | same expected | CI asserts equality |
+Schema v1 fixtures migrate to v2; pyramid hash is unchanged when v2-only shapes
+are unused. See [`SCENE.md`](SCENE.md), [`GODOT.md`](GODOT.md).
 
-Helper: `cargo run -p pe-scene --bin scene_hash --release`.
+| Platform | Pyramid | Convex | Godot drop | Status |
+| --- | --- | --- | --- | --- |
+| Linux x86_64 (CI + local) | `50d52b2193aa528c` | `4ca980096c036ade` | `a0d625f02641a420` | locked |
+| macOS (CI) | same | same | same | CI asserts equality |
+| Windows (CI) | same | same | same | CI asserts equality |
 
 ### Canonical stage-2 collision hash (locked)
 
@@ -236,8 +238,40 @@ Scenario (must stay in sync in the binary, Rust scenario helper, and Python help
 | macOS (CI) | same expected | CI asserts equality |
 | Windows (CI) | same expected | CI asserts equality |
 
-`cargo run -p pe-space --bin space_hash --release` prints figure-eight then IAS15
-(two lines).
+### Canonical DOP853 hash (locked)
+
+Scenario (must stay in sync in `pe_space::dop853_hash`, `space_hash` binary,
+and `physics_engine_rs.canonical_dop853_hash()`):
+
+- Same IC as IAS15 hash (Earth-μ Kepler, `a=1e7`, `e=0.5`, …).
+- DOP853 adaptive, `atol=rtol=1e-10`, initial `dt=T/80`.
+- **48 accepted** adaptive steps; hash FNV-1a 64 over packed `(x‖v)`.
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `91c17dda5aa7f80e` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+`cargo run -p pe-space --bin space_hash --release` prints figure-eight, IAS15,
+then DOP853 (three lines).
+
+### Canonical Cummins heave-decay hash (locked)
+
+Scenario (`pe_hydro::canonical_cummins_hash`, `cummins_hash` binary,
+`physics_engine_rs.canonical_cummins_hash()`):
+
+- Box 40×8×2 m, freshwater, mass `= ρ L B T`, `z0=0.1` m.
+- Kernel: `ω∈[1e-3,4]` rad/s (64 samples), `dt=0.05` s, 200 `K(t)` samples.
+- Free decay 400 steps; hash FNV-1a 64 over `z` samples.
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `1ee2f57b9c89c3ae` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+Helper: `cargo run -p pe-hydro --bin cummins_hash --release`.
 
 ### Canonical blast-pyramid hash (locked)
 
@@ -287,6 +321,24 @@ Scenario (`pe_soft::soft_canonical_hash`, `soft_hash` binary,
 
 Updated from `7e7d0d3af68735c6` when tet FEM switched to StVK/SNH energy XPBD
 (`C=√(2Ψ)`, `α=1/V₀`; jelly cube in the canonical scene uses neo-Hookean tets).
+
+### Canonical materials-track hash (locked)
+
+Scenario (`pe_soft::materials_canonical_hash`, `materials_hash` binary,
+`physics_engine_rs.canonical_materials_hash()`):
+
+- Uniaxial J2 stress history (41 samples, ε up to `2 ε_y`, steel-like params).
+- 1-D Cu-like rod (17 nodes) conduction, 80 explicit steps, Dirichlet ends.
+- Soft distance bar stretched past fracture threshold, then 80 XPBD steps.
+- Hash: FNV-1a 64 over little-endian IEEE bits of the packed payload above.
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `19498ab91f6febdc` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+Helper: `cargo run -p pe-soft --bin materials_hash --release`.
 
 ### Canonical fluid-tank hash (locked)
 

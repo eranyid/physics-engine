@@ -26,6 +26,13 @@ pub enum SceneError {
         /// Underlying message.
         message: String,
     },
+    /// Unknown field rejected by the schema (`deny_unknown_fields`).
+    UnknownField {
+        /// Format name (`json`, `ron`, `binary`).
+        format: &'static str,
+        /// Underlying serde message (names the field).
+        message: String,
+    },
     /// Schema validation failure (lengths, NaN, invariants).
     Invalid {
         /// Field or rule that failed.
@@ -48,11 +55,14 @@ impl fmt::Display for SceneError {
                 max_supported,
             } => write!(
                 f,
-                "unsupported scene schema version {found} (max {max_supported})"
+                "unsupported scene schema version {found} (max supported {max_supported})"
             ),
             Self::BadMagic => write!(f, "bad scene binary magic"),
             Self::Truncated { detail } => write!(f, "truncated scene binary: {detail}"),
             Self::Parse { format, message } => write!(f, "scene {format} parse error: {message}"),
+            Self::UnknownField { format, message } => {
+                write!(f, "scene {format} unknown field: {message}")
+            }
             Self::Invalid { detail } => write!(f, "invalid scene: {detail}"),
             Self::MigrationStub { from, to } => {
                 write!(f, "migration stub: no path from v{from} to v{to}")
@@ -62,3 +72,13 @@ impl fmt::Display for SceneError {
 }
 
 impl std::error::Error for SceneError {}
+
+/// Map a serde/format error into [`SceneError::Parse`] or [`SceneError::UnknownField`].
+pub(crate) fn map_format_error(format: &'static str, message: String) -> SceneError {
+    let lower = message.to_ascii_lowercase();
+    if lower.contains("unknown field") {
+        SceneError::UnknownField { format, message }
+    } else {
+        SceneError::Parse { format, message }
+    }
+}
