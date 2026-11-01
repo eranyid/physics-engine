@@ -18,8 +18,8 @@ use pe_hydro::hull::{
 use pe_hydro::waves::{AiryWave, SpectralOcean, Wave, WaveField};
 use pe_hydro::{
     airy_inertia_closed_form, angle_of_vanishing_stability, box_added_mass_heave,
-    box_added_mass_surge, box_barge_stations, box_heave_natural_omega_earth,
-    box_heave_retardation, box_righting_arm_curve, canonical_cummins_hash as cummins_hash_rs,
+    box_added_mass_surge, box_barge_stations, box_heave_natural_omega_earth, box_heave_retardation,
+    box_righting_arm_curve, canonical_cummins_hash as cummins_hash_rs,
     canonical_m11_hash as m11_hash_rs, canonical_wave_body_hash as wave_body_hash_rs,
     check_imo_is_code, damping_from_retardation, deep_water_wavelength, group_speed,
     heave_period_earth, heave_period_with_added_mass, heave_pitch_rao, integrate_morison_fixed,

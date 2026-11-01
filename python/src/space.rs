@@ -3,8 +3,8 @@
 use pe_math::Vec3;
 use pe_space::constants::{EARTH_J2, EARTH_MU, EARTH_RADIUS};
 use pe_space::diagnostics::{angular_momentum, kinetic_energy, total_energy};
-use pe_space::field::{CentralMu, GravityField, NBodyPointMass};
 use pe_space::dop853_hash;
+use pe_space::field::{CentralMu, GravityField, NBodyPointMass};
 use pe_space::figure_eight_hash;
 use pe_space::ias15_hash;
 use pe_space::integrator::{AdaptiveStep, Integrator};
