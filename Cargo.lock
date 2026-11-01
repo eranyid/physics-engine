@@ -676,6 +676,7 @@ dependencies = [
  "pe-core",
  "pe-math",
  "proptest",
+ "rayon",
 ]
 
 [[package]]
