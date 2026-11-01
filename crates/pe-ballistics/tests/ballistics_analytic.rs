@@ -1,6 +1,7 @@
 //! Analytic and system tests for pe-ballistics.
 
 use approx::assert_relative_eq;
+use pe_aero::turbulence::WindField;
 use pe_ballistics::ammo::{bundled_by_name, bundled_profiles, AmmoProfile};
 use pe_ballistics::drag::{analytic_cd, bc_imperial_to_si, g1_table, g7_table, DragModelRef};
 use pe_ballistics::hitscan::{segment_vs_box, ShapeRef};
@@ -10,7 +11,6 @@ use pe_ballistics::oracles::{
 };
 use pe_ballistics::projectile::{MuzzlePose, ProjectileSystem, ShotId};
 use pe_ballistics::{ballistics_volley_hash, EARTH_OMEGA};
-use pe_aero::turbulence::WindField;
 use pe_collision::BoxShape;
 use pe_math::{libm_ops, Vec3};
 
@@ -346,7 +346,12 @@ fn g1_bc05_2800fps_drop_tof_vs_py_ballisticcalc() {
         }
     }
 
-    assert_eq!(rows.len(), 5, "expected 5 range samples, got {}", rows.len());
+    assert_eq!(
+        rows.len(),
+        5,
+        "expected 5 range samples, got {}",
+        rows.len()
+    );
 
     // py_ballisticcalc oracle (inches, seconds, fps)
     let ref_drop_in: [f64; 5] = [-2.3199, -9.7308, -23.0023, -43.0505, -70.9732];
