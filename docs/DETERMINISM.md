@@ -336,7 +336,10 @@ Scenario (`pe_ballistics::ballistics_volley_hash`, `ballistics_hash` binary,
 
 | Platform | Hash (hex) | Status |
 | --- | --- | --- |
-| Linux x86_64 (CI + local) | `a9ec62a39bbd3dc4` | locked |
+| Linux x86_64 (CI + local) | `7b0162d346bf9f1b` | locked |
+
+Supersedes `a9ec62a39bbd3dc4`: pe-aero Dryden `v`/`w` moved to 2nd-order
+MIL-F-8785C filters; the volley scenario seeds Dryden from `pe-aero`.
 | macOS (CI) | same expected | CI asserts equality |
 | Windows (CI) | same expected | CI asserts equality |
 
