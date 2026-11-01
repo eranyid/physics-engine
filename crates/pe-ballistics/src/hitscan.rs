@@ -147,15 +147,69 @@ pub enum ShapeRef {
     },
 }
 
+/// Segment vs a single [`ShapeRef`].
+pub fn segment_vs_shape(a: Vec3, b: Vec3, shape: &ShapeRef) -> Option<Hit> {
+    match shape {
+        ShapeRef::Sphere { x, s } => segment_vs_sphere(a, b, *x, *s),
+        ShapeRef::Box { x, r, s } => segment_vs_box(a, b, *x, r, *s),
+        ShapeRef::Capsule { x, r, s } => segment_vs_capsule(a, b, *x, r, *s),
+    }
+}
+
+/// Earliest segment hit among shapes, skipping shape index `exclude`.
+pub fn segment_vs_shapes_excluding(
+    a: Vec3,
+    b: Vec3,
+    shapes: &[ShapeRef],
+    exclude: usize,
+) -> Option<(usize, Hit)> {
+    let mut best: Option<(usize, Hit)> = None;
+    for (i, sh) in shapes.iter().enumerate() {
+        if i == exclude {
+            continue;
+        }
+        if let Some(hit) = segment_vs_shape(a, b, sh) {
+            if best.map(|(_, b)| hit.t < b.t).unwrap_or(true) {
+                best = Some((i, hit));
+            }
+        }
+    }
+    best
+}
+
+/// Exit point of a straight path through `shape`.
+///
+/// Starting at `entry` (on or inside the shape) and travelling along unit
+/// direction `dir`, returns `(exit_point, outward_normal_at_exit, chord_m)`.
+/// `max_len` [m] bounds the search (use something larger than the shape).
+/// Implemented as a reverse cast from `entry + dir·max_len` back to `entry`.
+pub fn shape_exit(
+    entry: Vec3,
+    dir: Vec3,
+    shape: &ShapeRef,
+    max_len: f64,
+) -> Option<(Vec3, Vec3, f64)> {
+    let d = dir.normalize();
+    let far = entry + d * max_len;
+    let hit = segment_vs_shape(far, entry, shape)?;
+    let chord = (hit.point - entry).dot(d).max(0.0);
+    Some((hit.point, hit.normal, chord))
+}
+
+/// Conservative bounding radius [m] of a [`ShapeRef`] (for exit searches).
+pub fn shape_bounding_radius(shape: &ShapeRef) -> f64 {
+    match shape {
+        ShapeRef::Sphere { s, .. } => s.radius,
+        ShapeRef::Box { s, .. } => s.half_extents.norm(),
+        ShapeRef::Capsule { s, .. } => s.radius + s.half_height,
+    }
+}
+
 /// Earliest segment hit among shapes; also returns shape index.
 pub fn segment_vs_shapes(a: Vec3, b: Vec3, shapes: &[ShapeRef]) -> Option<(usize, Hit)> {
     let mut best: Option<(usize, Hit)> = None;
     for (i, sh) in shapes.iter().enumerate() {
-        let h = match sh {
-            ShapeRef::Sphere { x, s } => segment_vs_sphere(a, b, *x, *s),
-            ShapeRef::Box { x, r, s } => segment_vs_box(a, b, *x, r, *s),
-            ShapeRef::Capsule { x, r, s } => segment_vs_capsule(a, b, *x, r, *s),
-        };
+        let h = segment_vs_shape(a, b, sh);
         if let Some(hit) = h {
             if best.map(|(_, b)| hit.t < b.t).unwrap_or(true) {
                 best = Some((i, hit));

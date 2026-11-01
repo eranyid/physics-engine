@@ -35,6 +35,10 @@ studio work. Uses `pe-aero` ISA density / speed of sound and Dryden wind,
   seeded from shot id; RK4; swept segment hit-tests (no tunneling).
 - **Terminal** — KE/momentum, World impulse, Poncelet depth, Recht–Ipson
   residual velocity (caller material constants).
+- **Hit resolver** — `step_with_resolver` hands each hit to a `HitResolver`
+  (stop / perforate / ricochet). `step` uses `StopOnHit`, which keeps the
+  original behaviour. `pe-combat` provides armor-aware resolution; see
+  [`COMBAT.md`](COMBAT.md).
 - **Oracles** — vacuum range/height, linear drag, quadratic terminal speed,
   Coriolis freefall east `(1/3)ω g t³ cos φ`, energy residual; G1 BC 0.5 @
   2800 fps drop/TOF vs py_ballisticcalc (see below).
