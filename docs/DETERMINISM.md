@@ -18,6 +18,10 @@ N-body / Kepler / perturbation paths, and `pe-soft` XPBD):
 7. Soft-body self-collision uses a dense `Vec` spatial hash; pairs sorted by
    `(min_id, max_id)` before resolve (never `HashMap` iteration).
 8. Identical inputs → **bit-identical** packed state on the same ISA across OS when (1)–(7) hold.
+9. Optional `pe-collision` feature `parallel` (rayon): solves **islands** in ascending
+   island-id order. Results are bit-identical across thread counts 1/2/8 when
+   `ContactWorld::island_ordered_solve` is enabled. Default remains single-thread
+   **global** PGS (locked oracle hashes unchanged). No SIMD/FMA on the step path.
 
 Cross-check helpers:
 

@@ -24,9 +24,11 @@ pub mod islands;
 pub mod joints;
 pub mod manifold;
 pub mod narrowphase;
+pub mod scratch;
 pub mod shapes;
 pub mod soft_step;
 pub mod softness;
+pub mod solver_soa;
 pub mod support;
 
 pub use aabb_tree::{dynamic_tree_pairs, DynamicAabbTree, DEFAULT_FAT_MARGIN};
@@ -43,6 +45,7 @@ pub use joints::{
 };
 pub use manifold::{Contact, ContactPoint, FeatureId, ManifoldPoint};
 pub use narrowphase::{collide, DedicatedNarrowPhase, NarrowPhase};
+pub use scratch::{StepPhaseTimes, StepScratch};
 pub use shapes::{Aabb, BoxShape, Capsule, Material, Plane, Shape, Sphere};
 pub use softness::{SoftStepParams, Softness, SolverMode};
 pub use support::{bounding_radius, support_world, RoundedShape};
