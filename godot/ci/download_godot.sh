@@ -16,17 +16,17 @@ BIN="$CACHE_DIR/Godot_v${GODOT_VERSION}_linux.x86_64"
 
 mkdir -p "$CACHE_DIR"
 if [[ -x "$BIN" ]]; then
-  echo "Using cached Godot at $BIN"
+  echo "Using cached Godot at $BIN" >&2
   echo "$BIN"
   exit 0
 fi
 
 TMP_ZIP="$CACHE_DIR/${ZIP_NAME}"
-echo "Downloading $DOWNLOAD_URL"
+echo "Downloading $DOWNLOAD_URL" >&2
 curl -fsSL -o "$TMP_ZIP" "$DOWNLOAD_URL"
-echo "${EXPECTED_SHA512}  ${TMP_ZIP}" | sha512sum -c -
-unzip -o -d "$CACHE_DIR" "$TMP_ZIP"
+echo "${EXPECTED_SHA512}  ${TMP_ZIP}" | sha512sum -c - >&2
+unzip -o -d "$CACHE_DIR" "$TMP_ZIP" >&2
 chmod +x "$BIN"
 rm -f "$TMP_ZIP"
-echo "Godot ready: $BIN"
+echo "Godot ready: $BIN" >&2
 echo "$BIN"

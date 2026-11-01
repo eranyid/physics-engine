@@ -108,24 +108,10 @@ jobs:
       - name: Download Godot (verify official SHA-512)
         run: ./godot/ci/download_godot.sh
 
-      - name: cargo build -p pe-godot (debug — matches .gdextension linux.debug path)
-        run: cargo build -p pe-godot
-
       - name: Headless drop test (y tolerance + state hash)
-        run: |
-          set -euo pipefail
-          GODOT=$(./godot/ci/download_godot.sh | tail -n1)
-          # Touch the project once so .godot exists, then run the SceneTree script.
-          "$GODOT" --headless --path godot/example --quit-after 1 >/dev/null 2>&1 || true
-          set +e
-          OUT=$("$GODOT" --headless --path godot/example -s res://ci_drop_test.gd 2>&1)
-          STATUS=$?
-          set -e
-          echo "$OUT"
-          echo "$OUT" | grep -q "GODOT_CI_OK"
-          test "$STATUS" -eq 0
+        run: ./godot/ci/run_headless_drop.sh
         # Required job: Linux headless Godot 4.3-stable actually loads the
-        # GDExtension and runs the drop script. Measured results: docs/GODOT.md.
+        # GDExtension and runs ci_drop_test.tscn. Measured results: docs/GODOT.md.
 
   maturin-pytest:
     name: maturin wheel + oracle pytest
