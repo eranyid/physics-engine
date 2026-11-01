@@ -94,10 +94,21 @@ low when the positive-phase length is only a few cells. Measured peak ratio
 (simulated / Kinney–Graham) along the worst (axis) and best (diagonal)
 directions, with the remap:
 
-CALIBRATION_TABLE
+| `dx / W^{1/3}` | Z = 1.5 | Z = 2 | Z = 3 | Z = 5 | Z = 8 |
+| --- | --- | --- | --- | --- | --- |
+| 0.250 | 0.26–0.34 | 0.31–0.36 | 0.38–0.43 | 0.45–0.60 | 0.47–0.66 |
+| 0.125 | 0.40–0.44 | 0.46–0.52 | 0.56–0.63 | – | – |
+| 0.078 | 0.52–0.55 | 0.57–0.61 | 0.67–0.72 | – | – |
 
-Guideline: `dx / W^{1/3} ≤ 0.1` for peak pressures (≈ 10 cm voxels for a
-1 kg charge). Impulses converge faster than peaks. For far-field peaks in
+The positive impulse converges much faster than the peak: at Z = 1.5 and Z = 3
+it changes by < 2 % between 0.125 and 0.078. Gauges inside the remap radius
+record the fine 1-D solution (0.84–1.07 of Kinney for Z = 1.5–8). Source:
+`cargo run -p pe-blast --release --features parallel --example
+blast3d_calibrate -- <n> mc <remap_m> <W_kg> <size_m>` (octant, MC limiter).
+
+Guideline: `dx / W^{1/3} ≤ 0.1` (≈ 10 cm voxels for a 1 kg charge). Damage
+models driven by impulse, or by pressure–impulse curves, are well served at
+that size. Peak pressures stay low by roughly 30–45 %. For far-field peaks in
 open air the analytic Kingery / Kinney curves are cheaper and more accurate;
 use the 3-D grid where geometry matters.
 
@@ -114,11 +125,11 @@ resolution, not per-frame real time.
 | Sod on x, y, z | L1 density error < 0.012 vs exact Riemann; all three axes agree to 1e-12 |
 | Closed box with baffle | mass and energy conserved to 1e-12; energy deposit exact |
 | Centered blast | symmetric under x↔y, x↔z, y↔z and mirror (1e-11 of peak) |
-| Sedov–Taylor | captured shock radius vs `ξ₀ (E t²/ρ)^{1/5}` within 12 % at 16³ (`#[ignore]` fine grid: 5 %) |
+| Sedov–Taylor | captured shock radius vs `ξ₀ (E t²/ρ)^{1/5}` within 12 % at 16³ (measured ≈ 5 %; `#[ignore]` 48³ twin: 5 %) |
 | Normal reflection | planar shock on a wall: peak matches Rankine–Hugoniot reflected overpressure within 5 % |
 | Shielding | gauge behind a 1.2 m wall: lower peak, later arrival than the open gauge at the same range |
 | Venting | sealed room settles at the quasi-static `(γ−1)E/V` (±25 %); a door lowers it by more than 40 % |
-| Free air | probe peaks vs Kinney within the calibration band (`#[ignore]` fine-grid twin) |
+| Free air | remap-path gauges within 0.75–1.2 of Kinney (Z = 1.5–8), monotone; `#[ignore]` 3-D far-field band at `dx/W^{1/3}` = 0.25 |
 | Rigid coupling | a voxelized box is pushed away from the charge |
 | Determinism | hash scene reproducible; serial = parallel (CI hash) |
 
