@@ -267,17 +267,20 @@ jobs:
             exit 1
           fi
 
-      - name: Compute canonical 6-DOF FDM hashes (body + Dryden gust)
+      - name: Compute canonical 6-DOF FDM hashes (body + Dryden + FDM/gust)
         shell: bash
         run: |
           set -euo pipefail
           OUT=$(cargo run -p pe-aero --bin fdm_hash --release | tr -d '\r')
           HASH=$(echo "$OUT" | sed -n '1p')
           GUST=$(echo "$OUT" | sed -n '2p')
+          FGUST=$(echo "$OUT" | sed -n '3p')
           echo "Canonical FDM hash on ${{ matrix.os }}: $HASH"
           echo "Canonical Dryden gust hash on ${{ matrix.os }}: $GUST"
-          EXPECTED=fb8c25d5fe2184fd
-          EXPECTED_GUST=233148553b199f90
+          echo "Canonical FDM+held-gust hash on ${{ matrix.os }}: $FGUST"
+          EXPECTED=ba6d68e43c69d315
+          EXPECTED_GUST=2895b75a14f621c5
+          EXPECTED_FGUST=58f491fb7f3b34a6
           if [ "$HASH" != "$EXPECTED" ]; then
             echo "::error::FDM determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
             echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
@@ -285,6 +288,11 @@ jobs:
           fi
           if [ "$GUST" != "$EXPECTED_GUST" ]; then
             echo "::error::Dryden gust hash mismatch on ${{ matrix.os }}: got $GUST expected $EXPECTED_GUST"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+          if [ "$FGUST" != "$EXPECTED_FGUST" ]; then
+            echo "::error::FDM+gust determinism hash mismatch on ${{ matrix.os }}: got $FGUST expected $EXPECTED_FGUST"
             echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
             exit 1
           fi

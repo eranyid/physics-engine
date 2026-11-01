@@ -150,9 +150,11 @@ Sizes are relative engineering scope, not calendar schedules.
 
 - **Models:** ISA; wing polar + stall; thrust; pitch derivatives; compressibility /
   Dryden (M9); BEM rotors (M11); **6-DOF stability-derivative FDM** (trim,
-  linearisation, eigenmodes — see `docs/AERO.md`).
+  longitudinal + lateral linearisation / eigenmodes, α̇ derivatives, 2nd-order
+  Dryden, ground effect — see `docs/AERO.md`).
 - **Validation:** ISA tables; trim L=W, T=D; \((L/D)_{\max}\); dive terminal V;
-  actuator-disk \(v_h\); BEM hover FM band; Navion phugoid vs Lanchester/Nelson;
+  actuator-disk \(v_h\); BEM hover FM band; Navion phugoid/short-period/lateral
+  roots vs Nelson–Teper published values; Dryden PSD/RMS; Wieselsberger GE;
   coordinated-turn identities; FDM hash lock.
 - **Effort:** S port; M for 6-DOF aero / compressibility (**6-DOF FDM shipped**).
 

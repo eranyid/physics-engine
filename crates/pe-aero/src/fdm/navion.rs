@@ -80,12 +80,15 @@ pub fn navion_nelson() -> NavionData {
     let deriv = StabilityDerivatives {
         cl0: 0.0,
         cl_alpha,
+        // Nelson Table B.1: CL_α̇ = 0.0, Cm_α̇ = −4.36
+        cl_alphadot: 0.0,
         cl_q: 3.8,
         cl_de: 0.355,
         cd0: cd_trim - cd_alpha * alpha_trim,
         cd_alpha,
         cm0: 0.0,
         cm_alpha: -0.683,
+        cm_alphadot: -4.36,
         cm_q: -9.96,
         cm_de: -0.923,
         cy_beta: -0.564,
@@ -120,6 +123,7 @@ pub fn navion_nelson() -> NavionData {
         controls: ControlInputs::default(),
         alpha_trim: 0.0, // absolute α; α_trim stored on NavionData
         verified: true,
+        ground_height: None,
     };
 
     NavionData {

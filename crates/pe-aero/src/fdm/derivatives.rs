@@ -15,20 +15,23 @@ pub struct ControlInputs {
 ///
 /// Force/moment coefficients:
 /// ```text
-/// C_L = C_L0 + C_Lα α + C_Lq q̂ + C_Lδe δe
+/// C_L = C_L0 + C_Lα α + C_Lα̇ α̂̇ + C_Lq q̂ + C_Lδe δe
 /// C_D = C_D0 + C_Dα α
 /// C_Y = C_Yβ β + C_Yp p̂ + C_Yr r̂ + C_Yδa δa + C_Yδr δr
 /// C_l = C_lβ β + C_lp p̂ + C_lr r̂ + C_lδa δa + C_lδr δr
-/// C_m = C_m0 + C_mα α + C_mq q̂ + C_mδe δe
+/// C_m = C_m0 + C_mα α + C_mα̇ α̂̇ + C_mq q̂ + C_mδe δe
 /// C_n = C_nβ β + C_np p̂ + C_nr r̂ + C_nδa δa + C_nδr δr
 /// ```
-/// with `p̂ = p b/(2V)`, `q̂ = q c̄/(2V)`, `r̂ = r b/(2V)`.
+/// with `p̂ = p b/(2V)`, `q̂ = q c̄/(2V)`, `r̂ = r b/(2V)`,
+/// `α̂̇ = α̇ c̄/(2V)`.
 #[derive(Clone, Copy, Debug)]
 pub struct StabilityDerivatives {
     /// Trim / zero-α lift coefficient.
     pub cl0: f64,
     /// `C_Lα` [1/rad].
     pub cl_alpha: f64,
+    /// `C_Lα̇` [1/rad] (per nondimensional α̇).
+    pub cl_alphadot: f64,
     /// `C_Lq` [1/rad] (per nondimensional pitch rate).
     pub cl_q: f64,
     /// `C_Lδe` [1/rad].
@@ -41,6 +44,8 @@ pub struct StabilityDerivatives {
     pub cm0: f64,
     /// `C_mα` [1/rad].
     pub cm_alpha: f64,
+    /// `C_mα̇` [1/rad] (per nondimensional α̇).
+    pub cm_alphadot: f64,
     /// `C_mq` [1/rad].
     pub cm_q: f64,
     /// `C_mδe` [1/rad].
@@ -78,9 +83,19 @@ pub struct StabilityDerivatives {
 }
 
 impl StabilityDerivatives {
-    /// Evaluate `C_L` at α [rad], nondim. pitch rate `q_hat`, elevator `de` [rad].
+    /// Evaluate `C_L` at α [rad], nondim. pitch rate `q_hat`, elevator `de` [rad],
+    /// and optional nondimensional `alpha_dot_hat = α̇ c̄/(2V)`.
     pub fn cl(&self, alpha: f64, q_hat: f64, de: f64) -> f64 {
-        self.cl0 + self.cl_alpha * alpha + self.cl_q * q_hat + self.cl_de * de
+        self.cl_full(alpha, q_hat, de, 0.0)
+    }
+
+    /// Full `C_L` including `C_Lα̇ α̂̇`.
+    pub fn cl_full(&self, alpha: f64, q_hat: f64, de: f64, alpha_dot_hat: f64) -> f64 {
+        self.cl0
+            + self.cl_alpha * alpha
+            + self.cl_alphadot * alpha_dot_hat
+            + self.cl_q * q_hat
+            + self.cl_de * de
     }
 
     /// Evaluate `C_D` at α [rad].
@@ -88,9 +103,18 @@ impl StabilityDerivatives {
         self.cd0 + self.cd_alpha * alpha
     }
 
-    /// Evaluate `C_m` at α [rad], `q_hat`, elevator `de` [rad].
+    /// Evaluate `C_m` at α [rad], `q_hat`, elevator `de` [rad] (`α̇ = 0`).
     pub fn cm(&self, alpha: f64, q_hat: f64, de: f64) -> f64 {
-        self.cm0 + self.cm_alpha * alpha + self.cm_q * q_hat + self.cm_de * de
+        self.cm_full(alpha, q_hat, de, 0.0)
+    }
+
+    /// Full `C_m` including `C_mα̇ α̂̇`.
+    pub fn cm_full(&self, alpha: f64, q_hat: f64, de: f64, alpha_dot_hat: f64) -> f64 {
+        self.cm0
+            + self.cm_alpha * alpha
+            + self.cm_alphadot * alpha_dot_hat
+            + self.cm_q * q_hat
+            + self.cm_de * de
     }
 
     /// Evaluate `C_Y` at β [rad], `p_hat`, `r_hat`, aileron/rudder [rad].

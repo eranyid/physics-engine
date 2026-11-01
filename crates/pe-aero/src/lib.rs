@@ -11,8 +11,8 @@
 //! **6-DOF FDM:** [`fdm`] stability-derivative forces/moments, trim, linearisation,
 //! eigenmodes — see `docs/AERO.md`.
 //!
-//! **Deferred:** ground effect, swirl induction `a'`, full 2nd-order Dryden v/w
-//! filters, `α̇` derivatives, certified airfoil polars.
+//! **Deferred:** swirl induction `a'`, certified airfoil polars, compressibility
+//! coupling into the 6-DOF derivative set.
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
@@ -24,6 +24,7 @@ pub mod check_cases;
 pub mod compressibility;
 pub mod fdm;
 pub mod force;
+pub mod ground_effect;
 pub mod helpers;
 pub mod polar;
 pub mod thrust;
@@ -48,19 +49,25 @@ pub use compressibility::{
     Isentropic, NormalShock, PG_MACH_CLAMP,
 };
 pub use fdm::{
-    air_angles, body_rates_hat, classify_longitudinal_modes, coordinated_turn_load_factor,
-    coordinated_turn_rate, eval_aero_body, linearise_longitudinal, navion_nelson,
-    phugoid_approximation, trim_steady_level, ComplexEigen, ControlInputs, LongitudinalModes,
-    LongitudinalStateSpace, NavionData, SixDofAero, SixDofForces, SixDofModel,
-    StabilityDerivatives, TrimGuess, TrimResult, TrimStatus,
+    air_angles, alpha_dot_hat, alpha_dot_kinematic, body_rates_hat, classify_lateral_modes,
+    classify_longitudinal_modes, coordinated_turn_load_factor, coordinated_turn_rate,
+    eval_aero_body, eval_aero_body_with_alphadot, linearise_lateral, linearise_longitudinal,
+    linearise_longitudinal_ex, navion_nelson, phugoid_approximation, short_period_approximation,
+    short_period_approximation_with_alphadot, trim_steady_level, ComplexEigen, ControlInputs,
+    LateralModes, LateralStateSpace, LongitudinalModes, LongitudinalStateSpace, NavionData,
+    SixDofAero, SixDofForces, SixDofModel, StabilityDerivatives, TrimGuess, TrimResult, TrimStatus,
 };
 pub use force::{AirData, AircraftAero};
+pub use ground_effect::{apply_ground_effect, mccormick_lift_factor, wieselsberger_sigma};
 pub use helpers::{
     lanchester_phugoid_period, level_flight_trim, level_flight_trim_earth,
     terminal_velocity_vertical, LevelFlightTrim,
 };
 pub use polar::{dynamic_pressure, PolarError, WingPolar};
 pub use thrust::{FixedThrust, JetThrust, PropellerThrust};
-pub use turbulence::{DrydenParams, DrydenTurbulence, SteadyWind, WindField};
+pub use turbulence::{
+    dryden_u_psd, dryden_vw_psd, estimate_psd_log_slope, periodogram_psd, sample_rms, DrydenParams,
+    DrydenTurbulence, HeldDrydenGust, SteadyWind, WindField,
+};
 
 pub mod scenarios;
