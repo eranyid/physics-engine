@@ -64,6 +64,10 @@ pub struct DfsphParams {
     pub free_slip_xmax: Option<f64>,
     /// Optional free-slip plane `y ≤ ymax`.
     pub free_slip_ymax: Option<f64>,
+    /// Jacobi under-relaxation for κ / κᵛ (1 = paper default).
+    pub solver_omega: f64,
+    /// Cap on per-iteration |Δv| from pressure [m/s]; 0 = unlimited.
+    pub max_velocity_correction: f64,
 }
 
 impl Default for DfsphParams {
@@ -85,6 +89,8 @@ impl Default for DfsphParams {
             free_slip_ymin: None,
             free_slip_xmax: None,
             free_slip_ymax: None,
+            solver_omega: 1.0,
+            max_velocity_correction: 0.0,
         }
     }
 }
@@ -121,6 +127,9 @@ pub struct DfsphWorld {
     scratch_dv: Vec<Vec3>,
     /// Colour-field normals for surface tension.
     normals: Vec<Vec3>,
+    /// Accumulated fluid→boundary force [N] on each particle (boundary slots only).
+    /// Cleared at the start of each step; filled during pressure velocity updates.
+    pub boundary_force: Vec<Vec3>,
 }
 
 impl DfsphWorld {
@@ -156,6 +165,7 @@ impl DfsphWorld {
             neigh_lists: vec![Vec::new(); n],
             scratch_dv: vec![Vec3::zero(); n],
             normals: vec![Vec3::zero(); n],
+            boundary_force: vec![Vec3::zero(); n],
         };
         world.rebuild_neighbours();
         world.compute_density();
@@ -174,6 +184,7 @@ impl DfsphWorld {
         self.a_adv.resize(n, Vec3::zero());
         self.scratch_dv.resize(n, Vec3::zero());
         self.normals.resize(n, Vec3::zero());
+        self.boundary_force.resize(n, Vec3::zero());
         if self.neigh_lists.len() != n {
             self.neigh_lists.resize(n, Vec::new());
         }
@@ -215,7 +226,11 @@ impl DfsphWorld {
                 let wij = w(kern, r, h, dim);
                 match self.particles.kind[j] {
                     ParticleKind::Fluid => rho += mass * wij,
-                    ParticleKind::Boundary => rho += rho0 * self.particles.psi[j] * wij,
+                    ParticleKind::Boundary => {
+                        if self.particles.boundary_sees_fluid(j, xi) {
+                            rho += rho0 * self.particles.psi[j] * wij;
+                        }
+                    }
                 }
             }
             self.particles.rho[i] = rho.max(1e-12);
@@ -259,8 +274,17 @@ impl DfsphWorld {
                 let gw = grad_w(kern, rij, h, dim);
                 let mj = match self.particles.kind[j] {
                     ParticleKind::Fluid => mass,
-                    ParticleKind::Boundary => rho0 * self.particles.psi[j],
+                    ParticleKind::Boundary => {
+                        if self.particles.boundary_sees_fluid(j, xi) {
+                            rho0 * self.particles.psi[j]
+                        } else {
+                            0.0
+                        }
+                    }
                 };
+                if mj == 0.0 && self.particles.kind[j] == ParticleKind::Boundary {
+                    continue;
+                }
                 let g = gw * mj;
                 sum_grad += g;
                 sum_grad_sq += g.norm_squared();
@@ -276,10 +300,19 @@ impl DfsphWorld {
         }
     }
 
-    fn neighbour_mass(&self, j: usize) -> f64 {
+    fn neighbour_mass_for(&self, fluid_i: usize, j: usize) -> f64 {
         match self.particles.kind[j] {
             ParticleKind::Fluid => self.particles.mass,
-            ParticleKind::Boundary => self.particles.rest_density * self.particles.psi[j],
+            ParticleKind::Boundary => {
+                if self
+                    .particles
+                    .boundary_sees_fluid(j, self.particles.x[fluid_i])
+                {
+                    self.particles.rest_density * self.particles.psi[j]
+                } else {
+                    0.0
+                }
+            }
         }
     }
 
@@ -295,12 +328,17 @@ impl DfsphWorld {
             if j == i {
                 continue;
             }
+            let mj = self.neighbour_mass_for(i, j);
+            if mj == 0.0 {
+                continue;
+            }
             let rij = self.particles.x[j] - xi;
             let gw = grad_w(kern, rij, h, dim);
-            let mj = self.neighbour_mass(j);
+            // Moving Akinci samples (rigid coupling) carry their prescribed velocity
+            // in `particles.v`; static walls leave v = 0.
             let vj = match self.particles.kind[j] {
                 ParticleKind::Fluid => self.v_star[j],
-                ParticleKind::Boundary => Vec3::zero(),
+                ParticleKind::Boundary => self.particles.v[j],
             };
             drho += mj * (vi - vj).dot(gw);
         }
@@ -376,6 +414,9 @@ impl DfsphWorld {
     }
 
     /// Apply pressure velocity correction: `v ← v − Δt Σ m_j (κ_i/ρ_i + κ_j/ρ_j) ∇W`.
+    ///
+    /// Rigid reactions use the **capped** Δv attributed to boundary neighbours
+    /// so `F_b` matches the momentum actually imparted to the fluid.
     fn apply_pressure_velocity_update(&mut self, dt: f64, use_divergence: bool) {
         let n = self.particles.len();
         let h = self.particles.h;
@@ -386,6 +427,8 @@ impl DfsphWorld {
         } else {
             &self.kappa
         };
+        // Per-fluid Δv from boundary neighbours only (before cap), for reactions.
+        let mut dv_bound = vec![Vec3::zero(); n];
         for d in &mut self.scratch_dv {
             *d = Vec3::zero();
         }
@@ -397,32 +440,80 @@ impl DfsphWorld {
             let rho_i = self.particles.rho[i].max(1e-12);
             let ki = kappa[i];
             let mut dv = Vec3::zero();
+            let mut dv_b = Vec3::zero();
             for &j in &self.neigh_lists[i] {
                 if j == i {
                     continue;
                 }
+                let mj = self.neighbour_mass_for(i, j);
+                if mj == 0.0 {
+                    continue;
+                }
                 let rij = self.particles.x[j] - xi;
                 let gw = grad_w(kern, rij, h, dim);
-                let mj = self.neighbour_mass(j);
                 let kj = match self.particles.kind[j] {
                     ParticleKind::Fluid => kappa[j],
-                    // Static boundary: κ_j = 0 (paper note on static neighbours).
                     ParticleKind::Boundary => 0.0,
                 };
                 let rho_j = match self.particles.kind[j] {
                     ParticleKind::Fluid => self.particles.rho[j].max(1e-12),
                     ParticleKind::Boundary => self.particles.rest_density,
                 };
-                dv += gw * (mj * (ki / rho_i + kj / rho_j));
+                let coeff = mj * (ki / rho_i + kj / rho_j);
+                let term = gw * coeff;
+                dv += term;
+                if self.particles.kind[j] == ParticleKind::Boundary {
+                    dv_b += term;
+                }
             }
             self.scratch_dv[i] = dv * (-dt);
+            dv_bound[i] = dv_b * (-dt);
         }
+        let dv_cap = self.params.max_velocity_correction;
+        let mass = self.particles.mass;
+        let inv_dt = 1.0 / dt.max(1e-12);
         for i in 0..n {
-            if self.particles.kind[i] == ParticleKind::Fluid {
-                self.v_star[i] += self.scratch_dv[i];
-                if self.particles.dim == crate::Dim::D2 {
-                    self.v_star[i].z = 0.0;
+            if self.particles.kind[i] != ParticleKind::Fluid {
+                continue;
+            }
+            let mut dv = self.scratch_dv[i];
+            let mut scale = 1.0;
+            if dv_cap > 0.0 {
+                let s2 = dv.norm_squared();
+                if s2 > dv_cap * dv_cap {
+                    scale = dv_cap / sqrt(s2);
+                    dv *= scale;
                 }
+            }
+            // Reaction from capped boundary-attributed Δv: F_b = −m Δv_b_capped / dt.
+            let dv_b = dv_bound[i] * scale;
+            if dv_b.norm_squared() > 0.0 {
+                let xi = self.particles.x[i];
+                // Distribute −m dv_b/dt onto boundary neighbours by |∇W| weights.
+                let mut wsum = 0.0;
+                let mut tmp: Vec<(usize, f64)> = Vec::new();
+                for &j in &self.neigh_lists[i] {
+                    if self.particles.kind[j] != ParticleKind::Boundary {
+                        continue;
+                    }
+                    if !self.particles.boundary_sees_fluid(j, xi) {
+                        continue;
+                    }
+                    let r = (self.particles.x[j] - xi).norm();
+                    let wt = (1.0 / r.max(1e-9)).min(1e6);
+                    wsum += wt;
+                    tmp.push((j, wt));
+                }
+                if wsum > 0.0 {
+                    let fb_total = dv_b * (-mass * inv_dt);
+                    for (j, wt) in tmp {
+                        self.boundary_force[j] += fb_total * (wt / wsum);
+                    }
+                }
+            }
+            self.v_star[i] += dv;
+            if self.particles.dim == crate::Dim::D2 {
+                self.v_star[i].z = 0.0;
             }
         }
     }
@@ -460,8 +551,8 @@ impl DfsphWorld {
                 let err = (rho_star - rho0).max(0.0);
                 avg_err += err / rho0;
                 count += 1;
-                // κ_i = (ρ* − ρ₀)⁺ / Δt² · α_i
-                self.kappa[i] = err / dt2 * self.alpha[i];
+                // κ_i = ω (ρ* − ρ₀)⁺ / Δt² · α_i
+                self.kappa[i] = self.params.solver_omega * err / dt2 * self.alpha[i];
                 if self.params.warm_start {
                     self.kappa_warm[i] += self.kappa[i];
                 }
@@ -506,8 +597,8 @@ impl DfsphWorld {
                 let drho = self.density_derivative(i).max(0.0);
                 avg += drho / rho0;
                 count += 1;
-                // κᵛ_i = (1/Δt) (Dρ/Dt)^+ α_i
-                self.kappa_v[i] = (1.0 / dt) * drho * self.alpha[i];
+                // κᵛ_i = ω (1/Δt) (Dρ/Dt)^+ α_i
+                self.kappa_v[i] = self.params.solver_omega * (1.0 / dt) * drho * self.alpha[i];
                 if self.params.warm_start {
                     self.kappa_v_warm[i] += self.kappa_v[i];
                 }
@@ -615,6 +706,9 @@ impl DfsphWorld {
         let n = self.particles.len();
         let dt = dt.max(1e-12);
         self.last_dt = dt;
+        for f in &mut self.boundary_force {
+            *f = Vec3::zero();
+        }
 
         self.compute_nonpressure_accel();
 
@@ -660,6 +754,8 @@ impl DfsphWorld {
                 }
             }
         }
+        // Boundary reactions were accumulated inside pressure velocity updates
+        // (density + divergence Jacobi + warm-start). Do not re-add from final κ.
         self.t += dt;
     }
 

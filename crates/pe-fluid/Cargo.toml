@@ -8,6 +8,7 @@ description = "Particle fluids: SPH (WCSPH), PBF, and DFSPH, 3D with 2D test mod
 
 [dependencies]
 pe-math = { workspace = true }
+pe-core = { workspace = true }
 
 [dev-dependencies]
 approx = { workspace = true }
@@ -25,3 +26,7 @@ path = "src/bin/fluid_hash.rs"
 [[bin]]
 name = "dfsph_hash"
 path = "src/bin/dfsph_hash.rs"
+
+[[bin]]
+name = "coupling_hash"
+path = "src/bin/coupling_hash.rs"

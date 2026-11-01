@@ -3,8 +3,9 @@
 Weakly compressible SPH (WCSPH), Position Based Fluids (PBF), and divergence-free
 SPH (DFSPH) for 3-D liquids, with a 2-D mode for analytic tests. Clean-room from
 published formulas — see [`THIRD_PARTY.md`](../THIRD_PARTY.md). Optional kernel
-correction (Shepard / gradient) and Akinci (2013) surface tension. **No**
-free-surface mesh reconstruction; **no** fluid↔rigid coupling (`pe-core` untouched).
+correction (Shepard / gradient) and Akinci (2013) surface tension. Akinci (2012)
+two-way fluid↔rigid coupling injects loads into `pe-core` via `ExternalLoads`.
+**No** free-surface mesh reconstruction.
 
 ## Units and frames
 
@@ -99,10 +100,10 @@ Cubic spline for both `W` and `∇W` (paper requirement).
 
 | Item | Notes |
 | --- | --- |
-| Fluid → rigid buoyancy/drag | Would sample onto `pe-core` bodies |
 | Free-surface meshing | Out of scope |
 | GPU / multi-thread | Deterministic single-thread default |
-| DFSPH dam-break `dx ≲ 0.04` | Vertical-splash unstable window — see dam-break section |
+| Dynamic Archimedes long-term | Transient draft lock at fixed step window; FS bias grows later |
+| Stokes disk terminal (2-D) | Stokes paradox / no unbounded 2-D Stokes drag; Cd=1 sink dropped |
 
 ## Validation (measured numbers)
 
@@ -162,31 +163,39 @@ agreement is judged at later `τ`.
 
 | `dx` [m] | rel@τ=1 | rel@τ=2 | rel@τ=3 | rel@τ=4 | CI lock (τ=4) |
 | --- | --- | --- | --- | --- | --- |
-| 0.050 | 0.163 | 0.140 | 0.125 | **0.115** | **&lt; 0.15** |
-| 0.045 | 0.074 | 0.014 | 0.023 | **0.058** | **&lt; 0.10** |
-| 0.040 | 0.039 | 0.135 | 0.195 | 0.244 | unstable window |
+| 0.050 | 0.163 | 0.154 | 0.137 | **0.115** | **&lt; 0.15** |
+| 0.045 | 0.126 | 0.107 | 0.084 | **0.0685** | **&lt; 0.10** |
+| 0.040 | — | — | — | **0.060** | monotone series |
+| 0.030 | — | — | — | **0.019** | monotone series |
 
-Late-time error **decreases** `0.05 → 0.045` and reaches **&lt; 15%** (finest
-stable CI: **~5.8%**). Offline probe: `cargo run -p pe-fluid --example probe_dam_ritter --release`.
+Late-time error **decreases** through `dx=0.03` (τ=4: **0.115 → 0.0685 → 0.060 → 0.019**).
+Offline probe: `cargo run -p pe-fluid --example probe_dam_ritter --release`.
+
+**Splash-window root cause (fixed):** warm-started κ + uncapped pressure Δv
+(`Δv ∝ 1/dt`) produced vertical bed splash below `dx≈0.04`. Fix: per-iteration
+`max_velocity_correction = 0.8` on the Ritter/CI path (Jacobi reactions from the
+capped Δv). Mid-time front lock remapped to **&lt; 0.12** after the clamp
+(measured front rel ~0.107 at `dx=0.045`, τ=2).
 
 #### Column height `h(x)` vs Ritter at τ=2
 
 Mean `|h_sim − h_Ritter|/h₀` over wet bins (`h` or `h_Ritter` ≥ `0.02 h₀`),
-`dx=0.045`: **~0.184** (CI lock **&lt; 0.25**). Mass conserved (constant particle mass).
+`dx=0.045`: **~0.150** (CI lock **&lt; 0.25**); front rel **~0.107** (lock **&lt; 0.12**).
+Mass conserved (constant particle mass).
 
-#### Controlled experiment — what stops finer convergence
+#### Controlled experiment — what stopped finer convergence (pre-fix)
 
 | Variant | Observation |
 | --- | --- |
 | Akinci walls only (no hard clamp) | Floor penetration; tip blows up as `dx` decreases |
 | Hard walls only (no Akinci) | Stable but late-time lag **~20–22%**, flat in `dx` (truncated wall kernel) |
-| Akinci + free-slip hard walls (CI path) | Late-time Ritter **&lt;15%** at `dx=0.05/0.045` |
-| Same path, `dx ≲ 0.04` | Vertical splash / `v_max` runaway — **unstable window** |
+| Akinci + free-slip hard walls, uncapped Δv | Splash / `v_max` runaway for `dx ≲ 0.04` |
+| Same + `max_velocity_correction=0.8` | Monotone τ=4 series through `dx=0.03` |
 
 So the previous flat 0.46/0.42/0.39 series was an **invalid early-time toe metric**
 (`t=0.22` ⇒ `τ≈1.09`, tip particle / density threshold), not evidence of a Ritter
-model gap. With the height-field + late-`τ` protocol, DFSPH converges into the
-asymptotic regime until the splash window.
+model gap. With the height-field + late-`τ` protocol and Δv clamp, DFSPH converges
+through `dx=0.03`.
 
 Martin & Moyce (1952) / Koshizuka–Oka (1996) tables are **not** transcribed (no
 verified primary source in this environment).
@@ -217,6 +226,49 @@ Analytic Laplace: 2-D `Δp = σ/R`, 3-D `Δp = 2σ/R` (oracle bit-exact).
 | Radius drift | ≪ 20% | **&lt; 20%** |
 | Laplace `Δp` vs `σ/R` | **~0.056** rel | **&lt; 0.15** |
 
+### Two-way fluid↔rigid coupling (Akinci 2012)
+
+Boundary particles sampled on rigid surfaces; fluid→boundary reactions reduce to
+force/torque about COM and inject into `pe_core` via [`ExternalLoads`]
+(stable continuous-load interface). WCSPH preferred for float/sink oracles;
+DFSPH used for penetration / coupling hash.
+
+| Oracle | Measured (Linux x86_64) | CI lock |
+| --- | --- | --- |
+| Archimedes draft (`ρ_b/ρ_w`, WCSPH, `dx=0.05`, 2000×`2.5e-4`) | **rel ≈ 0.0653** | **&lt; 0.10** |
+| Heave free oscillation vs `2π√((m+m_a)/(ρ g A))`, `m_a=ρ π B²/8` | **rel ≈ 0.0739** (`T≈0.776` vs `0.838`, 5 crossings) | **&lt; 0.15** |
+| Sphere freefall accel vs `g(ρ_s−ρ_f)/(ρ_s+½ρ_f)` (3-D, 2.5 ms) | **rel ≈ 0.0039** | **&lt; 0.10** |
+| Closed fluid+body momentum (no walls/gravity) | **‖ΔP‖ ≈ 2×10⁻¹⁴** | **&lt; 1×10⁻³** |
+| Box penetration (WCSPH / DFSPH) | **max ≈ 0.080 / 0.046** on `dx=0.05` | **&lt; 2 dx** |
+| Coupling hash | `e9a6a84fef4ce9d5` | cross-OS CI |
+
+**Archimedes dx notes.** Fixed `t=0.5` protocol (2000×`2.5e-4` at `dx=0.05`):
+
+| `dx` | draft rel @ `t=0.5` | notes |
+| --- | --- | --- |
+| 0.06 | unstable (blow-up) | too coarse for soft Akinci float |
+| **0.05** | **0.0653** | **CI lock** |
+| 0.048 | 0.040 (large `\|v_y\|`) | crossing equilibrium, not settled |
+| 0.045 | large (phase) | same physical-time undersamples settle |
+
+Instantaneous draft during settle crosses within **≪1%** at `dx=0.05` (`best≈0.0002`
+@ `t≈0.33`) and `dx=0.045` (`best≈0.0035`). Lock stays **&lt;0.10** ≈ 1.5× the CI
+snapshot (do not loosen).
+
+**Heave.** After a 0.5 s float settle, drop viscosity to `α=0.01`, kick `Δy=0.04`,
+and measure the damped period from successive demeaned up-crossings. Reference
+includes 2-D barge added mass `m_a = ρ π B²/8`. `dx=0.05` is the underdamped sweet
+spot (rel≈0.074); coarser fails to oscillate, finer is not monotone better — lock
+at the CI `dx`. Lock **&lt;0.15** ≈ 2× measured.
+
+**Sphere freefall (replaces Cd=1 sink).** Old 2-D disk peak-`v` vs Cd=1 (rel≈36%)
+was not an oracle — Cd is not 1, and 2-D Stokes has no unbounded terminal speed.
+New case: submerged 3-D sphere, hydrostatic hold (~1000 steps), release, measure
+`a ≈ −Δv_y/Δt` over the first **2.5 ms** against potential-flow added-mass
+`a = g(ρ_s−ρ_f)/(ρ_s+½ρ_f)`. CI setup `dx=0.055`, `ρ_s=2200`, `r=0.12`:
+**rel≈0.0039**. Neighbour `ρ_s∈[2000,2500]` stay &lt;3%; 2–3 ms windows &lt;7%.
+Lock **&lt;0.10**. Do not silently loosen locks.
+
 ### Other checks
 
 | Check | Result |
@@ -224,7 +276,7 @@ Analytic Laplace: 2-D `Δp = σ/R`, 3-D `Δp = 2σ/R` (oracle bit-exact).
 | Mass conservation | bit-exact (constant particle mass) |
 | Internal pair forces | Σ F = 0 (equal-mass pairs) |
 | Viscosity-only pair kick | KE non-increasing |
-| Determinism hashes | [`DETERMINISM.md`](DETERMINISM.md) (PBF + DFSPH) |
+| Determinism hashes | [`DETERMINISM.md`](DETERMINISM.md) (PBF + DFSPH + coupling) |
 
 ## Performance
 
@@ -243,5 +295,6 @@ Hot path: neighbour gather × pressure iterations. Optimisations:
 | `pbf_1k_particles_10_steps` | **~204 ms** ≈ 4.9×10⁴ part·steps/s |
 | `wcsph_256 × 20` | **~49.2 ms** |
 | `dfsph_tank_hash` (4³, 40 steps) | **~186 ms** |
+| `coupling_tank_hash` (2-D float, 80 steps) | see Criterion run |
 
 Neighbour-list reuse avoids one uniform-grid rebuild per PBF iteration.

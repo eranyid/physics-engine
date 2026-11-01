@@ -239,6 +239,11 @@ pub fn make_dfsph_dam_break_2d(
         xsph: crate::viscosity::Xsph { epsilon: 0.0 },
         adaptive_dt: false,
         warm_start: true,
+        // Splash-window fix: uncapped pressure Δv with warm-started κ amplifies
+        // bed splash at dx≲0.04 (Δv∝1/dt from κ∝1/dt²). Cap |Δv| per Jacobi
+        // iteration at ≈0.4√(g h₀)≈0.8 m/s — restores monotone Ritter refinement
+        // through dx=0.03 (see docs/FLUID.md). Default elsewhere remains 0.
+        max_velocity_correction: 0.8,
         free_slip_xmin: Some(0.0),
         free_slip_ymin: Some(0.0),
         ..DfsphParams::default()

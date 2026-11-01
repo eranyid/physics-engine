@@ -717,6 +717,7 @@ version = "0.1.0"
 dependencies = [
  "approx",
  "criterion",
+ "pe-core",
  "pe-math",
  "proptest",
 ]

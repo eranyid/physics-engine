@@ -1,6 +1,10 @@
 //! PyO3 bindings for `pe-fluid` (NumPy array exports).
 
 use numpy::{PyArray1, PyArray2, PyArrayMethods};
+use pe_fluid::coupling::{
+    archimedes_box_draft, barge_heave_added_mass_2d, coupling_tank_hash, heave_period_analytic,
+    heave_period_with_added_mass, sphere_freefall_accel_added_mass,
+};
 use pe_fluid::diagnostics::{kinetic_energy, mean_density_error, total_mass};
 use pe_fluid::oracles::{hydrostatic_pressure, ritter_front, ritter_height};
 use pe_fluid::particles::{fill_box, fill_box_boundary, mass_from_spacing, Particles};
@@ -22,6 +26,48 @@ fn canonical_fluid_hash() -> u64 {
 #[pyfunction]
 fn canonical_dfsph_hash() -> u64 {
     dfsph_tank_hash()
+}
+
+/// Canonical fluid↔rigid coupling determinism hash (Akinci 2012).
+#[pyfunction]
+fn canonical_coupling_hash() -> u64 {
+    coupling_tank_hash()
+}
+
+/// Archimedes floating-box draft `d = (ρ_b / ρ_w) · H` [m].
+#[pyfunction]
+fn fluid_archimedes_box_draft(rho_body: f64, rho_fluid: f64, height: f64) -> f64 {
+    archimedes_box_draft(rho_body, rho_fluid, height)
+}
+
+/// Analytic heave period `T = 2π √(m / (ρ_w g A_wp))` [s] (no added mass).
+#[pyfunction]
+fn fluid_heave_period_analytic(mass: f64, rho_fluid: f64, a_wp: f64, g: f64) -> f64 {
+    heave_period_analytic(mass, rho_fluid, a_wp, g)
+}
+
+/// 2-D barge heave added mass `m_a = ρ π B² / 8` [kg/m] (unit depth).
+#[pyfunction]
+fn fluid_barge_heave_added_mass_2d(rho_fluid: f64, beam: f64) -> f64 {
+    barge_heave_added_mass_2d(rho_fluid, beam)
+}
+
+/// Heave period with added mass `T = 2π √((m+m_a)/(ρ_w g A_wp))` [s].
+#[pyfunction]
+fn fluid_heave_period_with_added_mass(
+    mass: f64,
+    m_a: f64,
+    rho_fluid: f64,
+    a_wp: f64,
+    g: f64,
+) -> f64 {
+    heave_period_with_added_mass(mass, m_a, rho_fluid, a_wp, g)
+}
+
+/// Sphere freefall accel with Ca=1/2: `a = g (ρ_s−ρ_f)/(ρ_s+½ρ_f)` [m/s²].
+#[pyfunction]
+fn fluid_sphere_freefall_accel_added_mass(rho_s: f64, rho_f: f64, g: f64) -> f64 {
+    sphere_freefall_accel_added_mass(rho_s, rho_f, g)
 }
 
 /// Ritter dam-break front `x_f = 2 √(g h0) t` [m].
@@ -242,9 +288,15 @@ fn fluid_canonical_ke_after_hash_steps() -> f64 {
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(canonical_fluid_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_dfsph_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(canonical_coupling_hash, m)?)?;
     m.add_function(wrap_pyfunction!(fluid_ritter_front, m)?)?;
     m.add_function(wrap_pyfunction!(fluid_ritter_height, m)?)?;
     m.add_function(wrap_pyfunction!(fluid_hydrostatic_pressure, m)?)?;
+    m.add_function(wrap_pyfunction!(fluid_archimedes_box_draft, m)?)?;
+    m.add_function(wrap_pyfunction!(fluid_heave_period_analytic, m)?)?;
+    m.add_function(wrap_pyfunction!(fluid_barge_heave_added_mass_2d, m)?)?;
+    m.add_function(wrap_pyfunction!(fluid_heave_period_with_added_mass, m)?)?;
+    m.add_function(wrap_pyfunction!(fluid_sphere_freefall_accel_added_mass, m)?)?;
     m.add_function(wrap_pyfunction!(fluid_pbf_tank_demo, m)?)?;
     m.add_function(wrap_pyfunction!(fluid_dfsph_tank_demo, m)?)?;
     m.add_function(wrap_pyfunction!(fluid_poly6_w0, m)?)?;

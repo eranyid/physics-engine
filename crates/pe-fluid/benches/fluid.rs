@@ -1,6 +1,7 @@
 //! Criterion benches for pe-fluid (particles/sec workloads).
 
 use criterion::{criterion_group, criterion_main, Criterion};
+use pe_fluid::coupling::coupling_tank_hash;
 use pe_fluid::particles::{fill_box, fill_box_boundary, mass_from_spacing, Particles};
 use pe_fluid::pbf::{PbfParams, PbfWorld};
 use pe_fluid::scenarios::{dfsph_tank_hash, fluid_tank_hash};
@@ -17,6 +18,10 @@ fn bench_fluid(c: &mut Criterion) {
 
     group.bench_function("dfsph_tank_hash", |b| {
         b.iter(|| std::hint::black_box(dfsph_tank_hash()))
+    });
+
+    group.bench_function("coupling_tank_hash", |b| {
+        b.iter(|| std::hint::black_box(coupling_tank_hash()))
     });
 
     group.bench_function("pbf_1k_particles_10_steps", |b| {

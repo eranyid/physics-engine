@@ -445,6 +445,19 @@ jobs:
             exit 1
           fi
 
+      - name: Compute canonical fluid↔rigid coupling hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-fluid --bin coupling_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical coupling hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=e9a6a84fef4ce9d5
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::Coupling determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+
   # Hash-only smoke for the rigid-body pipeline. Never asserts on wall time
   # (timing flakes); locked hashes and parallel island bit-identity only.
   perf-smoke:

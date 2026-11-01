@@ -211,6 +211,7 @@ Neighbour-list reuse across PBF iterations (default on):
 | `pbf_1k_particles_10_steps` | ~1000 fluid + boundary, 10 PBF steps | ~250 ms | **~204 ms** | ~4.9×10⁴ particle·steps/s |
 | `wcsph_256_particles_20_steps` | 8×8×4 WCSPH, 20 steps | ~41.9 ms | **~49.2 ms** | ~1.0×10⁵ particle·steps/s |
 | `dfsph_tank_hash` | canonical DFSPH 4³ tank, 40 steps | — | **~186 ms** | — |
+| `coupling_tank_hash` | Akinci fluid↔rigid float, 80 steps | — | Criterion | — |
 
 Re-record with `cargo bench -p pe-fluid --bench fluid` after solver changes.
 
