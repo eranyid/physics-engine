@@ -350,7 +350,7 @@ ported early because the Python oracle already exists.
   Dryden wind, Coriolis/Eötvös, spin/Magnus models, hit-scan, Poncelet /
   Recht–Ipson, ballistic tables; **G1/G7 JBM/BRL Cd tables** (linear interp,
   BC scaling); sourced cartridge rows + py_ballisticcalc drop/TOF oracle;
-  cross-OS 100-bullet volley hash (`a9ec62a39bbd3dc4`).
+  cross-OS 100-bullet volley hash (`7b0162d346bf9f1b`; follows pe-aero Dryden).
 - PyO3 + Python tests; Criterion benches recorded in [`BENCHMARKS.md`](BENCHMARKS.md).
 
 ### M8 soft / materials (`pe-soft`) as built

@@ -121,6 +121,7 @@ Python: `physics_engine_rs.canonical_fdm_hash()`,
 | FDM body | `fb8c25d5fe2184fd` → `ba6d68e43c69d315` | Body-+y `C_Y` side-force sign fix (Dutch-roll damping) |
 | Dryden gust | `233148553b199f90` → `2895b75a14f621c5` | 2nd-order MIL-F-8785C `v`/`w` filters |
 | FDM+gust | (new) `58f491fb7f3b34a6` | Held Dryden inside `SixDofAero` + RK4 |
+| Ballistics volley | `a9ec62a39bbd3dc4` → `7b0162d346bf9f1b` | Same Dryden change (volley seeds `pe-aero` gusts) |
 
 ### Deferred
 
