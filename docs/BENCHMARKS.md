@@ -1,17 +1,50 @@
 # Integrator and contact hot-loop baselines (Criterion)
 
-Measured on the Cloud Agent host (Linux x86_64, release, Rust 1.99.1).
-Numbers are wall time for the named workload; re-run locally after numerical changes.
+Measured on the Cloud Agent host (Linux x86_64, release, Rust 1.99.1,
+4× Intel Xeon). Numbers are wall time for the named workload; re-run locally
+after numerical changes.
 
-Default CI does **not** run Criterion (`cargo test` omits harness benches). Use
+Default CI does **not** run Criterion (`cargo test` omits harness benches). The
+`perf-smoke` CI job checks **hashes only** (no timing assertions). Use
 `cargo bench -p pe-core --bench integrators`,
 `cargo bench -p pe-collision --bench contact_pyramids`,
+`cargo bench -p pe-collision --bench scaling`,
 `cargo bench -p pe-aero --bench aero_forces`,
 `cargo bench -p pe-hydro --bench hydrostatics`, and
 `cargo bench -p pe-space --bench space`,
 `cargo bench -p pe-blast --bench blast`,
 `cargo bench -p pe-ballistics --bench ballistics`, and
 `cargo bench -p pe-fluid --bench fluid`.
+
+Manual phase profile: `cargo run -p pe-collision --example perf_profile --release`.
+
+## Rigid-body pipeline speedups (this PR)
+
+Optimizations (bit-identical locked hashes retained): step scratch reuse, no
+`Shape` clones on detect, SoA PGS rows, skip redundant pair sorts when already
+ordered, persistent AABB tree with incremental fat-AABB updates (margin 0.05 m),
+math hot-path `#[inline]`. Geometric manifold reuse (skipping narrow phase) was
+**not** added — it would change contact points. SIMD / FMA skipped (see below).
+
+| Workload | Before | After | Speedup |
+| --- | --- | --- | --- |
+| `pyramid_10_rows_60_steps_pgs` (Criterion) | ~39.0 ms | **~31.0 ms** | ~1.26× |
+| `pyramid_20_rows_60_steps_pgs` (Criterion) | ~171 ms | **~143 ms** | ~1.20× |
+| `pyramid_10_tree` (Criterion) | ~39.2 ms | **~30.9 ms** | ~1.27× |
+| falling 1k boxes, dynamic tree, 20 steps (manual) | ~19.3 ms (~1035 steps/s) | **~9.4 ms (~2140 steps/s)** | ~2.05× |
+
+### SIMD
+
+Explicit SIMD / `mul_add` FMA was **skipped**: reassociation and FMA change
+`f64` rounding and would break cross-OS locked hashes. Scalar portable `libm`
+remains the deterministic path. SoA layout is SIMD-*friendly* for a future
+opt-in non-oracle feature without enabling it here.
+
+### Deterministic parallelism
+
+Feature `pe-collision/parallel` (rayon): island-ordered PGS is bit-identical
+across thread pools 1/2/8 (`tests/perf_determinism.rs`). Default remains
+single-thread global PGS (oracle hashes).
 
 ## Stage 1 — integrators (`pe-core`)
 
@@ -27,12 +60,32 @@ Default CI does **not** run Criterion (`cargo test` omits harness benches). Use
 
 | Benchmark | Workload | Median time |
 | --- | --- | --- |
-| `pyramid_10_rows_60_steps_pgs` | 55 boxes, 60× PGS @ 1/240 | ~39.0 ms |
+| `pyramid_10_rows_60_steps_pgs` | 55 boxes, 60× PGS @ 1/240 | **~31.0 ms** (was ~39.0) |
 | `pyramid_10_rows_60_steps_soft` | 55 boxes, 60× soft-step @ 1/240 | ~126 ms |
-| `pyramid_20_rows_60_steps_pgs` | 210 boxes, 60× PGS | ~171 ms |
+| `pyramid_20_rows_60_steps_pgs` | 210 boxes, 60× PGS | **~143 ms** (was ~171) |
 | `pyramid_20_rows_60_steps_soft` | 210 boxes, 60× soft-step | ~596 ms |
 | `pyramid_10_sap` | 10-row pyramid, SAP broad phase | ~36.4 ms |
-| `pyramid_10_tree` | 10-row pyramid, dynamic AABB tree | ~39.2 ms |
+| `pyramid_10_tree` | 10-row pyramid, dynamic AABB tree | **~30.9 ms** (was ~39.2) |
+
+## Scaling suite (`pe-collision` bench `scaling`)
+
+Throughput column is steps/s (Criterion `Elements` = step count). Phase times
+from `perf_profile` last-step sample (pyramid_10: broad ~4 µs, narrow ~34 µs,
+solver ~300 µs).
+
+| Benchmark | Workload | Median time | Approx. steps/s |
+| --- | --- | --- | --- |
+| `scaling_pyramid/10` | 55 boxes, 60× PGS | ~31.4 ms | ~1.91×10³ |
+| `scaling_pyramid/20` | 210 boxes, 60× PGS | ~142 ms | ~423 |
+| `scaling_pyramid/40` | 820 boxes, 60× PGS | ~647 ms | ~93 |
+| `scaling_falling/1000` | 1k boxes, tree, 20 steps | ~9.58 ms | ~2.09×10³ |
+| `scaling_falling/10000` | 10k boxes, tree, 10 steps | ~61.1 ms | ~164 |
+| `scaling_sparse_broadphase/tree/5000` | 5k sparse boxes, 30 steps | ~639 ms | ~47 |
+| `scaling_ragdoll/16` | 16-link distance chain, 120 steps | ~2.40 ms | ~5.0×10⁴ |
+| `scaling_joints_stack/10` | 10-box joint stack, 120 steps | ~5.59 ms | ~2.15×10⁴ |
+
+Re-record with `cargo bench -p pe-collision --bench scaling` after solver /
+broad-phase changes.
 
 ## M5a — broad phase only
 

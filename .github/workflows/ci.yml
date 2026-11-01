@@ -435,3 +435,26 @@ jobs:
             echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
             exit 1
           fi
+
+  # Hash-only smoke for the rigid-body pipeline. Never asserts on wall time
+  # (timing flakes); locked hashes and parallel island bit-identity only.
+  perf-smoke:
+    name: rigid-body perf smoke (hashes only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.99.1"
+
+      - name: Locked collision / soft / joints / convex hashes
+        run: |
+          set -euo pipefail
+          cargo test -p pe-collision --test perf_determinism --release -- --nocapture
+
+      - name: Parallel island hashes identical at 1/2/8 threads
+        run: |
+          set -euo pipefail
+          cargo test -p pe-collision --test perf_determinism --release --features parallel -- --nocapture

@@ -13,6 +13,7 @@
 //! restitution from pre-solve relative velocity — see `soft_step` / `softness`.
 
 use std::collections::BTreeMap;
+use std::time::Instant;
 
 use pe_core::body::mat_vec;
 use pe_core::integrators::drift_rotation;
@@ -26,10 +27,12 @@ use crate::ccd::{self, CcdParams};
 use crate::islands::{angular_speed, SleepState};
 use crate::joints::{self, Joint};
 use crate::manifold::{ContactPoint, FeatureId};
-use crate::narrowphase::{DedicatedNarrowPhase, NarrowPhase};
+use crate::narrowphase::{collide as narrow_collide, NarrowPhase};
+use crate::scratch::{StepPhaseTimes, StepScratch};
 use crate::shapes::{Material, Shape};
 use crate::soft_step::solve_soft_step;
 use crate::softness::{SoftStepParams, SolverMode};
+use crate::solver_soa::ContactRowsSoa;
 
 /// Infinite-mass static collider (plane, fixed box, …).
 #[derive(Clone, Debug)]
@@ -74,6 +77,7 @@ impl StaticCollider {
     }
 }
 
+#[inline]
 fn friction_basis(n: Vec3) -> (Vec3, Vec3) {
     let t = if fabs(n.x) < 0.9 {
         n.cross(Vec3::unit_x())
@@ -83,6 +87,23 @@ fn friction_basis(n: Vec3) -> (Vec3, Vec3) {
     let t1 = t / t.norm();
     let t2 = n.cross(t1);
     (t1, t2)
+}
+
+/// Effective mass along direction `d` at levers `ra`/`rb` (matches Python
+/// `cross(Iinv @ cross(r, d), r)`).
+#[inline]
+fn effective_mass(
+    d: Vec3,
+    ra: Vec3,
+    rb: Vec3,
+    ima: f64,
+    imb: f64,
+    iinva: &[[f64; 3]; 3],
+    iinvb: &[[f64; 3]; 3],
+) -> f64 {
+    let ka = mat_vec(iinva, ra.cross(d)).cross(ra);
+    let kb = mat_vec(iinvb, rb.cross(d)).cross(rb);
+    1.0 / (ima + imb + d.dot(ka + kb))
 }
 
 /// Cached warm-start impulse for a feature.
@@ -161,14 +182,31 @@ pub struct ContactWorld {
     pub contacts: Vec<ContactPoint>,
     /// Previous step's broad-phase pairs (for wake-on-new-contact).
     prev_pairs: Vec<(usize, usize)>,
-    /// Warm-start cache keyed by `(a, b, feature)` — `BTreeMap` so there is never
-    /// unordered hash-map iteration on the step path.
+    /// Warm-start / contact-manifold impulse cache keyed by `(a, b, feature)` —
+    /// `BTreeMap` so there is never unordered hash-map iteration on the step path.
+    /// Geometric narrow-phase reuse (skipping SAT/GJK) is intentionally **not**
+    /// used: it would change contact points and break locked hashes. Impulses are
+    /// warm-started when the point moves less than 1 cm (Python oracle parity).
     cache: BTreeMap<(usize, usize, u32), WarmEntry>,
     /// Soft-step warm cache `(a, b, λn, jt)` in contact order.
     soft_warm: Vec<(usize, usize, f64, Vec3)>,
     is_static: Vec<bool>,
     static_x: Vec<Vec3>,
     static_r: Vec<[[f64; 3]; 3]>,
+    /// Reused pose / AABB / pair / solver buffers (allocation reuse).
+    scratch: StepScratch,
+    /// SoA contact rows for the PGS velocity solver.
+    rows_soa: ContactRowsSoa,
+    /// Persistent dynamic AABB tree (incremental fat-AABB updates).
+    aabb_tree: DynamicAabbTree,
+    /// Last step phase timings (valid when [`Self::profile_phases`] is set).
+    pub last_phase_times: StepPhaseTimes,
+    /// When true, fill [`Self::last_phase_times`] with wall-clock phase costs.
+    pub profile_phases: bool,
+    /// When true, solve contacts per island in ascending island-id order.
+    /// Required for bit-identical `parallel`-feature island solves. Default
+    /// `false` keeps global PGS (locked oracle hashes).
+    pub island_ordered_solve: bool,
 }
 
 impl ContactWorld {
@@ -214,6 +252,12 @@ impl ContactWorld {
             is_static,
             static_x,
             static_r,
+            scratch: StepScratch::new(),
+            rows_soa: ContactRowsSoa::default(),
+            aabb_tree: DynamicAabbTree::default(),
+            last_phase_times: StepPhaseTimes::default(),
+            profile_phases: false,
+            island_ordered_solve: false,
         }
     }
 
@@ -282,36 +326,118 @@ impl ContactWorld {
         m
     }
 
-    fn detect_pairs_and_contacts(&self, st: &State) -> (Vec<(usize, usize)>, Vec<ContactPoint>) {
-        let (x, r) = self.poses(st);
-        let shapes = self.all_shapes();
-        let aabbs: Vec<_> = shapes
-            .iter()
-            .enumerate()
-            .map(|(i, s)| s.aabb(x[i], &r[i]))
-            .collect();
-        let mut pairs = match self.broad_phase {
-            BroadPhaseKind::Sap => SweepAndPrune.pairs(&aabbs, &self.is_static),
-            BroadPhaseKind::Brute => BruteForce.pairs(&aabbs, &self.is_static),
-            BroadPhaseKind::DynamicTree => {
-                DynamicAabbTree::default().pairs(&aabbs, &self.is_static)
+    /// Fill scratch poses (dynamics + statics) without allocating a new Vec pair.
+    fn fill_poses_scratch(&mut self, st: &State) {
+        let n = self.world.n;
+        let sc = &mut self.scratch;
+        sc.x.clear();
+        sc.r.clear();
+        sc.x.reserve(n + self.statics.len());
+        sc.r.reserve(n + self.statics.len());
+        for i in 0..n {
+            sc.x.push(st.x[i]);
+            sc.r.push(st.q[i].to_matrix());
+        }
+        sc.x.extend_from_slice(&self.static_x);
+        sc.r.extend_from_slice(&self.static_r);
+    }
+
+    fn detect_pairs_and_contacts(
+        &mut self,
+        st: &State,
+    ) -> (Vec<(usize, usize)>, Vec<ContactPoint>) {
+        let profile = self.profile_phases;
+        let t_detect0 = if profile { Some(Instant::now()) } else { None };
+
+        self.fill_poses_scratch(st);
+        let n = self.world.n;
+        let n_total = n + self.statics.len();
+
+        // Build AABBs without cloning shapes.
+        self.scratch.aabbs.clear();
+        self.scratch.aabbs.reserve(n_total);
+        for i in 0..n {
+            self.scratch
+                .aabbs
+                .push(self.shapes[i].aabb(self.scratch.x[i], &self.scratch.r[i]));
+        }
+        for (si, s) in self.statics.iter().enumerate() {
+            let i = n + si;
+            self.scratch
+                .aabbs
+                .push(s.shape.aabb(self.scratch.x[i], &self.scratch.r[i]));
+        }
+
+        let t_broad0 = if profile { Some(Instant::now()) } else { None };
+        self.scratch.pairs.clear();
+        match self.broad_phase {
+            BroadPhaseKind::Sap => {
+                // SAP already returns sorted unique pairs — skip a second sort.
+                self.scratch.pairs = SweepAndPrune.pairs(&self.scratch.aabbs, &self.is_static);
             }
-        };
-        pairs.sort_unstable();
-        pairs.dedup();
-        let narrow = DedicatedNarrowPhase;
-        let mut out = Vec::new();
-        for &(i, j) in &pairs {
-            let mut cs = narrow.collide(
-                &crate::narrowphase::ColliderPose::new(shapes[i].clone(), x[i], r[i]),
-                &crate::narrowphase::ColliderPose::new(shapes[j].clone(), x[j], r[j]),
-            );
+            BroadPhaseKind::Brute => {
+                self.scratch.pairs = BruteForce.pairs(&self.scratch.aabbs, &self.is_static);
+            }
+            BroadPhaseKind::DynamicTree => {
+                // Incremental fat-AABB update + tight filter (≡ rebuild pair set).
+                self.scratch.pairs = self
+                    .aabb_tree
+                    .pairs_incremental(&self.scratch.aabbs, &self.is_static);
+            }
+        }
+        // Brute is already sorted; SAP/tree sort internally. Cheap check avoids work
+        // when the backend already produced stable ascending order.
+        if !self.scratch.pairs.windows(2).all(|w| w[0] <= w[1]) {
+            self.scratch.pairs.sort_unstable();
+        }
+        self.scratch.pairs.dedup();
+        if let Some(t0) = t_broad0 {
+            self.last_phase_times.broad = t0.elapsed().as_secs_f64();
+        }
+
+        let t_narrow0 = if profile { Some(Instant::now()) } else { None };
+        self.scratch.contacts.clear();
+        // Narrow phase: call `collide` with shape references — no Shape clones.
+        // Index-based loop so we can push into `scratch.contacts` while reading pairs.
+        let npairs = self.scratch.pairs.len();
+        for p in 0..npairs {
+            let (i, j) = self.scratch.pairs[p];
+            let xa = self.scratch.x[i];
+            let xb = self.scratch.x[j];
+            let ra = self.scratch.r[i];
+            let rb = self.scratch.r[j];
+            let mut cs = match (i < n, j < n) {
+                (true, true) => narrow_collide(&self.shapes[i], xa, &ra, &self.shapes[j], xb, &rb),
+                (true, false) => narrow_collide(
+                    &self.shapes[i],
+                    xa,
+                    &ra,
+                    &self.statics[j - n].shape,
+                    xb,
+                    &rb,
+                ),
+                (false, true) => narrow_collide(
+                    &self.statics[i - n].shape,
+                    xa,
+                    &ra,
+                    &self.shapes[j],
+                    xb,
+                    &rb,
+                ),
+                (false, false) => narrow_collide(
+                    &self.statics[i - n].shape,
+                    xa,
+                    &ra,
+                    &self.statics[j - n].shape,
+                    xb,
+                    &rb,
+                ),
+            };
             for (k, c) in cs.iter_mut().enumerate() {
-                // Prefer geometric feature ids from narrow phase when set; else index.
                 if c.feature.0 == 0 {
                     c.feature = FeatureId(k as u32);
                 }
-                out.push(ContactPoint {
+                self.scratch.contacts.push(ContactPoint {
                     a: i,
                     b: j,
                     point: c.point,
@@ -321,7 +447,14 @@ impl ContactWorld {
                 });
             }
         }
-        (pairs, out)
+        if let Some(t0) = t_narrow0 {
+            self.last_phase_times.narrow = t0.elapsed().as_secs_f64();
+        }
+        if let Some(t0) = t_detect0 {
+            let _ = t0; // broad+narrow accounted separately; total set in step
+        }
+
+        (self.scratch.pairs.clone(), self.scratch.contacts.clone())
     }
 
     /// Simulation time [s].
@@ -358,9 +491,69 @@ impl ContactWorld {
     }
 
     /// Broad + narrow phase. Pairs are sorted by `(min id, max id)`.
+    ///
+    /// Allocating path for `&self` callers (tests / tooling). The step hot path
+    /// uses [`Self::detect_pairs_and_contacts`] with reused scratch buffers.
     pub fn detect(&self, st: Option<&State>) -> Vec<ContactPoint> {
         let st = st.unwrap_or(&self.world.state);
-        self.detect_pairs_and_contacts(st).1
+        self.detect_pairs_and_contacts_alloc(st).1
+    }
+
+    /// Allocating detect (no scratch mutation) — same results as the scratch path.
+    fn detect_pairs_and_contacts_alloc(
+        &self,
+        st: &State,
+    ) -> (Vec<(usize, usize)>, Vec<ContactPoint>) {
+        let (x, r) = self.poses(st);
+        let n = self.world.n;
+        let n_total = n + self.statics.len();
+        let mut aabbs = Vec::with_capacity(n_total);
+        for i in 0..n {
+            aabbs.push(self.shapes[i].aabb(x[i], &r[i]));
+        }
+        for (si, s) in self.statics.iter().enumerate() {
+            aabbs.push(s.shape.aabb(x[n + si], &r[n + si]));
+        }
+        let mut pairs = match self.broad_phase {
+            BroadPhaseKind::Sap => SweepAndPrune.pairs(&aabbs, &self.is_static),
+            BroadPhaseKind::Brute => BruteForce.pairs(&aabbs, &self.is_static),
+            BroadPhaseKind::DynamicTree => {
+                // Stateless rebuild path (matches incremental pair *set*).
+                DynamicAabbTree::default().pairs(&aabbs, &self.is_static)
+            }
+        };
+        if !pairs.windows(2).all(|w| w[0] <= w[1]) {
+            pairs.sort_unstable();
+        }
+        pairs.dedup();
+        let mut out = Vec::new();
+        for &(i, j) in &pairs {
+            let (sa, xa, ra) = if i < n {
+                (&self.shapes[i], x[i], &r[i])
+            } else {
+                (&self.statics[i - n].shape, x[i], &r[i])
+            };
+            let (sb, xb, rb) = if j < n {
+                (&self.shapes[j], x[j], &r[j])
+            } else {
+                (&self.statics[j - n].shape, x[j], &r[j])
+            };
+            let mut cs = narrow_collide(sa, xa, ra, sb, xb, rb);
+            for (k, c) in cs.iter_mut().enumerate() {
+                if c.feature.0 == 0 {
+                    c.feature = FeatureId(k as u32);
+                }
+                out.push(ContactPoint {
+                    a: i,
+                    b: j,
+                    point: c.point,
+                    normal: c.normal,
+                    depth: c.depth,
+                    feature: c.feature,
+                });
+            }
+        }
+        (pairs, out)
     }
 
     /// Detect with pluggable broad/narrow backends (extension hooks for AABB trees / GJK).
@@ -405,8 +598,8 @@ impl ContactWorld {
         out
     }
 
-    /// Default detect path (selected broad phase + dedicated pairs) — used by `step`.
-    fn detect_default(&self, st: &State) -> Vec<ContactPoint> {
+    /// Default detect path (selected broad phase + dedicated pairs) — used by correction.
+    fn detect_default(&mut self, st: &State) -> Vec<ContactPoint> {
         self.detect_pairs_and_contacts(st).1
     }
 
@@ -463,99 +656,19 @@ impl ContactWorld {
     /// Sequential-impulse velocity solve. Writes `st.v` / `st.l` for dynamics.
     ///
     /// `dt` is used for speculative contact bias (`sep/dt`).
+    ///
+    /// Uses SoA contact rows and reused scratch buffers. Floating-point ops and
+    /// contact iteration order match the historical AoS loop (bit-identical).
     pub fn solve_velocities(&mut self, st: &mut State, contacts: &[ContactPoint], dt: f64) {
         let n = self.world.n;
-        let dt_for_speculative = if dt > 0.0 { dt } else { 1.0 };
-        let n_total = n + self.statics.len();
-        let mut im = vec![0.0; n_total];
-        for i in 0..n {
-            im[i] = 1.0 / self.world.mass[i];
-        }
-        let mut iinv = vec![[[0.0; 3]; 3]; n_total];
-        for i in 0..n {
-            iinv[i] = self.world.inv_inertia_world(st.q[i], i);
-        }
-        let mut x = Vec::with_capacity(n_total);
-        x.extend_from_slice(&st.x);
-        x.extend_from_slice(&self.static_x);
-        let mut v = vec![Vec3::zero(); n_total];
-        v[..n].copy_from_slice(&st.v);
-        let mut l = vec![Vec3::zero(); n_total];
-        l[..n].copy_from_slice(&st.l);
+        self.prepare_solver_rows(st, contacts, dt);
+        self.apply_warm_start_and_solve(n);
+        st.v.copy_from_slice(&self.scratch.v[..n]);
+        st.l.copy_from_slice(&self.scratch.l[..n]);
+    }
 
-        struct Row {
-            a: usize,
-            b: usize,
-            point: Vec3,
-            normal: Vec3,
-            ra: Vec3,
-            rb: Vec3,
-            mu: f64,
-            kn: f64,
-            k1: f64,
-            k2: f64,
-            t1: Vec3,
-            t2: Vec3,
-            bias: f64,
-            lam: f64,
-            jt: [f64; 2],
-            key: (usize, usize, u32),
-        }
-
-        let mut rows = Vec::with_capacity(contacts.len());
-        let mut counter: BTreeMap<(usize, usize), u32> = BTreeMap::new();
-        for c in contacts {
-            let k = *counter.get(&(c.a, c.b)).unwrap_or(&0);
-            counter.insert((c.a, c.b), k + 1);
-            // Sequential index `k` matches the Python warm-start key `(a, b, k)`.
-            let feat = k;
-            let ra = c.point - x[c.a];
-            let rb = c.point - x[c.b];
-            let ma = self.mat(c.a);
-            let mb = self.mat(c.b);
-            let mu = sqrt(ma.friction * mb.friction);
-            let e = ma.restitution.max(mb.restitution);
-            // Effective mass: 1 / (1/m_a + 1/m_b + n·((I⁻¹(r×n))×r)_a+b)
-            // Matches Python `cross(Iinv @ cross(r, d), r)`.
-            let kmass = |d: Vec3| -> f64 {
-                let ka = mat_vec(&iinv[c.a], ra.cross(d)).cross(ra);
-                let kb = mat_vec(&iinv[c.b], rb.cross(d)).cross(rb);
-                1.0 / (im[c.a] + im[c.b] + d.dot(ka + kb))
-            };
-            let (t1, t2) = friction_basis(c.normal);
-            let va = v[c.a] + mat_vec(&iinv[c.a], l[c.a]).cross(ra);
-            let vb = v[c.b] + mat_vec(&iinv[c.b], l[c.b]).cross(rb);
-            let vrel = vb - va;
-            let vn0 = vrel.dot(c.normal);
-            let bias = if c.depth < 0.0 {
-                // Speculative: target vn ≥ −sep/dt with sep = −depth.
-                c.depth / dt_for_speculative
-            } else if vn0 < -self.restitution_threshold {
-                -e * vn0
-            } else {
-                0.0
-            };
-            let mu = if c.depth < 0.0 { 0.0 } else { mu };
-            rows.push(Row {
-                a: c.a,
-                b: c.b,
-                point: c.point,
-                normal: c.normal,
-                ra,
-                rb,
-                mu,
-                kn: kmass(c.normal),
-                k1: kmass(t1),
-                k2: kmass(t2),
-                t1,
-                t2,
-                bias,
-                lam: 0.0,
-                jt: [0.0, 0.0],
-                key: (c.a, c.b, feat),
-            });
-        }
-
+    /// Warm-start + PGS iterations over [`Self::rows_soa`] into scratch `v`/`l`.
+    fn apply_warm_start_and_solve(&mut self, n: usize) {
         let apply = |a: usize,
                      b: usize,
                      ra: Vec3,
@@ -576,80 +689,544 @@ impl ContactWorld {
 
         let old_cache = std::mem::take(&mut self.cache);
         if self.warm_start {
-            for r in &mut rows {
-                if let Some(old) = old_cache.get(&r.key) {
-                    if (old.point - r.point).norm() > 0.01 {
+            let nrows = self.rows_soa.len();
+            for i in 0..nrows {
+                let key = (
+                    self.rows_soa.key_a[i],
+                    self.rows_soa.key_b[i],
+                    self.rows_soa.key_f[i],
+                );
+                if let Some(old) = old_cache.get(&key) {
+                    let point = self.rows_soa.point[i];
+                    if (old.point - point).norm() > 0.01 {
                         continue;
                     }
-                    r.lam = old.normal_impulse;
-                    r.jt = [old.tangent_impulse.dot(r.t1), old.tangent_impulse.dot(r.t2)];
-                    let p = r.normal * r.lam + r.t1 * r.jt[0] + r.t2 * r.jt[1];
-                    apply(r.a, r.b, r.ra, r.rb, p, &mut v, &mut l, &im);
+                    let t1 = self.rows_soa.t1.get(i);
+                    let t2 = self.rows_soa.t2.get(i);
+                    let normal = self.rows_soa.normal.get(i);
+                    self.rows_soa.lam[i] = old.normal_impulse;
+                    self.rows_soa.jt0[i] = old.tangent_impulse.dot(t1);
+                    self.rows_soa.jt1[i] = old.tangent_impulse.dot(t2);
+                    let p = normal * self.rows_soa.lam[i]
+                        + t1 * self.rows_soa.jt0[i]
+                        + t2 * self.rows_soa.jt1[i];
+                    apply(
+                        self.rows_soa.a[i],
+                        self.rows_soa.b[i],
+                        self.rows_soa.ra.get(i),
+                        self.rows_soa.rb.get(i),
+                        p,
+                        &mut self.scratch.v,
+                        &mut self.scratch.l,
+                        &self.scratch.im,
+                    );
                 }
             }
         }
 
-        for _ in 0..self.iterations {
-            for r in &mut rows {
-                let va = v[r.a] + mat_vec(&iinv[r.a], l[r.a]).cross(r.ra);
-                let vb = v[r.b] + mat_vec(&iinv[r.b], l[r.b]).cross(r.rb);
+        let iterations = self.iterations;
+        let nrows = self.rows_soa.len();
+        for _ in 0..iterations {
+            for i in 0..nrows {
+                let a = self.rows_soa.a[i];
+                let b = self.rows_soa.b[i];
+                let ra = self.rows_soa.ra.get(i);
+                let rb = self.rows_soa.rb.get(i);
+                let t1 = self.rows_soa.t1.get(i);
+                let t2 = self.rows_soa.t2.get(i);
+                let normal = self.rows_soa.normal.get(i);
+                let va =
+                    self.scratch.v[a] + mat_vec(&self.scratch.iinv[a], self.scratch.l[a]).cross(ra);
+                let vb =
+                    self.scratch.v[b] + mat_vec(&self.scratch.iinv[b], self.scratch.l[b]).cross(rb);
                 let mut vrel = vb - va;
-                // Friction
-                let old = r.jt;
-                let mut jt = [
-                    old[0] - r.k1 * vrel.dot(r.t1),
-                    old[1] - r.k2 * vrel.dot(r.t2),
-                ];
-                let lim = r.mu * r.lam;
-                let nj = sqrt(jt[0] * jt[0] + jt[1] * jt[1]);
+                let old0 = self.rows_soa.jt0[i];
+                let old1 = self.rows_soa.jt1[i];
+                let mut jt0 = old0 - self.rows_soa.k1[i] * vrel.dot(t1);
+                let mut jt1 = old1 - self.rows_soa.k2[i] * vrel.dot(t2);
+                let lim = self.rows_soa.mu[i] * self.rows_soa.lam[i];
+                let nj = sqrt(jt0 * jt0 + jt1 * jt1);
                 if nj > lim {
-                    jt[0] *= lim / nj;
-                    jt[1] *= lim / nj;
+                    jt0 *= lim / nj;
+                    jt1 *= lim / nj;
                 }
-                let d0 = jt[0] - old[0];
-                let d1 = jt[1] - old[1];
-                r.jt = jt;
+                let d0 = jt0 - old0;
+                let d1 = jt1 - old1;
+                self.rows_soa.jt0[i] = jt0;
+                self.rows_soa.jt1[i] = jt1;
                 apply(
-                    r.a,
-                    r.b,
-                    r.ra,
-                    r.rb,
-                    r.t1 * d0 + r.t2 * d1,
-                    &mut v,
-                    &mut l,
-                    &im,
+                    a,
+                    b,
+                    ra,
+                    rb,
+                    t1 * d0 + t2 * d1,
+                    &mut self.scratch.v,
+                    &mut self.scratch.l,
+                    &self.scratch.im,
                 );
-                let va = v[r.a] + mat_vec(&iinv[r.a], l[r.a]).cross(r.ra);
-                let vb = v[r.b] + mat_vec(&iinv[r.b], l[r.b]).cross(r.rb);
+                let va =
+                    self.scratch.v[a] + mat_vec(&self.scratch.iinv[a], self.scratch.l[a]).cross(ra);
+                let vb =
+                    self.scratch.v[b] + mat_vec(&self.scratch.iinv[b], self.scratch.l[b]).cross(rb);
                 vrel = vb - va;
-                // Normal
-                let lam = (r.lam + r.kn * (r.bias - vrel.dot(r.normal))).max(0.0);
+                let lam = (self.rows_soa.lam[i]
+                    + self.rows_soa.kn[i] * (self.rows_soa.bias[i] - vrel.dot(normal)))
+                .max(0.0);
                 apply(
-                    r.a,
-                    r.b,
-                    r.ra,
-                    r.rb,
-                    r.normal * (lam - r.lam),
-                    &mut v,
-                    &mut l,
-                    &im,
+                    a,
+                    b,
+                    ra,
+                    rb,
+                    normal * (lam - self.rows_soa.lam[i]),
+                    &mut self.scratch.v,
+                    &mut self.scratch.l,
+                    &self.scratch.im,
                 );
-                r.lam = lam;
+                self.rows_soa.lam[i] = lam;
             }
         }
 
-        for r in &rows {
+        for i in 0..nrows {
+            let key = (
+                self.rows_soa.key_a[i],
+                self.rows_soa.key_b[i],
+                self.rows_soa.key_f[i],
+            );
+            let t1 = self.rows_soa.t1.get(i);
+            let t2 = self.rows_soa.t2.get(i);
             self.cache.insert(
-                r.key,
+                key,
                 WarmEntry {
-                    normal_impulse: r.lam,
-                    tangent_impulse: r.t1 * r.jt[0] + r.t2 * r.jt[1],
-                    point: r.point,
+                    normal_impulse: self.rows_soa.lam[i],
+                    tangent_impulse: t1 * self.rows_soa.jt0[i] + t2 * self.rows_soa.jt1[i],
+                    point: self.rows_soa.point[i],
                 },
             );
         }
-        st.v.copy_from_slice(&v[..n]);
-        st.l.copy_from_slice(&l[..n]);
+    }
+
+    /// Island id for a contact: dynamic endpoint's island (min if both dynamic).
+    #[inline]
+    fn contact_island_id(&self, n: usize, a: usize, b: usize) -> i32 {
+        let ia = if a < n { self.sleep.island[a] } else { -1 };
+        let ib = if b < n { self.sleep.island[b] } else { -1 };
+        match (ia >= 0, ib >= 0) {
+            (true, true) => ia.min(ib),
+            (true, false) => ia,
+            (false, true) => ib,
+            (false, false) => 0,
+        }
+    }
+
+    /// Build SoA rows for `contacts` into `rows_soa` and fill scratch `im`/`iinv`/`x`/`v`/`l`.
+    fn prepare_solver_rows(&mut self, st: &State, contacts: &[ContactPoint], dt: f64) {
+        let n = self.world.n;
+        let dt_for_speculative = if dt > 0.0 { dt } else { 1.0 };
+        let n_total = n + self.statics.len();
+
+        self.scratch.clear_solver();
+        let sc = &mut self.scratch;
+        sc.im.resize(n_total, 0.0);
+        for i in 0..n {
+            sc.im[i] = 1.0 / self.world.mass[i];
+        }
+        for i in n..n_total {
+            sc.im[i] = 0.0;
+        }
+        sc.iinv.resize(n_total, [[0.0; 3]; 3]);
+        for i in 0..n {
+            sc.iinv[i] = self.world.inv_inertia_world(st.q[i], i);
+        }
+        sc.x.clear();
+        sc.x.reserve(n_total);
+        sc.x.extend_from_slice(&st.x);
+        sc.x.extend_from_slice(&self.static_x);
+        sc.v.clear();
+        sc.v.resize(n_total, Vec3::zero());
+        sc.v[..n].copy_from_slice(&st.v);
+        sc.l.clear();
+        sc.l.resize(n_total, Vec3::zero());
+        sc.l[..n].copy_from_slice(&st.l);
+
+        self.rows_soa.clear();
+        self.rows_soa.reserve(contacts.len());
+        let mut prev_pair = (usize::MAX, usize::MAX);
+        let mut feat_k = 0u32;
+        for c in contacts {
+            if (c.a, c.b) != prev_pair {
+                prev_pair = (c.a, c.b);
+                feat_k = 0;
+            }
+            let feat = feat_k;
+            feat_k += 1;
+            let ra = c.point - self.scratch.x[c.a];
+            let rb = c.point - self.scratch.x[c.b];
+            let ma = self.mat(c.a);
+            let mb = self.mat(c.b);
+            let mu0 = sqrt(ma.friction * mb.friction);
+            let e = ma.restitution.max(mb.restitution);
+            let (t1, t2) = friction_basis(c.normal);
+            let ima = self.scratch.im[c.a];
+            let imb = self.scratch.im[c.b];
+            let kn = effective_mass(
+                c.normal,
+                ra,
+                rb,
+                ima,
+                imb,
+                &self.scratch.iinv[c.a],
+                &self.scratch.iinv[c.b],
+            );
+            let k1 = effective_mass(
+                t1,
+                ra,
+                rb,
+                ima,
+                imb,
+                &self.scratch.iinv[c.a],
+                &self.scratch.iinv[c.b],
+            );
+            let k2 = effective_mass(
+                t2,
+                ra,
+                rb,
+                ima,
+                imb,
+                &self.scratch.iinv[c.a],
+                &self.scratch.iinv[c.b],
+            );
+            let va = self.scratch.v[c.a]
+                + mat_vec(&self.scratch.iinv[c.a], self.scratch.l[c.a]).cross(ra);
+            let vb = self.scratch.v[c.b]
+                + mat_vec(&self.scratch.iinv[c.b], self.scratch.l[c.b]).cross(rb);
+            let vrel = vb - va;
+            let vn0 = vrel.dot(c.normal);
+            let bias = if c.depth < 0.0 {
+                c.depth / dt_for_speculative
+            } else if vn0 < -self.restitution_threshold {
+                -e * vn0
+            } else {
+                0.0
+            };
+            let mu = if c.depth < 0.0 { 0.0 } else { mu0 };
+            self.rows_soa.push(
+                c.a,
+                c.b,
+                c.point,
+                c.normal,
+                ra,
+                rb,
+                mu,
+                kn,
+                k1,
+                k2,
+                t1,
+                t2,
+                bias,
+                (c.a, c.b, feat),
+            );
+        }
+    }
+
+    /// PGS solve with contacts grouped by ascending island id.
+    ///
+    /// Single-thread and `parallel` feature paths share this ordering so results
+    /// are bit-identical across rayon thread counts. Not used by locked oracle
+    /// hashes (those keep global PGS via `island_ordered_solve = false`).
+    pub fn solve_velocities_island_ordered(
+        &mut self,
+        st: &mut State,
+        contacts: &[ContactPoint],
+        dt: f64,
+    ) {
+        let n = self.world.n;
+        self.prepare_solver_rows(st, contacts, dt);
+
+        // Partition row indices by island id (ascending).
+        let n_islands = self.sleep.island_count.max(1);
+        let mut rows_by_island: Vec<Vec<usize>> = vec![Vec::new(); n_islands];
+        for i in 0..self.rows_soa.len() {
+            let id = self.contact_island_id(n, self.rows_soa.a[i], self.rows_soa.b[i]);
+            let id = if id < 0 { 0 } else { id as usize };
+            let id = id.min(n_islands - 1);
+            rows_by_island[id].push(i);
+        }
+
+        // Warm-start all rows into shared v/l (sequential, deterministic).
+        self.warm_start_rows(n);
+
+        #[cfg(feature = "parallel")]
+        {
+            self.solve_islands_parallel(n, &rows_by_island);
+        }
+        #[cfg(not(feature = "parallel"))]
+        {
+            for rows in &rows_by_island {
+                self.solve_row_indices(n, rows);
+            }
+        }
+
+        self.write_warm_cache_from_rows();
+        st.v.copy_from_slice(&self.scratch.v[..n]);
+        st.l.copy_from_slice(&self.scratch.l[..n]);
+    }
+
+    fn warm_start_rows(&mut self, n: usize) {
+        let old_cache = std::mem::take(&mut self.cache);
+        if !self.warm_start {
+            return;
+        }
+        let nrows = self.rows_soa.len();
+        for i in 0..nrows {
+            let key = (
+                self.rows_soa.key_a[i],
+                self.rows_soa.key_b[i],
+                self.rows_soa.key_f[i],
+            );
+            if let Some(old) = old_cache.get(&key) {
+                let point = self.rows_soa.point[i];
+                if (old.point - point).norm() > 0.01 {
+                    continue;
+                }
+                let t1 = self.rows_soa.t1.get(i);
+                let t2 = self.rows_soa.t2.get(i);
+                let normal = self.rows_soa.normal.get(i);
+                self.rows_soa.lam[i] = old.normal_impulse;
+                self.rows_soa.jt0[i] = old.tangent_impulse.dot(t1);
+                self.rows_soa.jt1[i] = old.tangent_impulse.dot(t2);
+                let p = normal * self.rows_soa.lam[i]
+                    + t1 * self.rows_soa.jt0[i]
+                    + t2 * self.rows_soa.jt1[i];
+                let a = self.rows_soa.a[i];
+                let b = self.rows_soa.b[i];
+                let ra = self.rows_soa.ra.get(i);
+                let rb = self.rows_soa.rb.get(i);
+                self.scratch.v[a] -= p * self.scratch.im[a];
+                if a < n {
+                    self.scratch.l[a] -= ra.cross(p);
+                }
+                self.scratch.v[b] += p * self.scratch.im[b];
+                if b < n {
+                    self.scratch.l[b] += rb.cross(p);
+                }
+            }
+        }
+    }
+
+    fn write_warm_cache_from_rows(&mut self) {
+        self.cache.clear();
+        for i in 0..self.rows_soa.len() {
+            let key = (
+                self.rows_soa.key_a[i],
+                self.rows_soa.key_b[i],
+                self.rows_soa.key_f[i],
+            );
+            let t1 = self.rows_soa.t1.get(i);
+            let t2 = self.rows_soa.t2.get(i);
+            self.cache.insert(
+                key,
+                WarmEntry {
+                    normal_impulse: self.rows_soa.lam[i],
+                    tangent_impulse: t1 * self.rows_soa.jt0[i] + t2 * self.rows_soa.jt1[i],
+                    point: self.rows_soa.point[i],
+                },
+            );
+        }
+    }
+
+    /// Run PGS iterations over a subset of SoA row indices (single island).
+    #[cfg_attr(feature = "parallel", allow(dead_code))]
+    fn solve_row_indices(&mut self, n: usize, rows: &[usize]) {
+        let iterations = self.iterations;
+        for _ in 0..iterations {
+            for &i in rows {
+                let a = self.rows_soa.a[i];
+                let b = self.rows_soa.b[i];
+                let ra = self.rows_soa.ra.get(i);
+                let rb = self.rows_soa.rb.get(i);
+                let t1 = self.rows_soa.t1.get(i);
+                let t2 = self.rows_soa.t2.get(i);
+                let normal = self.rows_soa.normal.get(i);
+                let va =
+                    self.scratch.v[a] + mat_vec(&self.scratch.iinv[a], self.scratch.l[a]).cross(ra);
+                let vb =
+                    self.scratch.v[b] + mat_vec(&self.scratch.iinv[b], self.scratch.l[b]).cross(rb);
+                let mut vrel = vb - va;
+                let old0 = self.rows_soa.jt0[i];
+                let old1 = self.rows_soa.jt1[i];
+                let mut jt0 = old0 - self.rows_soa.k1[i] * vrel.dot(t1);
+                let mut jt1 = old1 - self.rows_soa.k2[i] * vrel.dot(t2);
+                let lim = self.rows_soa.mu[i] * self.rows_soa.lam[i];
+                let nj = sqrt(jt0 * jt0 + jt1 * jt1);
+                if nj > lim {
+                    jt0 *= lim / nj;
+                    jt1 *= lim / nj;
+                }
+                let d0 = jt0 - old0;
+                let d1 = jt1 - old1;
+                self.rows_soa.jt0[i] = jt0;
+                self.rows_soa.jt1[i] = jt1;
+                let p_t = t1 * d0 + t2 * d1;
+                self.scratch.v[a] -= p_t * self.scratch.im[a];
+                if a < n {
+                    self.scratch.l[a] -= ra.cross(p_t);
+                }
+                self.scratch.v[b] += p_t * self.scratch.im[b];
+                if b < n {
+                    self.scratch.l[b] += rb.cross(p_t);
+                }
+                let va =
+                    self.scratch.v[a] + mat_vec(&self.scratch.iinv[a], self.scratch.l[a]).cross(ra);
+                let vb =
+                    self.scratch.v[b] + mat_vec(&self.scratch.iinv[b], self.scratch.l[b]).cross(rb);
+                vrel = vb - va;
+                let lam = (self.rows_soa.lam[i]
+                    + self.rows_soa.kn[i] * (self.rows_soa.bias[i] - vrel.dot(normal)))
+                .max(0.0);
+                let p_n = normal * (lam - self.rows_soa.lam[i]);
+                self.scratch.v[a] -= p_n * self.scratch.im[a];
+                if a < n {
+                    self.scratch.l[a] -= ra.cross(p_n);
+                }
+                self.scratch.v[b] += p_n * self.scratch.im[b];
+                if b < n {
+                    self.scratch.l[b] += rb.cross(p_n);
+                }
+                self.rows_soa.lam[i] = lam;
+            }
+        }
+    }
+
+    #[cfg(feature = "parallel")]
+    fn solve_islands_parallel(&mut self, n: usize, rows_by_island: &[Vec<usize>]) {
+        use rayon::prelude::*;
+
+        struct IslandUpdate {
+            bodies: Vec<usize>,
+            v: Vec<Vec3>,
+            l: Vec<Vec3>,
+            lam: Vec<f64>,
+            jt0: Vec<f64>,
+            jt1: Vec<f64>,
+        }
+
+        // Islands write disjoint dynamic bodies; solve each into a local (v,l) clone
+        // of the post-warm-start state, then merge in ascending island order.
+        let base_v = self.scratch.v.clone();
+        let base_l = self.scratch.l.clone();
+        let iterations = self.iterations;
+        let im = self.scratch.im.clone();
+        let iinv = self.scratch.iinv.clone();
+        let rows = self.rows_soa.clone();
+
+        let updates: Vec<IslandUpdate> = rows_by_island
+            .par_iter()
+            .map(|island_rows| {
+                if island_rows.is_empty() {
+                    return IslandUpdate {
+                        bodies: Vec::new(),
+                        v: Vec::new(),
+                        l: Vec::new(),
+                        lam: Vec::new(),
+                        jt0: Vec::new(),
+                        jt1: Vec::new(),
+                    };
+                }
+                let mut v = base_v.clone();
+                let mut l = base_l.clone();
+                let mut lam = island_rows.iter().map(|&i| rows.lam[i]).collect::<Vec<_>>();
+                let mut jt0 = island_rows.iter().map(|&i| rows.jt0[i]).collect::<Vec<_>>();
+                let mut jt1 = island_rows.iter().map(|&i| rows.jt1[i]).collect::<Vec<_>>();
+                for _ in 0..iterations {
+                    for (local, &i) in island_rows.iter().enumerate() {
+                        let a = rows.a[i];
+                        let b = rows.b[i];
+                        let ra = rows.ra.get(i);
+                        let rb = rows.rb.get(i);
+                        let t1 = rows.t1.get(i);
+                        let t2 = rows.t2.get(i);
+                        let normal = rows.normal.get(i);
+                        let va = v[a] + mat_vec(&iinv[a], l[a]).cross(ra);
+                        let vb = v[b] + mat_vec(&iinv[b], l[b]).cross(rb);
+                        let mut vrel = vb - va;
+                        let old0 = jt0[local];
+                        let old1 = jt1[local];
+                        let mut j0 = old0 - rows.k1[i] * vrel.dot(t1);
+                        let mut j1 = old1 - rows.k2[i] * vrel.dot(t2);
+                        let lim = rows.mu[i] * lam[local];
+                        let nj = sqrt(j0 * j0 + j1 * j1);
+                        if nj > lim {
+                            j0 *= lim / nj;
+                            j1 *= lim / nj;
+                        }
+                        let d0 = j0 - old0;
+                        let d1 = j1 - old1;
+                        jt0[local] = j0;
+                        jt1[local] = j1;
+                        let p_t = t1 * d0 + t2 * d1;
+                        v[a] -= p_t * im[a];
+                        if a < n {
+                            l[a] -= ra.cross(p_t);
+                        }
+                        v[b] += p_t * im[b];
+                        if b < n {
+                            l[b] += rb.cross(p_t);
+                        }
+                        let va = v[a] + mat_vec(&iinv[a], l[a]).cross(ra);
+                        let vb = v[b] + mat_vec(&iinv[b], l[b]).cross(rb);
+                        vrel = vb - va;
+                        let new_lam =
+                            (lam[local] + rows.kn[i] * (rows.bias[i] - vrel.dot(normal))).max(0.0);
+                        let p_n = normal * (new_lam - lam[local]);
+                        v[a] -= p_n * im[a];
+                        if a < n {
+                            l[a] -= ra.cross(p_n);
+                        }
+                        v[b] += p_n * im[b];
+                        if b < n {
+                            l[b] += rb.cross(p_n);
+                        }
+                        lam[local] = new_lam;
+                    }
+                }
+                // Collect dynamic bodies touched by this island.
+                let mut bodies = Vec::new();
+                for &i in island_rows {
+                    if rows.a[i] < n {
+                        bodies.push(rows.a[i]);
+                    }
+                    if rows.b[i] < n {
+                        bodies.push(rows.b[i]);
+                    }
+                }
+                bodies.sort_unstable();
+                bodies.dedup();
+                let vv: Vec<_> = bodies.iter().map(|&b| v[b]).collect();
+                let ll: Vec<_> = bodies.iter().map(|&b| l[b]).collect();
+                IslandUpdate {
+                    bodies,
+                    v: vv,
+                    l: ll,
+                    lam,
+                    jt0,
+                    jt1,
+                }
+            })
+            .collect();
+
+        // Merge in ascending island order (par_iter collect preserves order).
+        for (island_idx, upd) in updates.into_iter().enumerate() {
+            for (k, &b) in upd.bodies.iter().enumerate() {
+                self.scratch.v[b] = upd.v[k];
+                self.scratch.l[b] = upd.l[k];
+            }
+            let island_rows = &rows_by_island[island_idx];
+            for (local, &i) in island_rows.iter().enumerate() {
+                self.rows_soa.lam[i] = upd.lam[local];
+                self.rows_soa.jt0[i] = upd.jt0[local];
+                self.rows_soa.jt1[i] = upd.jt1[local];
+            }
+        }
     }
 
     /// Positional correction: translate bodies apart; velocities untouched.
@@ -688,6 +1265,11 @@ impl ContactWorld {
 
     /// One contact step [s].
     pub fn step(&mut self, dt: f64) {
+        let t_step0 = if self.profile_phases {
+            Some(Instant::now())
+        } else {
+            None
+        };
         let (f, tau) = self.world.forces(&self.world.state, self.world.t);
         let n = self.world.n;
         self.sleep.resize(n);
@@ -794,8 +1376,20 @@ impl ContactWorld {
                         a_ok && b_ok && (c.a >= n || c.b >= n || awake[c.a] || awake[c.b])
                     })
                     .collect();
-                self.solve_velocities(&mut st, &active, step_dt);
+                let t_sol0 = if self.profile_phases {
+                    Some(Instant::now())
+                } else {
+                    None
+                };
+                if self.island_ordered_solve {
+                    self.solve_velocities_island_ordered(&mut st, &active, step_dt);
+                } else {
+                    self.solve_velocities(&mut st, &active, step_dt);
+                }
                 self.solve_joints_pgs(&mut st, step_dt);
+                if let Some(t0) = t_sol0 {
+                    self.last_phase_times.solver = t0.elapsed().as_secs_f64();
+                }
                 self.contacts = contacts;
                 for i in 0..n {
                     if !self.sleep.is_awake(i) {
@@ -873,6 +1467,9 @@ impl ContactWorld {
 
         self.world.state = st;
         self.world.t += dt;
+        if let Some(t0) = t_step0 {
+            self.last_phase_times.total = t0.elapsed().as_secs_f64();
+        }
     }
 
     /// Fixed-`dt` run to `t_end` [s].

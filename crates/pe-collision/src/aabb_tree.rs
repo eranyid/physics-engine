@@ -153,6 +153,108 @@ impl DynamicAabbTree {
         }
     }
 
+    /// Free a node onto the free list.
+    fn free_node(&mut self, id: i32) {
+        self.nodes[id as usize].child1 = self.free_list;
+        self.nodes[id as usize].height = -1;
+        self.free_list = id;
+    }
+
+    /// Remove a leaf and refit ancestors (Box2D-style).
+    fn remove_leaf(&mut self, leaf: i32) {
+        if leaf == self.root {
+            self.root = NULL;
+            self.free_node(leaf);
+            return;
+        }
+        let parent = self.nodes[leaf as usize].parent;
+        let grand = self.nodes[parent as usize].parent;
+        let sibling = if self.nodes[parent as usize].child1 == leaf {
+            self.nodes[parent as usize].child2
+        } else {
+            self.nodes[parent as usize].child1
+        };
+        if grand != NULL {
+            if self.nodes[grand as usize].child1 == parent {
+                self.nodes[grand as usize].child1 = sibling;
+            } else {
+                self.nodes[grand as usize].child2 = sibling;
+            }
+            self.nodes[sibling as usize].parent = grand;
+            self.free_node(parent);
+            self.refit_and_rotate(grand);
+        } else {
+            self.root = sibling;
+            self.nodes[sibling as usize].parent = NULL;
+            self.free_node(parent);
+        }
+        self.free_node(leaf);
+    }
+
+    /// Incremental fat-AABB update: no-op when the tight AABB stays inside the
+    /// fat leaf; otherwise remove + reinsert. Returns `true` if the leaf moved.
+    ///
+    /// Pair output after [`query_pairs`](Self::query_pairs) + tight filter is
+    /// identical to a full rebuild for the same AABBs (over-reporting only).
+    pub fn update_proxy(&mut self, proxy_id: usize, aabb: &Aabb) -> bool {
+        if proxy_id >= self.proxy_leaf.len() {
+            self.proxy_leaf.resize(proxy_id + 1, NULL);
+            self.insert_leaf(proxy_id as i32, self.fatten(aabb));
+            return true;
+        }
+        let leaf = self.proxy_leaf[proxy_id];
+        if leaf == NULL {
+            self.insert_leaf(proxy_id as i32, self.fatten(aabb));
+            return true;
+        }
+        let fat = self.nodes[leaf as usize].aabb;
+        if Self::contains(&fat, aabb) {
+            return false;
+        }
+        self.proxy_leaf[proxy_id] = NULL;
+        self.remove_leaf(leaf);
+        self.insert_leaf(proxy_id as i32, self.fatten(aabb));
+        true
+    }
+
+    /// Ensure `proxy_leaf` covers `count` proxies (call before incremental updates
+    /// when the collider count changes). Triggers a full rebuild if counts differ
+    /// from the last rebuild and `force_rebuild` is set by the caller.
+    pub fn ensure_proxy_capacity(&mut self, count: usize) {
+        if count > self.proxy_leaf.len() {
+            self.proxy_leaf.resize(count, NULL);
+        }
+    }
+
+    /// Incremental update of all proxies from tight AABBs. Inserts missing leaves;
+    /// moves leaves whose fat AABB no longer contains the tight box.
+    pub fn update_all(&mut self, aabbs: &[Aabb]) {
+        if aabbs.len() != self.proxy_leaf.len() || self.root == NULL {
+            self.rebuild(aabbs);
+            return;
+        }
+        for (id, aabb) in aabbs.iter().enumerate() {
+            self.update_proxy(id, aabb);
+        }
+    }
+
+    /// Query overlapping pairs, then filter to tight AABB overlaps (matches SAP).
+    pub fn pairs_incremental(
+        &mut self,
+        aabbs: &[Aabb],
+        skip_static: &[bool],
+    ) -> Vec<(usize, usize)> {
+        self.update_all(aabbs);
+        let fat_pairs = self.query_pairs(Some(skip_static));
+        let mut out = Vec::with_capacity(fat_pairs.len());
+        for (i, j) in fat_pairs {
+            if Self::overlaps(&aabbs[i], &aabbs[j]) {
+                out.push((i, j));
+            }
+        }
+        out
+    }
+
     fn insert_leaf(&mut self, proxy_id: i32, aabb: Aabb) {
         let leaf = self.allocate_node();
         self.nodes[leaf as usize].aabb = aabb;
