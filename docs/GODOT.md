@@ -28,8 +28,9 @@ extension, and runs:
 
 ```bash
 ./godot/ci/run_headless_drop.sh
-# stages target/debug/libpe_godot.so → godot/example/bin/, verifies
-# "Initialize godot-rust", then runs res://ci_drop_test.tscn
+# stages target/debug/libpe_godot.so → godot/example/bin/,
+# runs godot --import (registers GDExtension on a fresh checkout),
+# verifies "Initialize godot-rust", then runs res://ci_drop_test.tscn
 ```
 
 `.gdextension` keys include `linux.x86_64` (required for headless) as well as
