@@ -30,6 +30,7 @@ use pe_math::libm_ops;
 use pe_math::{Vec3, Xoshiro256StarStar};
 
 use crate::armor::{ArmorMaterial, ArmorStack, PenetrationModel, RicochetParams};
+use crate::damage::{DamageEvent, Target, TargetTable};
 
 /// Largest obliquity used in `sec θ` [rad] (89°) — avoids the singularity.
 const MAX_OBLIQUITY_RAD: f64 = 89.0 * PI / 180.0;
@@ -179,6 +180,12 @@ pub struct StackResult {
     pub e_spall_j: f64,
     /// Spall fragments (positions are zero; the caller places them).
     pub spall: Vec<SpallFragment>,
+    /// Energy deposited in each layer [J] (spall excluded), outermost first.
+    /// Only layers the projectile reached are listed. Ledger:
+    /// `Σ layer_dissipated_j + e_spall_j + ke_out_j = ke_in_j`.
+    pub layer_dissipated_j: Vec<f64>,
+    /// Layer index the projectile stopped in (`None` if it exited or ricocheted).
+    pub stopped_in_layer: Option<usize>,
 }
 
 fn orthonormal_basis(d: Vec3) -> (Vec3, Vec3) {
@@ -258,19 +265,37 @@ fn spall_from_layer(
     (frags, e_actual)
 }
 
-fn stopped(input: &StackInput, ke_in: f64, e_spall: f64, spall: Vec<SpallFragment>) -> StackResult {
+/// Result for a projectile that stops inside layer `layer` with `ke_layer_in`
+/// kinetic energy left (all of it is deposited there).
+fn stopped(
+    input: &StackInput,
+    ke_in: f64,
+    e_spall: f64,
+    spall: Vec<SpallFragment>,
+    mut layer_dissipated_j: Vec<f64>,
+    layer: Option<(usize, f64)>,
+) -> StackResult {
+    let mut layers_perforated = 0;
+    let mut stopped_in_layer = None;
+    if let Some((li, ke_layer_in)) = layer {
+        layer_dissipated_j.push(ke_layer_in);
+        layers_perforated = li;
+        stopped_in_layer = Some(li);
+    }
     StackResult {
         kind: ImpactKind::Stopped,
         velocity_out: Vec3::zero(),
         mass_out_kg: input.mass_kg,
         drag_factor: 1.0,
         stop_depth_m: None,
-        layers_perforated: 0,
+        layers_perforated,
         ke_in_j: ke_in,
         ke_out_j: 0.0,
         e_deposited_j: (ke_in - e_spall).max(0.0),
         e_spall_j: e_spall,
         spall,
+        layer_dissipated_j,
+        stopped_in_layer,
     }
 }
 
@@ -287,13 +312,17 @@ pub fn resolve_stack(
     let ke_in = kinetic_energy(input.mass_kg, input.velocity);
     let speed_in = input.velocity.norm();
     if stack.layers.is_empty() || speed_in <= 0.0 {
-        let mut r = stopped(&input, ke_in, 0.0, Vec::new());
+        let mut r = stopped(&input, ke_in, 0.0, Vec::new(), Vec::new(), None);
         if stack.layers.is_empty() && speed_in > 0.0 {
             // No armor: nothing to stop it — pass through unchanged.
             r.kind = ImpactKind::Perforated;
             r.velocity_out = input.velocity;
             r.ke_out_j = ke_in;
             r.e_deposited_j = 0.0;
+        } else if !stack.layers.is_empty() {
+            // Zero speed: nothing to deposit, but report the outer layer.
+            r.layer_dissipated_j.push(0.0);
+            r.stopped_in_layer = Some(0);
         }
         return r;
     }
@@ -308,6 +337,7 @@ pub fn resolve_stack(
     let mut drag_factor = 1.0;
     let mut e_spall = 0.0;
     let mut spall = Vec::new();
+    let mut layer_dep: Vec<f64> = Vec::with_capacity(stack.layers.len());
     let area = 0.25 * PI * input.diameter_m * input.diameter_m;
 
     for (li, layer) in stack.layers.iter().enumerate() {
@@ -342,6 +372,8 @@ pub fn resolve_stack(
                     e_deposited_j: (ke_in - ke_out).max(0.0),
                     e_spall_j: 0.0,
                     spall: Vec::new(),
+                    layer_dissipated_j: vec![(ke_in - ke_out).max(0.0)],
+                    stopped_in_layer: None,
                 };
             }
         }
@@ -361,9 +393,14 @@ pub fn resolve_stack(
                     input.chord_m * cos_th
                 };
                 if !(t > 0.0) {
-                    let mut r = stopped(&input, ke_in, e_spall, spall);
-                    r.layers_perforated = li;
-                    return r;
+                    return stopped(
+                        &input,
+                        ke_in,
+                        e_spall,
+                        spall,
+                        layer_dep,
+                        Some((li, ke_layer_in)),
+                    );
                 }
                 let v50 = lambert_jonas_v50(
                     lambert_k,
@@ -375,9 +412,14 @@ pub fn resolve_stack(
                     obliquity_exponent,
                 );
                 if speed <= v50 {
-                    let mut r = stopped(&input, ke_in, e_spall, spall);
-                    r.layers_perforated = li;
-                    return r;
+                    return stopped(
+                        &input,
+                        ke_in,
+                        e_spall,
+                        spall,
+                        layer_dep,
+                        Some((li, ke_layer_in)),
+                    );
                 }
                 let vr = recht_ipson_residual(speed, v50, residual_a, residual_p);
                 let z = lambert_z(t, input.diameter_m, theta, obliquity_exponent);
@@ -398,8 +440,14 @@ pub fn resolve_stack(
                 {
                     Some(vr) if path > 0.0 => (vr, mass, area * path),
                     _ => {
-                        let mut r = stopped(&input, ke_in, e_spall, spall);
-                        r.layers_perforated = li;
+                        let mut r = stopped(
+                            &input,
+                            ke_in,
+                            e_spall,
+                            spall,
+                            layer_dep,
+                            Some((li, ke_layer_in)),
+                        );
                         r.stop_depth_m =
                             poncelet_depth(mass, speed, area, poncelet_a_pa, poncelet_b_kg_m3)
                                 .map(|d| if path > 0.0 { d.min(path) } else { d });
@@ -423,6 +471,7 @@ pub fn resolve_stack(
             spall_from_layer(mat, ke_layer_in - ke_layer_out, plug_volume, new_dir, rng);
         e_spall += e_sp;
         spall.extend(frags);
+        layer_dep.push((ke_layer_in - kinetic_energy(mass, v) - e_sp).max(0.0));
     }
 
     let ke_out = kinetic_energy(mass, v);
@@ -438,6 +487,8 @@ pub fn resolve_stack(
         e_deposited_j: (ke_in - ke_out - e_spall).max(0.0),
         e_spall_j: e_spall,
         spall,
+        layer_dissipated_j: layer_dep,
+        stopped_in_layer: None,
     }
 }
 
@@ -482,28 +533,42 @@ pub struct ImpactRecord {
     pub spall: Vec<SpallFragment>,
 }
 
-/// [`HitResolver`] that runs every hit through a per-shape [`ArmorStack`].
+/// [`HitResolver`] that runs every hit through a per-shape [`Target`].
 ///
-/// Shapes with `None` (or beyond the table) stop the projectile, like
-/// [`pe_ballistics::StopOnHit`]. Every interaction is appended to
-/// [`records`](Self::records); clear it between steps if you like.
+/// - [`Target::Inert`] (or a shape index beyond the table) stops the projectile,
+///   like [`pe_ballistics::StopOnHit`].
+/// - [`Target::Armor`] resolves an [`ArmorStack`] (walls, plates, vehicles).
+/// - [`Target::Zone`] resolves the zone's armor plus its tissue and appends a
+///   [`DamageEvent`] to [`damage_events`](Self::damage_events). Spall from armor
+///   worn on the body goes into the tissue instead of flying away.
+///
+/// Every interaction is appended to [`records`](Self::records); drain both
+/// logs between steps.
 #[derive(Clone, Debug, Default)]
 pub struct CombatResolver {
     /// Material table.
     pub materials: Vec<ArmorMaterial>,
-    /// Armor per shape index (same indexing as the `shapes` slice).
-    pub shape_armor: Vec<Option<ArmorStack>>,
+    /// What each shape index is (same indexing as the `shapes` slice).
+    pub targets: TargetTable,
     /// Interaction log.
     pub records: Vec<ImpactRecord>,
+    /// Damage to character zones.
+    pub damage_events: Vec<DamageEvent>,
 }
 
 impl CombatResolver {
-    /// New resolver from materials and per-shape armor.
+    /// New resolver from materials and per-shape armor (`None` = inert).
     pub fn new(materials: Vec<ArmorMaterial>, shape_armor: Vec<Option<ArmorStack>>) -> Self {
+        Self::with_targets(materials, TargetTable::from_armor(shape_armor))
+    }
+
+    /// New resolver from materials and a full target table.
+    pub fn with_targets(materials: Vec<ArmorMaterial>, targets: TargetTable) -> Self {
         Self {
             materials,
-            shape_armor,
+            targets,
             records: Vec::new(),
+            damage_events: Vec::new(),
         }
     }
 
@@ -544,8 +609,13 @@ impl HitResolver for CombatResolver {
             stop_depth_m: None,
             spall: Vec::new(),
         };
-        let stack = match self.shape_armor.get(hit.shape_index) {
-            Some(Some(s)) if speed > 0.0 => s,
+        let (stack, zone) = match self.targets.get(hit.shape_index) {
+            Some(Target::Armor(s)) if speed > 0.0 => (s, None),
+            Some(Target::Zone {
+                character,
+                zone,
+                stack,
+            }) if speed > 0.0 => (stack, Some((*character, *zone, stack.layers.len() - 1))),
             _ => {
                 self.records.push(record);
                 return HitOutcome::Stop;
@@ -557,7 +627,7 @@ impl HitResolver for CombatResolver {
             Some((p, _n, c)) => (p, c),
             None => (hit.position, 0.0),
         };
-        let res = resolve_stack(
+        let mut res = resolve_stack(
             &self.materials,
             stack,
             StackInput {
@@ -570,6 +640,53 @@ impl HitResolver for CombatResolver {
             },
             &mut projectile.rng,
         );
+        if let Some((character, zone, tissue_layer)) = zone {
+            // Spall from worn armor ends up in the wearer once the armor is
+            // breached; otherwise it stays in the armor. Ledger:
+            // e_armor + e_tissue = KE_in − KE_out.
+            let reached_tissue = res.layer_dissipated_j.len() > tissue_layer;
+            let spall_e = res.e_spall_j;
+            let tissue_spall = if reached_tissue { spall_e } else { 0.0 };
+            let e_tissue = res
+                .layer_dissipated_j
+                .get(tissue_layer)
+                .copied()
+                .unwrap_or(0.0)
+                + tissue_spall;
+            let e_armor = res
+                .layer_dissipated_j
+                .iter()
+                .take(tissue_layer)
+                .sum::<f64>()
+                + (spall_e - tissue_spall);
+            res.e_deposited_j += spall_e;
+            res.e_spall_j = 0.0;
+            res.spall.clear();
+            let wound_track_m = if !reached_tissue {
+                0.0
+            } else if res.kind == ImpactKind::Perforated {
+                chord
+            } else {
+                res.stop_depth_m.unwrap_or(0.0)
+            };
+            self.damage_events.push(DamageEvent {
+                character,
+                zone,
+                shot_id: hit.shot_id,
+                time_s: hit.time_s,
+                position: hit.position,
+                direction: dir,
+                ke_in_j: res.ke_in_j,
+                e_tissue_j: e_tissue,
+                e_armor_j: e_armor,
+                penetrated_armor: reached_tissue && tissue_layer > 0,
+                through_and_through: res.kind == ImpactKind::Perforated,
+                ricochet: res.kind == ImpactKind::Ricochet,
+                wound_track_m,
+                momentum_in: v * projectile.mass,
+                momentum_out: res.velocity_out * res.mass_out_kg,
+            });
+        }
         record.kind = res.kind;
         record.velocity_out = res.velocity_out;
         record.ke_out_j = res.ke_out_j;

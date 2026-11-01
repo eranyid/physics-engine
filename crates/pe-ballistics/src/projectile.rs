@@ -228,6 +228,39 @@ impl ProjectileSystem {
         recoil
     }
 
+    /// Spawn a projectile with an explicit state (fragments, spall, scripted
+    /// shots). No velocity noise or dispersion is applied; spin is zero.
+    ///
+    /// - `mass_kg` overrides the profile mass (drag acceleration uses it).
+    /// - `drag_multiplier` scales drag force — e.g. `(m/m_profile)^{2/3}` for
+    ///   same-shape fragments of a different mass.
+    ///
+    /// The per-shot RNG is seeded from `shot_id` exactly as in [`spawn`](Self::spawn).
+    pub fn spawn_with_velocity(
+        &mut self,
+        shot_id: ShotId,
+        profile_index: usize,
+        position: Vec3,
+        velocity: Vec3,
+        mass_kg: f64,
+        drag_multiplier: f64,
+    ) {
+        let rng = Xoshiro256StarStar::seed(shot_id.0 ^ 0x9E37_79B9_7F4A_7C15);
+        self.projectiles.push(Projectile {
+            id: shot_id,
+            profile_index,
+            x: position,
+            v: velocity,
+            mass: mass_kg,
+            spin_rad_s: 0.0,
+            alive: mass_kg > 0.0,
+            drag_work_j: 0.0,
+            drag_multiplier: drag_multiplier.max(1e-6),
+            rng,
+        });
+        self.projectiles.sort_by_key(|p| p.id);
+    }
+
     /// Apply recoil to a shooter body in `world`.
     pub fn apply_recoil(world: &mut World, body: usize, recoil: RecoilImpulse) {
         world.apply_impulse(body, recoil.impulse, recoil.point);
