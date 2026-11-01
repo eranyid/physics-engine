@@ -27,13 +27,14 @@ verifies the **SHA-512** from `SHA512-SUMS.txt`, caches `.godot-ci/`, builds the
 extension, and runs:
 
 ```bash
-./godot/ci/download_godot.sh
-cargo build -p pe-godot
-godot --headless --path godot/example -s res://ci_drop_test.gd
+./godot/ci/run_headless_drop.sh
+# stages target/debug/libpe_godot.so → godot/example/bin/, verifies
+# "Initialize godot-rust", then runs res://ci_drop_test.tscn
 ```
 
-Script (`godot/example/ci_drop_test.gd`): create world, ground plane, drop a
-box (`half=0.25` from `y=2`), step 180×`dt=1/60`, assert:
+`.gdextension` keys include `linux.x86_64` (required for headless) as well as
+`linux.debug/release.x86_64`. Script creates world, ground plane, drops a box
+(`half=0.25` from `y=2`), steps 180×`dt=1/60`, asserts:
 
 | Check | Measured (Linux x86_64, Godot 4.3.stable) |
 | --- | --- |
