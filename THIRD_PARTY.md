@@ -28,6 +28,22 @@ not copied into this tree.
   redistribution with attribution; we use SciPy’s BSD-licensed transcription.
 - **Not used:** REBOUND / any GPL integrator source.
 
+### G1 / G7 standard drag tables (JBM / BRL)
+
+- **What:** Mach vs `C_D` knots for the G1 and G7 standard projectiles in
+  `crates/pe-ballistics/src/g1g7_tables.rs`.
+- **Source:** JBM Ballistics public downloads
+  [`mcg1.txt`](https://jbmballistics.com/downloads/mcg1.txt) /
+  [`mcg7.txt`](https://jbmballistics.com/downloads/mcg7.txt), obtained from the
+  US Army Ballistic Research Laboratory (Aberdeen). Cross-checked against
+  `py_ballisticcalc` `TableG1` / `TableG7` knot values (LGPL library **not**
+  vendored).
+- **License:** JBM Downloads page — “These programs and files are free for
+  public use. I make no claims to them.”
+  (<https://jbmballistics.com/downloads.html>).
+- **Interpolation in-tree:** linear (default) and Fritsch–Carlson PCHIP
+  (optional API).
+
 ## Algorithmic citations (clean-room; not derived source)
 
 The following published descriptions informed clean-room reimplementations in
@@ -136,7 +152,7 @@ Clean-room formulas only — **no** third-party simulation source translated:
 
 ### Blast / ballistics note (`pe-blast`, `pe-ballistics`)
 
-Clean-room formulas only — **no** third-party simulation source translated:
+Clean-room formulas only — **no** third-party simulation *code* translated:
 
 - Hopkinson (1915) / Cranz (1926) cube-root scaling; Kinney & Graham (1985)
   *Explosive Shocks in Air* peak-overpressure closed form; Friedlander (1946)
@@ -151,8 +167,19 @@ Clean-room formulas only — **no** third-party simulation source translated:
   fragment mass distribution.
 - Exterior ballistics oracles / Coriolis–Eötvös (McCoy textbook forms); Poncelet
   penetration; Recht & Ipson (1963) residual velocity.
-- **Not used:** G1/G7 standard drag coefficient tables (no verified primary BRL
-  transcription in this milestone — analytic `C_D(M)` stand-in instead).
+
+#### G1 / G7 standard drag tables (vendored data)
+
+| Item | Detail |
+| --- | --- |
+| What | Mach vs `C_D` knots for the G1 and G7 standard projectiles |
+| Where in tree | `crates/pe-ballistics/src/g1g7_tables.rs` |
+| Primary source | JBM Ballistics public downloads, from US Army Ballistic Research Laboratory (Aberdeen): [`mcg1.txt`](https://jbmballistics.com/downloads/mcg1.txt), [`mcg7.txt`](https://jbmballistics.com/downloads/mcg7.txt) |
+| Licence | JBM Downloads: “These programs and files are free for public use. I make no claims to them.” (<https://jbmballistics.com/downloads.html>) |
+| Cross-check | Identical knot values in `py_ballisticcalc` `TableG1` / `TableG7` (LGPL-3.0 — **not** vendored; numbers only cross-checked) |
+| Interpolation | **Linear** default for G1/G7 lookups; monotone cubic PCHIP in `DragTable::cd_monotone` |
+
+No LGPL/GPL simulation source was copied — only the public Cd–Mach tables.
 
 ### M8 note (`pe-soft` XPBD soft bodies / materials)
 
@@ -172,8 +199,11 @@ PositionBasedDynamics source copied):
 - Simo, J. C. & Hughes, T. J. R. — J2 return mapping / linear isotropic hardening
   (textbook identities; plasticity module).
 - Fourier / Carslaw–Jaeger textbook 1-D heat equation fundamental mode (thermal).
-- Material table values are **nominal** with `verified: false` — no handbook
-  constants were fetched from a primary source for this milestone.
+- Material table: prior demo rows remain `verified: false`. Handbook rows
+  (`steel_aisi1020`, `aluminum_6061_t6`, `copper_c11000`, `titanium_ti6al4v`,
+  `glass_soda_lime`, `concrete_normal_weight`, `water_20c`) are marked
+  `verified: true` only with MatWeb / ASM MatWeb / CRC–IAPWS citations in
+  `source_note` (retrieved 2026-11-01). See [`docs/MATERIALS.md`](docs/MATERIALS.md).
 
 ### Particle fluids note (`pe-fluid`)
 

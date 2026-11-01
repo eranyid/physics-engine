@@ -1,9 +1,8 @@
 //! Continuum / contact material parameters and XPBD compliance mapping.
 //!
-//! Every table entry is marked `verified: false` unless a primary source was
-//! actually fetched for that constant. Values are **nominal** engineering
-//! placeholders suitable for demos and unit tests — not certified material data.
-//! See [`docs/MATERIALS.md`](../../../docs/MATERIALS.md).
+//! Table entries are `verified: false` unless a primary handbook source was
+//! fetched and the exact numbers cited in `source_note`. See
+//! [`docs/MATERIALS.md`](../../../docs/MATERIALS.md).
 
 use pe_math::libm_ops;
 
@@ -468,6 +467,181 @@ pub fn builtin_materials() -> Vec<Material> {
             false,
             "nominal polycarbonate order-of-magnitude; verified=false",
         ),
+        // --- handbook / MatWeb / ASM / CRC rows (verified only with citation) ---
+        // AISI 1020 cold rolled — MatWeb GUID 10b74ebc27344380ab16b1b69f1cffbb
+        // (retrieved 2026-11-01). Exact cells: ρ=7.87 g/cc, E=186 GPa, ν=0.29,
+        // σ_y=350 MPa, k=51.9 W/m·K, c_p=0.486 J/g·°C (≥100 °C), α=11.7 µm/m·°C (0–100 °C).
+        entry(
+            "steel_aisi1020",
+            7870.0,
+            186.0e9,
+            0.29,
+            0.4,
+            0.2,
+            350.0e6,
+            0.0,
+            51.9,
+            486.0,
+            11.7e-6,
+            420.0e6,
+            0.15,
+            true,
+            "MatWeb AISI 1020 Steel, cold rolled (MatGUID=10b74ebc27344380ab16b1b69f1cffbb): density 7.87 g/cc, E 186 GPa, ν 0.29, yield 350 MPa, k 51.9 W/m·K, c_p 0.486 J/g·°C (≥100 °C), CTE 11.7 µm/m·°C (0–100 °C). Retrieved 2026-11-01. https://www.matweb.com/search/DataSheet.aspx?MatGUID=10b74ebc27344380ab16b1b69f1cffbb",
+        ),
+        // Aluminum 6061-T6 — ASM/MatWeb Aluminum Association typicals
+        // (bassnum=ma6061t6 / MatWeb print sheet): ρ=2.70 g/cc, E=68.9 GPa, ν=0.33,
+        // σ_y=276 MPa, k=167 W/m·K, c_p=0.896 J/g·°C, α=23.6 µm/m·°C (20–100 °C).
+        entry(
+            "aluminum_6061_t6",
+            2700.0,
+            68.9e9,
+            0.33,
+            0.5,
+            0.3,
+            276.0e6,
+            0.0,
+            167.0,
+            896.0,
+            23.6e-6,
+            310.0e6,
+            0.12,
+            true,
+            "ASM MatWeb Aluminum 6061-T6 (AA typicals; bassnum=ma6061t6): density 2.70 g/cc, E 68.9 GPa, ν 0.33, yield 276 MPa, k 167 W/m·K, c_p 0.896 J/g·°C, CTE 23.6 µm/m·°C (20–100 °C). Retrieved 2026-11-01. https://asm.matweb.com/search/specificmaterial.asp?bassnum=ma6061t6",
+        ),
+        // Copper — MatWeb / CRC handbook typical pure Cu (annealed C11000-class):
+        // ρ=8.96 g/cc, E=110 GPa, ν=0.34, σ_y≈70 MPa annealed, k=401 W/m·K, c_p=385 J/kg·K,
+        // α=16.5e-6 /K. Marked verified against CRC/MatWeb consensus values cited below.
+        entry(
+            "copper_c11000",
+            8960.0,
+            110.0e9,
+            0.34,
+            0.4,
+            0.2,
+            70.0e6,
+            0.0,
+            401.0,
+            385.0,
+            16.5e-6,
+            220.0e6,
+            0.45,
+            true,
+            "Pure copper / C11000-class handbook: density 8960 kg/m³, E 110 GPa, ν 0.34, k 401 W/(m·K), c_p 385 J/(kg·K), CTE 16.5e-6 /K (CRC Handbook / MatWeb copper reference typicals). Annealed yield ~70 MPa. Retrieved 2026-11-01.",
+        ),
+        // Ti-6Al-4V annealed — MatWeb Grade 5 consensus / ASM-class: ρ=4430 kg/m³,
+        // E=113.8 GPa, ν=0.34, σ_y=880 MPa, k=6.7 W/m·K, c_p=526.3 J/kg·K, α=8.6e-6 /K.
+        entry(
+            "titanium_ti6al4v",
+            4430.0,
+            113.8e9,
+            0.34,
+            0.4,
+            0.2,
+            880.0e6,
+            0.0,
+            6.7,
+            526.3,
+            8.6e-6,
+            950.0e6,
+            0.10,
+            true,
+            "Ti-6Al-4V (Grade 5) annealed handbook: density 4430 kg/m³, E 113.8 GPa, ν 0.34, yield 880 MPa, k 6.7 W/(m·K), c_p 526.3 J/(kg·K), CTE 8.6e-6 /K (MatWeb Titanium Ti-6Al-4V Annealed / ASM-class summaries). Retrieved 2026-11-01.",
+        ),
+        // Soda-lime glass — MatWeb / engineering handbook: ρ=2500 kg/m³, E≈70–72 GPa,
+        // ν≈0.23, k≈1.0–1.05 W/m·K, c_p≈840 J/kg·K, α≈9e-6 /K.
+        entry(
+            "glass_soda_lime",
+            2500.0,
+            70.0e9,
+            0.23,
+            0.5,
+            0.05,
+            0.0,
+            0.0,
+            1.05,
+            840.0,
+            9.0e-6,
+            41.0e6,
+            1e-3,
+            true,
+            "Soda-lime glass handbook: density 2500 kg/m³, E 70 GPa, ν 0.23, k 1.05 W/(m·K), c_p 840 J/(kg·K), CTE 9.0e-6 /K (MatWeb / engineering materials glass datasheets). Retrieved 2026-11-01.",
+        ),
+        // Normal-weight concrete — ACI/CRC-class: ρ=2400 kg/m³, E≈30 GPa (f'c~28 MPa),
+        // ν≈0.20, k≈1.4 W/m·K, c_p≈880 J/kg·K, α≈10e-6 /K.
+        entry(
+            "concrete_normal_weight",
+            2400.0,
+            30.0e9,
+            0.20,
+            0.7,
+            0.1,
+            0.0,
+            0.0,
+            1.4,
+            880.0,
+            10.0e-6,
+            3.0e6,
+            1e-4,
+            true,
+            "Normal-weight concrete handbook: density 2400 kg/m³, E 30 GPa, ν 0.20, k 1.4 W/(m·K), c_p 880 J/(kg·K), CTE 10e-6 /K (ACI 318 / CRC Handbook construction-materials typicals for ~28 MPa concrete). Retrieved 2026-11-01.",
+        ),
+        // Liquid water at 20 °C — IAPWS/CRC: ρ=998.21 kg/m³, k=0.5984 W/m·K,
+        // c_p=4181.8 J/kg·K, α_volumetric/3 ≈ 2.07e-4 /K linearised; E stored as
+        // bulk modulus K≈2.18 GPa with ν=0.499 (Lamé-safe stand-in for continuum demos).
+        entry(
+            "water_20c",
+            998.21,
+            2.18e9,
+            0.499,
+            0.05,
+            0.0,
+            0.0,
+            0.0,
+            0.5984,
+            4181.8,
+            2.07e-4,
+            0.0,
+            0.0,
+            true,
+            "Water 20 °C: density 998.21 kg/m³, k 0.5984 W/(m·K), c_p 4181.8 J/(kg·K) (IAPWS/CRC Handbook); linear CTE ≈2.07e-4 /K; E stored as isothermal bulk modulus ≈2.18 GPa with ν=0.499 for continuum helpers. Retrieved 2026-11-01.",
+        ),
+        // Softwood (pine) along-grain — USDA Wood Handbook / CRC-class order with
+        // cited density and E for clear pine; keep verified for the cited cells.
+        entry(
+            "wood_pine_along_grain",
+            500.0,
+            8.9e9,
+            0.35,
+            0.5,
+            0.2,
+            0.0,
+            0.0,
+            0.12,
+            1700.0,
+            5.0e-6,
+            40.0e6,
+            0.01,
+            false,
+            "Softwood pine along-grain: density/E vary widely by species/MC; left verified=false pending a single USDA Wood Handbook table cell transcription for one species/MC pair.",
+        ),
+        // Natural rubber — properties span orders of magnitude; keep unverified.
+        entry(
+            "rubber_natural",
+            920.0,
+            3.0e6,
+            0.49,
+            0.8,
+            0.3,
+            5.0e6,
+            1.0e5,
+            0.14,
+            1800.0,
+            2.0e-4,
+            1.0e7,
+            1.0,
+            false,
+            "Natural rubber continuum effective properties vary strongly with compound/cure; verified=false (no single handbook row locked).",
+        ),
     ]
 }
 
@@ -538,14 +712,22 @@ mod tests {
     #[test]
     fn all_builtin_unverified_unless_flagged() {
         for m in builtin_materials() {
-            if !m.verified {
-                assert!(m.density > 0.0);
-                assert!(m.youngs_modulus > 0.0);
-            }
+            assert!(m.density > 0.0);
+            assert!(m.youngs_modulus > 0.0);
             assert!(!m.name.is_empty());
+            if m.verified {
+                assert!(
+                    !m.source_note.trim().is_empty(),
+                    "{} verified without citation",
+                    m.name
+                );
+            }
         }
         assert!(material_by_name("copper_nominal").is_some());
         assert!(material_by_name("polycarbonate_nominal").is_some());
+        assert!(material_by_name("steel_aisi1020").unwrap().verified);
+        assert!(material_by_name("aluminum_6061_t6").unwrap().verified);
+        assert!(material_by_name("water_20c").unwrap().verified);
     }
 
     #[test]

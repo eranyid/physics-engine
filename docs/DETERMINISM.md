@@ -326,9 +326,14 @@ Scenario (`pe_ballistics::ballistics_volley_hash`, `ballistics_hash` binary,
 
 | Platform | Hash (hex) | Status |
 | --- | --- | --- |
-| Linux x86_64 (CI + local) | `c839907696748e9a` | locked |
+| Linux x86_64 (CI + local) | `a9ec62a39bbd3dc4` | locked |
 | macOS (CI) | same expected | CI asserts equality |
 | Windows (CI) | same expected | CI asserts equality |
+
+Updated from `c839907696748e9a` when G1/G7 analytic stand-ins were replaced by the
+published JBM/BRL Cd–Mach tables with classical BC scaling
+(`BC_si = BC_imperial · 703.06958 · 4/π`). Same scenario inputs; trajectories
+(and therefore the packed FNV-1a) change. Cross-OS CI re-locks the new value.
 
 ### Canonical M8 soft-body hash (locked)
 

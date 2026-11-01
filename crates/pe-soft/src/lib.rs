@@ -24,7 +24,8 @@
 //!
 //! # Units
 //!
-//! SI throughout. Material table values are **nominal** and `verified: false`
+//! SI throughout. Material table: demo rows are **nominal** (`verified: false`);
+//! handbook rows may be `verified: true` with citations in `source_note`
 //! unless a primary source was fetched — see [`docs/MATERIALS.md`](../../docs/MATERIALS.md).
 //!
 //! # Deferred
