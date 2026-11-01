@@ -14,7 +14,8 @@ use pe_space::diagnostics::{angular_momentum, total_energy};
 use pe_space::field::{CentralMu, GravityField, NBodyPointMass};
 use pe_space::integrator::{AdaptiveStep, Integrator};
 use pe_space::integrators::{
-    compute_radau_nodes, Ias15, Leapfrog, Rk4, Rkf78, Whfast, WhfastCoords, Yoshida4, RADAU_H,
+    butcher_consistency_residual, compute_radau_nodes, ode_step, ode_step_fixed, Dop853, Ias15,
+    Leapfrog, Rk4, Rkf78, Whfast, WhfastCoords, WhfastCorrector, Yoshida4, RADAU_H,
 };
 use pe_space::kepler::{
     elements_to_state, mean_motion, orbital_period, propagate_universal, state_to_elements,
@@ -22,7 +23,7 @@ use pe_space::kepler::{
 };
 use pe_space::perturbations::{accel_j2, j2_nodal_rate, J2Model};
 use pe_space::scenarios::{
-    figure_eight_hash, figure_eight_state, ias15_hash, FIGURE_EIGHT_PERIOD_RETURN,
+    dop853_hash, figure_eight_hash, figure_eight_state, ias15_hash, FIGURE_EIGHT_PERIOD_RETURN,
 };
 use pe_space::state::NBodyState;
 
@@ -543,9 +544,7 @@ fn angular_momentum_conserved_nbody_leapfrog() {
 }
 
 #[test]
-fn rkf78_still_available_as_dop853_standin() {
-    // DOP853 tableau was not reproduced from Hairer/Norsett/Wanner in this PR;
-    // RKF78 remains the adaptive high-order stand-in (`Dop853` type alias).
+fn rkf78_still_available() {
     let mut state = figure_eight_state();
     let field = NBodyPointMass::geometric();
     let mut integ = Rkf78 {
@@ -559,4 +558,259 @@ fn rkf78_still_available_as_dop853_standin() {
     };
     let res = integ.step(&field, &mut state, 0.0, 1e-3);
     assert!(res.dt_taken > 0.0);
+}
+
+#[test]
+fn dop853_butcher_consistency() {
+    let (row, bsum) = butcher_consistency_residual();
+    assert!(row < 1e-14, "Σ A_ij = c_i residual {row}");
+    assert!(bsum < 1e-14, "Σ B_i = 1 residual {bsum}");
+}
+
+#[test]
+fn dop853_convergence_order_8_smooth_ode() {
+    // y' = y, y(0)=1 → y(T)=e^T. Choose T and h so n = T/h is exact.
+    let f = |_t: f64, y: &[f64]| vec![y[0]];
+    let t_end: f64 = 2.0;
+    let exact = libm_ops::exp(t_end);
+    let hs = [1.0_f64, 0.5, 0.25];
+    let mut errs = [0.0_f64; 3];
+    for (k, &h) in hs.iter().enumerate() {
+        let n = (t_end / h + 0.5) as usize;
+        assert!(((n as f64) * h - t_end).abs() < 1e-15);
+        let mut y = vec![1.0];
+        let mut t = 0.0;
+        for _ in 0..n {
+            y = ode_step_fixed(&f, t, &y, h);
+            t += h;
+        }
+        errs[k] = libm_ops::fabs(y[0] - exact);
+    }
+    let r01 = errs[0] / errs[1];
+    let r12 = errs[1] / errs[2];
+    let slope = libm_ops::log(r12) / libm_ops::log(2.0);
+    eprintln!("DOP853 order-8 errs={errs:?} ratios r01={r01:.2} r12={r12:.2} slope={slope:.2}");
+    assert!(
+        r01 > 64.0 && r12 > 64.0,
+        "expected ~256 ratios for order 8; got {r01}, {r12} (errs={errs:?})"
+    );
+    assert!(
+        slope > 7.0 && slope < 9.5,
+        "convergence slope {slope} (want ~8)"
+    );
+}
+
+#[test]
+fn dop853_kepler_energy_and_angular_momentum() {
+    let mu = EARTH_MU;
+    let a = 1.0e7;
+    let el = KeplerElements {
+        a,
+        e: 0.5,
+        i: 0.0,
+        raan: 0.0,
+        arg_p: 0.0,
+        true_anomaly: 0.0,
+    };
+    let (r, v) = elements_to_state(mu, el).unwrap();
+    let mut state = NBodyState::new(vec![1.0], vec![r], vec![v]);
+    let field = CentralMu::new(mu);
+    let e0 = total_energy(&field, &state);
+    let l0 = angular_momentum(&state, Vec3::zero());
+    let period = orbital_period(mu, a);
+    let mut integ = Dop853::new(AdaptiveStep {
+        dt: period / 50.0,
+        dt_min: 1e-4,
+        dt_max: period / 10.0,
+        atol: 1e-12,
+        rtol: 1e-12,
+    });
+    let mut t = 0.0;
+    while t < period {
+        let res = integ.step(&field, &mut state, t, integ.ctrl.dt.min(period - t));
+        t = res.t;
+    }
+    let e1 = total_energy(&field, &state);
+    let l1 = angular_momentum(&state, Vec3::zero());
+    let de = libm_ops::fabs((e1 - e0) / e0);
+    let dl = (l1 - l0).norm() / l0.norm();
+    eprintln!("DOP853 Kepler: |ΔE/E|={de:.3e} |ΔL|/|L|={dl:.3e}");
+    assert!(de < 1e-10, "energy drift {de}");
+    assert!(dl < 1e-10, "angular-momentum drift {dl}");
+}
+
+#[test]
+fn dop853_arenstorf_period_closure() {
+    // Hairer Arenstorf orbit (restricted 3-body, rotating frame).
+    let mu = 0.012_277_471;
+    let mup = 1.0 - mu;
+    let period = 17.065_216_560_157_964;
+    // Hairer Arenstorf IC (digits beyond f64 truncated for clippy).
+    let y0 = [0.994, 0.0, 0.0, -2.001_585_106_379_082_4];
+    let f = move |_t: f64, y: &[f64]| -> Vec<f64> {
+        let (y1, y2, y3, y4) = (y[0], y[1], y[2], y[3]);
+        let d1 = libm_ops::pow((y1 + mu) * (y1 + mu) + y2 * y2, 1.5);
+        let d2 = libm_ops::pow((y1 - mup) * (y1 - mup) + y2 * y2, 1.5);
+        vec![
+            y3,
+            y4,
+            y1 + 2.0 * y4 - mup * (y1 + mu) / d1 - mu * (y1 - mup) / d2,
+            y2 - 2.0 * y3 - mup * y2 / d1 - mu * y2 / d2,
+        ]
+    };
+    let mut ctrl = AdaptiveStep {
+        dt: 1e-2,
+        dt_min: 1e-8,
+        dt_max: 0.5,
+        atol: 1e-10,
+        rtol: 1e-10,
+    };
+    let mut y = y0.to_vec();
+    let mut t = 0.0;
+    while t < period - 1e-14 {
+        let h = ctrl.dt.min(period - t);
+        let (yn, tn, _dt, _err) = ode_step(&f, t, &y, h, &mut ctrl);
+        y = yn;
+        t = tn;
+    }
+    let mut err = 0.0;
+    for i in 0..4 {
+        err += (y[i] - y0[i]) * (y[i] - y0[i]);
+    }
+    err = libm_ops::sqrt(err);
+    eprintln!("Arenstorf period closure err={err:.3e}");
+    assert!(err < 1e-6, "Arenstorf closure {err} (tol 1e-6)");
+}
+
+#[test]
+fn dop853_hash_bit_stable_on_repeat() {
+    let h1 = dop853_hash();
+    let h2 = dop853_hash();
+    assert_eq!(h1, h2);
+}
+
+#[test]
+fn whfast_corrector_improves_energy_vs_dkd() {
+    // Large dt so O(ε dt²) dominates plain DKD; correctors remove that term
+    // (Rein & Tamayo 2015 / Wisdom 2006). Measured |ΔE/E| must drop.
+    let field = NBodyPointMass::geometric();
+    let t_end: f64 = 500.0;
+    let dt = 1.0; // ~1/6 of innermost period 2π
+    let n_steps: usize = (t_end / dt).round() as usize;
+
+    let mut plain = synthetic_outer_system();
+    let e0 = total_energy(&field, &plain);
+    let mut integ_plain = Whfast::new(1.0, WhfastCoords::Jacobi);
+    integ_plain.integrate_corrected(&field, &mut plain, 0.0, dt, n_steps);
+    let err_plain = libm_ops::fabs((total_energy(&field, &plain) - e0) / e0);
+
+    let mut corr = synthetic_outer_system();
+    let e0c = total_energy(&field, &corr);
+    let mut integ_c =
+        Whfast::new(1.0, WhfastCoords::Jacobi).with_corrector(WhfastCorrector::Order11);
+    integ_c.integrate_corrected(&field, &mut corr, 0.0, dt, n_steps);
+    let err_corr = libm_ops::fabs((total_energy(&field, &corr) - e0c) / e0c);
+
+    eprintln!("WHFast energy |ΔE/E| dt=1: plain={err_plain:.3e} c11={err_corr:.3e}");
+    assert!(
+        err_corr < err_plain * 0.5,
+        "corrector should cut energy error: plain={err_plain} c11={err_corr}"
+    );
+}
+
+#[test]
+fn whfast_corrector_order_scaling() {
+    // Position error vs fine reference: plain DKD ~ O(dt²); with order-5
+    // corrector the leading O(ε dt²) map error is removed so accuracy improves
+    // at fixed large dt (Rein & Tamayo). Energy still scales ~dt² from O(ε² dt²).
+    let field = NBodyPointMass::geometric();
+    let t_end: f64 = 20.0;
+    // Fine reference (plain, small dt)
+    let mut ref_state = synthetic_outer_system();
+    let mut integ_ref = Whfast::new(1.0, WhfastCoords::Jacobi);
+    let dt_ref = 0.01;
+    let n_ref: usize = (t_end / dt_ref).round() as usize;
+    integ_ref.integrate_corrected(&field, &mut ref_state, 0.0, dt_ref, n_ref);
+
+    let dt = 0.5_f64;
+    let n: usize = (t_end / dt).round() as usize;
+    let mut plain = synthetic_outer_system();
+    let mut integ_p = Whfast::new(1.0, WhfastCoords::Jacobi);
+    integ_p.integrate_corrected(&field, &mut plain, 0.0, dt, n);
+    let mut err_p = 0.0;
+    for i in 0..plain.n() {
+        err_p += (plain.x[i] - ref_state.x[i]).norm_squared();
+    }
+    err_p = libm_ops::sqrt(err_p);
+
+    let mut corr = synthetic_outer_system();
+    let mut integ_c =
+        Whfast::new(1.0, WhfastCoords::Jacobi).with_corrector(WhfastCorrector::Order5);
+    integ_c.integrate_corrected(&field, &mut corr, 0.0, dt, n);
+    let mut err_c = 0.0;
+    for i in 0..corr.n() {
+        err_c += (corr.x[i] - ref_state.x[i]).norm_squared();
+    }
+    err_c = libm_ops::sqrt(err_c);
+
+    eprintln!("WHFast pos err vs fine ref dt=0.5: plain={err_p:.3e} c5={err_c:.3e}");
+    assert!(
+        err_c < err_p * 0.8,
+        "order-5 corrector should improve position accuracy: plain={err_p} c5={err_c}"
+    );
+
+    // Energy scaling of corrected map remains at least order 2.
+    let dts = [1.0_f64, 0.5];
+    let mut errs_e = [0.0_f64; 2];
+    for (k, &dti) in dts.iter().enumerate() {
+        let n = (t_end / dti).round() as usize;
+        let mut s = synthetic_outer_system();
+        let e0 = total_energy(&field, &s);
+        let mut integ =
+            Whfast::new(1.0, WhfastCoords::Jacobi).with_corrector(WhfastCorrector::Order5);
+        integ.integrate_corrected(&field, &mut s, 0.0, dti, n);
+        errs_e[k] = libm_ops::fabs((total_energy(&field, &s) - e0) / e0);
+    }
+    let r = errs_e[0] / errs_e[1];
+    eprintln!("WHFast c5 energy errs={errs_e:?} ratio={r:.2} (expect ~4 for dt²)");
+    assert!(
+        r > 2.5,
+        "corrected energy error should scale ~dt², ratio={r}"
+    );
+}
+
+#[test]
+fn whfast_corrector_roundtrip() {
+    let mut state = synthetic_outer_system();
+    let x0: Vec<_> = state.x.clone();
+    let v0: Vec<_> = state.v.clone();
+    let mut integ = Whfast::new(1.0, WhfastCoords::Jacobi).with_corrector(WhfastCorrector::Order3);
+    let dt = 1.0;
+    integ.to_mapping(&mut state, dt);
+    integ.to_physical(&mut state);
+    let mut err = 0.0;
+    for i in 0..state.n() {
+        err += (state.x[i] - x0[i]).norm_squared() + (state.v[i] - v0[i]).norm_squared();
+    }
+    err = libm_ops::sqrt(err);
+    eprintln!("corrector roundtrip err={err:.3e}");
+    assert!(err < 1e-10, "roundtrip err {err}");
+}
+
+#[test]
+fn whfast_corrector_alone_changes_state() {
+    let mut state = synthetic_outer_system();
+    let x0: Vec<_> = state.x.clone();
+    let mut integ = Whfast::new(1.0, WhfastCoords::Jacobi).with_corrector(WhfastCorrector::Order3);
+    integ.to_mapping(&mut state, 1.0);
+    let mut err = 0.0;
+    for (xi, x0i) in state.x.iter().zip(x0.iter()) {
+        err += (*xi - *x0i).norm_squared();
+    }
+    err = libm_ops::sqrt(err);
+    eprintln!("mapping displacement={err:.3e}");
+    assert!(
+        err > 1e-8,
+        "corrector should move state into mapping coords"
+    );
 }

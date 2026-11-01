@@ -1,7 +1,7 @@
 //! Strip-theory seakeeping (heave + pitch) after Salvesen, Tuck & Faltinsen (1970).
 //!
 //! Frequency-domain RAOs for regular **head seas**, plus a constant-coefficient
-//! time-domain integrator (Cummins memory deferred — see limits below).
+//! time-domain integrator. Cummins retardation memory lives in [`crate::cummins`].
 //!
 //! # Sectional hydrodynamics
 //!
@@ -32,7 +32,8 @@
 //!
 //! # Limits / deferred
 //!
-//! - Constant-coefficient time domain only (no Cummins retardation convolution).
+//! - This module's [`HeavePitchTd`] freezes matrices at one `ω_ref`; for
+//!   retardation convolution see [`crate::cummins`].
 //! - No forward speed (`U = 0`); no roll/sway/yaw; no viscous roll damping.
 //! - Lewis/circular substitute — **not** ITTC/Vugts tabulated sections.
 //! - Diffraction is the STF strip Haskind approximation, not a 3-D panel code.

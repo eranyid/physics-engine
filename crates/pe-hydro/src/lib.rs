@@ -7,16 +7,18 @@
 //! (no `HashMap` in the step; spectral phases from seeded xoshiro256**).
 //!
 //! **M11:** [`morison`] (slender-member wave loads) and [`seakeeping`] (STF
-//! heave/pitch strip theory). See `docs/SEAKEEPING.md`.
+//! heave/pitch strip theory). **Cummins** retardation memory: [`cummins`].
+//! See `docs/SEAKEEPING.md`.
 //!
-//! **Deferred:** Cummins radiation memory, 6-DOF seakeeping, MacCamy–Fuchs,
-//! tabulated Vugts sections, forward-speed strip theory.
+//! **Deferred:** 6-DOF / coupled Cummins, MacCamy–Fuchs, tabulated Vugts
+//! sections, forward-speed strip theory.
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 #![allow(clippy::needless_range_loop)]
 
 pub mod clip;
+pub mod cummins;
 pub mod force;
 pub mod helpers;
 pub mod hull;
@@ -25,6 +27,11 @@ pub mod scenarios;
 pub mod seakeeping;
 pub mod waves;
 
+pub use cummins::{
+    box_heave_b33_samples, box_heave_retardation, canonical_cummins_hash, damping_from_retardation,
+    free_decay_cummins_vs_fd, relative_l2, retardation_from_damping, CumminsHeave,
+    RetardationKernel,
+};
 pub use force::{Buoyancy, HullDrag, WaveDrag};
 pub use helpers::{
     angle_of_vanishing_stability, bm_from_inertia, box_added_mass_heave, box_added_mass_surge,

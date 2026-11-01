@@ -100,10 +100,10 @@ documented value. Formula identity: measured bit-exact / 1e-12.
 
 with \(A_{33}\) from strip \(a_{33}^\infty\); identity measured to 1e-12 relative.
 
-### Time domain / free decay
+### Time domain / free decay (frozen coefficient)
 
 Constant-coefficient integrator at a single frozen \(\omega_\mathrm{ref}\)
-(semi-implicit Euler). **No Cummins retardation** — documented limit.
+(semi-implicit Euler). For retardation memory see **Cummins** below.
 
 Free-decay uses RK4 + multi-cycle log-decrement on positive peaks
 (\(\beta = B_{33}/(2(m+A_{33}))\)):
@@ -112,7 +112,37 @@ Free-decay uses RK4 + multi-cycle log-decrement on positive peaks
 | --- | --- | --- |
 | \(\|\beta_\mathrm{fit}-\beta\|/\beta\) | **3%** | **~0%** (dt=5e-4, 80k steps) |
 
+---
+
+## Cummins retardation (`pe_hydro::cummins`)
+
+Impulse-response memory for heave (Cummins 1962 / Ogilvie 1964):
+
+\[
+K(t)=\frac{2}{\pi}\int_0^{\omega_{\max}} B(\omega)\cos(\omega t)\,d\omega
+\]
+
+\[
+(m+A_\infty)\ddot z+\int_0^t K(t-\tau)\dot z(\tau)\,d\tau+C z=F(t)
+\]
+
+`B(ω)` from strip `B₃₃`; `A_∞` from sectional `a₃₃∞`; trapezoidal cosine
+transform; convolution with trapezoidal weights on a uniform `Δt` grid.
+
+### Validation (measured)
+
+| Check | Tolerance | Measured |
+| --- | --- | --- |
+| Analytic `B(ω)=e^{−αω}` → `K(t)=(2/π)α/(α²+t²)` (α=0.5) | **2%** | **≲ 6e-4** |
+| Mid-band `K(t)↔B(ω)` relative L2 (box 40×8×2) | **8%** | **~0.95%** |
+| Free-decay `β_fit` vs FD `B(ωₙ)/(2(m+A_∞))` | **30%** | **~22.6%** |
+| Cross-OS `cummins_hash` | locked | `1ee2f57b9c89c3ae` |
+
+The FD free-decay comparison is approximate (memory ≠ frozen `B`); the locked
+tol is from the measured residual, not loosened further.
+
 ### Deferred
 
-Cummins memory; forward speed \(U\neq 0\); roll/sway/yaw; tabulated Vugts /
-Frank close-fit sections; 3-D panel diffraction; viscous roll damping.
+Forward speed \(U\neq 0\); roll/sway/yaw; tabulated Vugts /
+Frank close-fit sections; 3-D panel diffraction; viscous roll damping;
+multi-DOF Cummins coupling matrix.

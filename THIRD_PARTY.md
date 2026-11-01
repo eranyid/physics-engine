@@ -15,8 +15,18 @@ not copied into this tree.
 
 ## Entries (vendored / derived source)
 
-_None yet. No third-party simulation source has been vendored or derived into
-this tree._
+### DOP853 Butcher tableau (SciPy / Hairer)
+
+- **What:** Floating-point coefficient tables for the Dormand–Prince 8(5,3)
+  method (`C`, `A`, `B`, `E3`, `E5`, dense-output `D`) used in
+  `crates/pe-space/src/integrators/dop853.rs`.
+- **Source:** SciPy 1.14.1
+  [`scipy/integrate/_ivp/dop853_coefficients.py`](https://github.com/scipy/scipy/blob/v1.14.1/scipy/integrate/_ivp/dop853_coefficients.py)
+  (BSD-3-Clause), which reproduces Hairer’s `dop853.f` tables from
+  Hairer, Nørsett & Wanner, *Solving Ordinary Differential Equations I*.
+- **License:** BSD-3-Clause (SciPy). Hairer’s original Fortran notice permits
+  redistribution with attribution; we use SciPy’s BSD-licensed transcription.
+- **Not used:** REBOUND / any GPL integrator source.
 
 ## Algorithmic citations (clean-room; not derived source)
 
@@ -51,8 +61,9 @@ other GPL/AGPL/LGPL projects):
 - Yoshida, H. (1990). Construction of higher order symplectic integrators.
   *Phys. Lett. A* **150**.
 - Fehlberg, E. (1968). Classical fifth-, sixth-, seventh-, and eighth-order
-  Runge–Kutta formulas with stepsize control. NASA TR R-287. (RKF78; DOP853
-  stand-in — Hairer tableau not reproduced.)
+  Runge–Kutta formulas with stepsize control. NASA TR R-287. (RKF78.)
+- Hairer, E., Nørsett, S. P. & Wanner, G. *Solving ODEs I* — DOP853 method;
+  coefficient tables via SciPy BSD transcription (see Entries above).
 - Izzo, D. (2015). Revisiting Lambert's problem. *Celest. Mech. Dyn. Astr.* **121**.
 - Battin / Danby / Vallado textbook identities for Stumpff functions and universal
   Kepler variables.
@@ -63,6 +74,9 @@ other GPL/AGPL/LGPL projects):
   transforms (§3.1), DKD Wisdom–Holman split; Duncan, Levison & Lee (1998)
   democratic-heliocentric option. Universal Kepler drift via in-tree Stumpff
   helpers. **No** REBOUND source.
+- Wisdom, J. (2006). Symplectic correctors for canonical heliocentric n-body
+  maps. *AJ* **131**, 2294 — `α=√(7/40)`, `β=1/(48α)`, `X`/`Z` operators,
+  orders 3/5/7/11. **No** REBOUND source.
 - Wisdom & Holman (1991). Symplectic maps for the N-body problem. *AJ* **102**.
 - Chenciner–Montgomery / Simó figure-eight initial conditions are published IC values.
 
@@ -98,6 +112,10 @@ Clean-room formulas only — **no** third-party simulation source translated:
   circular / Lewis-substitute sectional added-mass idea.
 - Faltinsen (1990) *Sea Loads…*; Newman *Marine Hydrodynamics* — floating-circle
   \(a_{33}^\infty\), non-dimensional damping scaling (β=0.5 marked nominal).
+- Cummins, W. E. (1962). The impulse response function and ship motions —
+  retardation `K(t)` cosine transform + convolution time domain.
+- Ogilvie, T. F. (1964). Recent progress toward the understanding and prediction
+  of ship motions.
 - Glauert, H. (1935). Airplane propellers (Durand). Momentum + blade element.
 - Prandtl tip-loss factor as quoted in Leishman, *Principles of Helicopter
   Aerodynamics*.
