@@ -39,8 +39,10 @@ Cross-check helpers:
   `physics_engine_rs.canonical_blast_hash()`
 - Ballistics: `cargo run -p pe-ballistics --bin ballistics_hash --release` /
   `physics_engine_rs.canonical_ballistics_hash()`
-- Fluids: `cargo run -p pe-fluid --bin fluid_hash --release` /
+- Fluids (PBF): `cargo run -p pe-fluid --bin fluid_hash --release` /
   `physics_engine_rs.canonical_fluid_hash()`
+- Fluids (DFSPH): `cargo run -p pe-fluid --bin dfsph_hash --release` /
+  `physics_engine_rs.canonical_dfsph_hash()`
 - M9 wave-body: `cargo run -p pe-hydro --bin wave_body_hash --release` /
   `physics_engine_rs.canonical_wave_body_hash()`
 - M8 soft bodies: `cargo run -p pe-soft --bin soft_hash --release` /
@@ -304,6 +306,29 @@ Scenario (`pe_fluid::fluid_tank_hash`, `fluid_hash` binary,
 | Windows (CI) | same expected | CI asserts equality |
 
 Helper: `cargo run -p pe-fluid --bin fluid_hash --release`.
+
+### Canonical DFSPH-tank hash (locked)
+
+Scenario (`pe_fluid::dfsph_tank_hash`, `dfsph_hash` binary,
+`physics_engine_rs.canonical_dfsph_hash()`):
+
+- DFSPH 3-D tank: 4×4×4 fluid lattice (`dx=0.05`, `h=2dx`, `ρ₀=1000`, mass
+  calibrated to cubic-spline lattice rest density) in an Akinci boundary shell
+  with recomputed `ψ`; gravity −z; compression-only density/divergence solvers;
+  warm start on; XSPH `ε=0.05`; max 8 density + 8 divergence iterations;
+  tolerances 1%.
+- 40 steps @ `dt = 1/120` (adaptive CFL off for the hash).
+- Hash: FNV-1a 64 over fluid particle `(x, v)` IEEE bits in index order.
+- Neighbour search: sorted uniform-grid cell lists (no `HashMap` iteration).
+- Elementary functions: portable `pe_math::libm_ops` only; no FMA on the step path.
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `f1f2825b5eeaab0d` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+Helper: `cargo run -p pe-fluid --bin dfsph_hash --release`.
 
 If a platform ever diverges, **do not silently loosen**: record the OS, toolchain,
 exact first differing packed index / float bits, and root cause (usually accidental

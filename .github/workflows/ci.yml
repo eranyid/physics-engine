@@ -339,3 +339,16 @@ jobs:
             echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
             exit 1
           fi
+
+      - name: Compute canonical DFSPH-tank hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-fluid --bin dfsph_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical DFSPH hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=f1f2825b5eeaab0d
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::DFSPH determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi

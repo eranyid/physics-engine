@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "Particle fluids: SPH (WCSPH) and PBF, 3D with 2D test mode"
+description = "Particle fluids: SPH (WCSPH), PBF, and DFSPH, 3D with 2D test mode"
 
 [dependencies]
 pe-math = { workspace = true }
@@ -21,3 +21,7 @@ harness = false
 [[bin]]
 name = "fluid_hash"
 path = "src/bin/fluid_hash.rs"
+
+[[bin]]
+name = "dfsph_hash"
+path = "src/bin/dfsph_hash.rs"

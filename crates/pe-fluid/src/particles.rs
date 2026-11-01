@@ -138,6 +138,50 @@ pub fn mass_from_spacing(rest_density: f64, dx: f64, dim: Dim) -> f64 {
     }
 }
 
+/// Calibrate particle mass so a full lattice neighbourhood sums to `rest_density`.
+///
+/// With coarse `h/dx ≈ 2`, the rectangle-rule sum `Σ V W` is several percent below
+/// 1, so `m = ρ₀ dx^d` systematically under-densifies. This helper sets
+/// `m = ρ₀ / Σ_j W(|x_j−x_i|, h)` on a reference lattice (self included).
+pub fn mass_calibrated_to_rest(
+    rest_density: f64,
+    dx: f64,
+    h: f64,
+    dim: Dim,
+    kern: crate::kernels::KernelKind,
+) -> f64 {
+    use crate::kernels::{support_radius, w};
+    let support = support_radius(kern, h);
+    let n = ((support / dx).ceil() as i32) + 1;
+    let mut sum_w = w(kern, 0.0, h, dim);
+    for ix in -n..=n {
+        for iy in -n..=n {
+            let jz_range = match dim {
+                Dim::D2 => 0..=0,
+                Dim::D3 => -n..=n,
+            };
+            for iz in jz_range {
+                if ix == 0 && iy == 0 && iz == 0 {
+                    continue;
+                }
+                let r = pe_math::libm_ops::sqrt(
+                    (ix as f64 * dx) * (ix as f64 * dx)
+                        + (iy as f64 * dx) * (iy as f64 * dx)
+                        + (iz as f64 * dx) * (iz as f64 * dx),
+                );
+                if r < support {
+                    sum_w += w(kern, r, h, dim);
+                }
+            }
+        }
+    }
+    if sum_w < 1e-30 {
+        mass_from_spacing(rest_density, dx, dim)
+    } else {
+        rest_density / sum_w
+    }
+}
+
 /// Fill a rectangular fluid block on a lattice (inclusive-exclusive in index space).
 ///
 /// `origin` is the centre of the first particle; spacing `dx`.
@@ -168,11 +212,45 @@ pub fn fill_box(
     }
 }
 
+/// Recompute Akinci boundary volumes `ψ_b = 1 / Σ_{k∈∂} W(|x_b−x_k|, h)`.
+///
+/// Call after all boundary samples are inserted. The density contribution of a
+/// boundary particle is then `ρ₀ ψ_b W`, matching Akinci et al. (2012). The
+/// crude `ψ = dx^d` placeholder used at insertion is replaced.
+pub fn recomputed_akinci_psi(parts: &mut Particles, kern: crate::kernels::KernelKind) {
+    use crate::kernels::{support_radius, w};
+    let h = parts.h;
+    let dim = parts.dim;
+    let support = support_radius(kern, h);
+    let n = parts.len();
+    // Gather boundary indices (deterministic index order).
+    let mut bound = Vec::new();
+    for i in 0..n {
+        if parts.kind[i] == ParticleKind::Boundary {
+            bound.push(i);
+        }
+    }
+    for &bi in &bound {
+        let xb = parts.x[bi];
+        let mut delta = w(kern, 0.0, h, dim); // self
+        for &bj in &bound {
+            if bj == bi {
+                continue;
+            }
+            let r = (parts.x[bj] - xb).norm();
+            if r < support {
+                delta += w(kern, r, h, dim);
+            }
+        }
+        parts.psi[bi] = if delta > 1e-30 { 1.0 / delta } else { 0.0 };
+    }
+}
+
 /// Sample Akinci boundary particles on an axis-aligned box shell (walls).
 ///
-/// Places particles on the six faces (or four in 2-D) at spacing `dx`, with
-/// `psi = dx^d` (volume/area of the sample). Corners/edges may be duplicated
-/// slightly — acceptable for engineering boundary samples.
+/// Places particles on the six faces (or four in 2-D) at spacing `dx`, with a
+/// provisional `psi = dx^d`. Call [`recomputed_akinci_psi`] afterwards for the
+/// paper-accurate volume. Corners/edges may be duplicated slightly.
 pub fn fill_box_boundary(parts: &mut Particles, min: Vec3, max: Vec3, dx: f64, layers: usize) {
     let psi = match parts.dim {
         Dim::D2 => dx * dx,

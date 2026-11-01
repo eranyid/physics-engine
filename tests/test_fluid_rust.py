@@ -17,6 +17,15 @@ def test_canonical_fluid_hash_stable():
     assert isinstance(a, int)
 
 
+def test_canonical_dfsph_hash_stable():
+    a = pe.canonical_dfsph_hash()
+    b = pe.canonical_dfsph_hash()
+    assert a == b
+    assert isinstance(a, int)
+    # Locked cross-OS value (docs/DETERMINISM.md); do not loosen silently.
+    assert a == 0xF1F2825B5EEAAB0D
+
+
 def test_ritter_front_matches_formula():
     g, h0, t = 9.81, 1.0, 0.5
     xf = pe.fluid_ritter_front(g, h0, t)
@@ -38,6 +47,16 @@ def test_pbf_tank_demo_numpy_shapes():
     assert dens.dtype == np.float64
     assert err >= 0.0
     # Settling may not reach 1% in 20 steps; just sanity-bound
+    assert err < 0.5
+
+
+def test_dfsph_tank_demo_numpy_shapes():
+    pos, dens, err = pe.fluid_dfsph_tank_demo(n_side=4, steps=20, dt=1.0 / 120.0, dim="3")
+    assert isinstance(pos, np.ndarray)
+    assert pos.ndim == 2 and pos.shape[1] == 3
+    assert dens.shape == (pos.shape[0],)
+    assert dens.dtype == np.float64
+    assert err >= 0.0
     assert err < 0.5
 
 

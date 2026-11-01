@@ -36,7 +36,7 @@ crates/pe-collision/  shapes, BroadPhase/NarrowPhase traits, ContactWorld, colli
 crates/pe-aero/       ISA atmosphere, WingPolar/stall, thrust, AircraftAero
 crates/pe-hydro/      Box/Cylinder/Sphere/Mesh hulls, Buoyancy, GM/GZ, IMO IS Code, aero_hydro_hash
 crates/pe-soft/       XPBD soft bodies / cloth / rope / tet FEM / materials (see docs/SOFT.md)
-crates/pe-fluid/      SPH (WCSPH) + PBF particle fluids (3-D / 2-D tests), fluid_hash
+crates/pe-fluid/      SPH (WCSPH) + PBF + DFSPH particle fluids (3-D / 2-D tests), fluid_hash / dfsph_hash
 python/               PyO3 module physics_engine_rs (abi3 ≥ 3.10) — World + ContactWorld + aero/hydro + soft + fluid
 ```
 

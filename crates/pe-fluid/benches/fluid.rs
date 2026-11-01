@@ -3,7 +3,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use pe_fluid::particles::{fill_box, fill_box_boundary, mass_from_spacing, Particles};
 use pe_fluid::pbf::{PbfParams, PbfWorld};
-use pe_fluid::scenarios::fluid_tank_hash;
+use pe_fluid::scenarios::{dfsph_tank_hash, fluid_tank_hash};
 use pe_fluid::wcsph::{WcsphParams, WcsphWorld};
 use pe_fluid::Dim;
 use pe_math::{Vec3, STANDARD_GRAVITY};
@@ -13,6 +13,10 @@ fn bench_fluid(c: &mut Criterion) {
 
     group.bench_function("fluid_tank_hash", |b| {
         b.iter(|| std::hint::black_box(fluid_tank_hash()))
+    });
+
+    group.bench_function("dfsph_tank_hash", |b| {
+        b.iter(|| std::hint::black_box(dfsph_tank_hash()))
     });
 
     group.bench_function("pbf_1k_particles_10_steps", |b| {
