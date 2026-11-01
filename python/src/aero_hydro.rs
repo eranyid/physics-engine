@@ -18,13 +18,14 @@ use pe_hydro::hull::{
 use pe_hydro::waves::{AiryWave, SpectralOcean, Wave, WaveField};
 use pe_hydro::{
     airy_inertia_closed_form, angle_of_vanishing_stability, box_added_mass_heave,
-    box_added_mass_surge, box_barge_stations, box_heave_natural_omega_earth,
-    box_righting_arm_curve, canonical_m11_hash as m11_hash_rs,
-    canonical_wave_body_hash as wave_body_hash_rs, check_imo_is_code, deep_water_wavelength,
-    group_speed, heave_period_earth, heave_period_with_added_mass, heave_pitch_rao,
-    integrate_morison_fixed, metacentric_height, phase_speed, pierson_moskowitz_hs_approx,
-    righting_arm, righting_moment, roll_natural_period, roll_period_earth, solve_wave_number,
-    Buoyancy, HullDrag, MorisonMember, WaveDrag, NOMINAL_CD_CIRCULAR, NOMINAL_CM_CIRCULAR,
+    box_added_mass_surge, box_barge_stations, box_heave_natural_omega_earth, box_heave_retardation,
+    box_righting_arm_curve, canonical_cummins_hash as cummins_hash_rs,
+    canonical_m11_hash as m11_hash_rs, canonical_wave_body_hash as wave_body_hash_rs,
+    check_imo_is_code, damping_from_retardation, deep_water_wavelength, group_speed,
+    heave_period_earth, heave_period_with_added_mass, heave_pitch_rao, integrate_morison_fixed,
+    metacentric_height, phase_speed, pierson_moskowitz_hs_approx, relative_l2, righting_arm,
+    righting_moment, roll_natural_period, roll_period_earth, solve_wave_number, Buoyancy,
+    CumminsHeave, HullDrag, MorisonMember, WaveDrag, NOMINAL_CD_CIRCULAR, NOMINAL_CM_CIRCULAR,
 };
 use pe_math::{Quat, Vec3, STANDARD_GRAVITY};
 use pyo3::exceptions::PyValueError;
@@ -1055,6 +1056,109 @@ fn seakeeping_roll_period(inertia_plus_a44: f64, rho: f64, volume: f64, gm: f64)
     roll_natural_period(inertia_plus_a44, rho, volume, gm, STANDARD_GRAVITY)
 }
 
+/// Canonical Cummins heave-decay hash (cross-OS determinism).
+#[pyfunction]
+fn canonical_cummins_hash() -> u64 {
+    cummins_hash_rs()
+}
+
+/// Build heave retardation `K(t)` samples for a box barge; returns `(dt, K, A_inf, C)`.
+#[pyfunction]
+#[pyo3(signature = (length, beam, draft, dt=0.05, n_time=200, omega_max=4.0, n_omega=64, rho=None, n_strips=16))]
+#[allow(clippy::too_many_arguments)]
+fn cummins_box_kernel(
+    length: f64,
+    beam: f64,
+    draft: f64,
+    dt: f64,
+    n_time: usize,
+    omega_max: f64,
+    n_omega: usize,
+    rho: Option<f64>,
+    n_strips: usize,
+) -> (f64, Vec<f64>, f64, f64) {
+    let rho = rho.unwrap_or(RHO_FRESHWATER);
+    let k = box_heave_retardation(
+        length,
+        beam,
+        draft,
+        rho,
+        STANDARD_GRAVITY,
+        n_strips,
+        1e-3,
+        omega_max,
+        n_omega,
+        dt,
+        n_time,
+    );
+    (k.dt, k.k, k.a_inf, k.c)
+}
+
+/// Free-decay heave with Cummins memory; returns `z` samples (incl. t=0).
+#[pyfunction]
+#[pyo3(signature = (length, beam, draft, mass, z0=0.1, dt=0.05, n_steps=400, rho=None))]
+#[allow(clippy::too_many_arguments)]
+fn cummins_free_decay(
+    length: f64,
+    beam: f64,
+    draft: f64,
+    mass: f64,
+    z0: f64,
+    dt: f64,
+    n_steps: usize,
+    rho: Option<f64>,
+) -> Vec<f64> {
+    let rho = rho.unwrap_or(RHO_FRESHWATER);
+    let kernel = box_heave_retardation(
+        length,
+        beam,
+        draft,
+        rho,
+        STANDARD_GRAVITY,
+        16,
+        1e-3,
+        4.0,
+        64,
+        dt,
+        200.max(n_steps / 2),
+    );
+    let mut td = CumminsHeave::new(mass, kernel, z0);
+    td.free_decay(n_steps)
+}
+
+/// Mid-band relative L2 of `B(ω)` vs reconstruction from `K(t)` for a box barge.
+#[pyfunction]
+#[pyo3(signature = (length=40.0, beam=8.0, draft=2.0, rho=None))]
+fn cummins_k_b_consistency(length: f64, beam: f64, draft: f64, rho: Option<f64>) -> f64 {
+    let rho = rho.unwrap_or(RHO_FRESHWATER);
+    let stations = box_barge_stations(length, beam, draft, 16);
+    let n_w = 96usize;
+    let w_min = 0.05;
+    let w_max = 3.0;
+    let mut omega = Vec::with_capacity(n_w);
+    let mut b = Vec::with_capacity(n_w);
+    for i in 0..n_w {
+        let w = w_min + (w_max - w_min) * (i as f64) / (n_w as f64 - 1.0);
+        let mats = pe_hydro::assemble_strip_matrices(&stations, rho, w, STANDARD_GRAVITY);
+        omega.push(w);
+        b.push(mats.b[0][0]);
+    }
+    let dt = 0.025;
+    let n_t = 400;
+    let t: Vec<f64> = (0..n_t).map(|i| i as f64 * dt).collect();
+    let k_vals = pe_hydro::retardation_from_damping(&omega, &b, &t);
+    let kernel = pe_hydro::RetardationKernel {
+        dt,
+        k: k_vals,
+        a_inf: 0.0,
+        c: 0.0,
+    };
+    let b_hat = damping_from_retardation(&kernel, &omega);
+    let lo = 8usize;
+    let hi = omega.len() - 8;
+    relative_l2(&b[lo..hi], &b_hat[lo..hi])
+}
+
 /// Canonical stage-3 aero+hydro hash (same scenario as `pe-hydro` binary).
 #[pyfunction]
 fn canonical_aero_hydro_hash() -> u64 {
@@ -1144,6 +1248,10 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(canonical_aero_hydro_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_wave_body_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_m11_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(canonical_cummins_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(cummins_box_kernel, m)?)?;
+    m.add_function(wrap_pyfunction!(cummins_free_decay, m)?)?;
+    m.add_function(wrap_pyfunction!(cummins_k_b_consistency, m)?)?;
     m.add_function(wrap_pyfunction!(rotor_hover_vi, m)?)?;
     m.add_function(wrap_pyfunction!(rotor_ideal_hover_power, m)?)?;
     m.add_function(wrap_pyfunction!(rotor_figure_of_merit, m)?)?;

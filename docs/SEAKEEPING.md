@@ -100,10 +100,10 @@ documented value. Formula identity: measured bit-exact / 1e-12.
 
 with \(A_{33}\) from strip \(a_{33}^\infty\); identity measured to 1e-12 relative.
 
-### Time domain / free decay
+### Time domain / free decay (frozen coefficient)
 
 Constant-coefficient integrator at a single frozen \(\omega_\mathrm{ref}\)
-(semi-implicit Euler). **No Cummins retardation** — documented limit.
+(semi-implicit Euler). For retardation memory see **Cummins** below.
 
 Free-decay uses RK4 + multi-cycle log-decrement on positive peaks
 (\(\beta = B_{33}/(2(m+A_{33}))\)):
@@ -112,7 +112,45 @@ Free-decay uses RK4 + multi-cycle log-decrement on positive peaks
 | --- | --- | --- |
 | \(\|\beta_\mathrm{fit}-\beta\|/\beta\) | **3%** | **~0%** (dt=5e-4, 80k steps) |
 
+---
+
+## Cummins retardation (`pe_hydro::cummins`)
+
+Impulse-response memory for heave (Cummins 1962 / Ogilvie 1964):
+
+\[
+K(t)=\frac{2}{\pi}\int_0^{\omega_{\max}} B(\omega)\cos(\omega t)\,d\omega
+\]
+
+\[
+(m+A_\infty)\ddot z+\int_0^t K(t-\tau)\dot z(\tau)\,d\tau+C z=F(t)
+\]
+
+`B(ω)` from strip `B₃₃`; `A_∞` from sectional `a₃₃∞`; trapezoidal cosine
+transform; convolution with trapezoidal weights on a uniform `Δt` grid.
+
+### Validation (measured)
+
+| Check | Tolerance | Measured |
+| --- | --- | --- |
+| Analytic `B(ω)=e^{−αω}` → `K(t)=(2/π)α/(α²+t²)` (α=0.5) | **2%** | **≲ 6e-4** |
+| Mid-band `K(t)↔B(ω)` relative L2 (box 40×8×2) | **8%** | **~0.95%** |
+| Analytic `A(ω)−A_∞` sine transform of `K` (α=0.5) | **0.12%** | **≲ 5.3e-4** |
+| Free-decay `β` TD vs Laplace pole of same `K` | **1%** | **~0.49%** |
+| Free-decay `ω_d` TD vs Laplace pole of same `K` | **0.4%** | **~0.19%** |
+| Peak energy proxy monotone after transient | no growth (>2% slack) | passes |
+| Cross-OS `cummins_hash` | locked | `1ee2f57b9c89c3ae` |
+
+**Why not `β = B(ωₙ)/(2(m+A_∞))`?** That single-frequency frozen reference
+disagrees with the convolution free decay by **~22.6%** on this box grid: the
+time-domain solution carries the full retardation spectrum and the Ogilvie
+`A(ω)−A_∞` content of `K(t)`, while the frozen model keeps one `B` sample and
+`A_∞` only. The matching independent oracle is the Laplace characteristic pole
+`(m+A_∞)λ² + λ K̂(λ) + C = 0` of the **same** kernel (plus the sine-transform
+`A−A_∞` check). CI tolerances are ~2× the measured dual-path residual.
+
 ### Deferred
 
-Cummins memory; forward speed \(U\neq 0\); roll/sway/yaw; tabulated Vugts /
-Frank close-fit sections; 3-D panel diffraction; viscous roll damping.
+Forward speed \(U\neq 0\); roll/sway/yaw; tabulated Vugts /
+Frank close-fit sections; 3-D panel diffraction; viscous roll damping;
+multi-DOF Cummins coupling matrix.

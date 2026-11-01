@@ -238,8 +238,40 @@ Scenario (must stay in sync in the binary, Rust scenario helper, and Python help
 | macOS (CI) | same expected | CI asserts equality |
 | Windows (CI) | same expected | CI asserts equality |
 
-`cargo run -p pe-space --bin space_hash --release` prints figure-eight then IAS15
-(two lines).
+### Canonical DOP853 hash (locked)
+
+Scenario (must stay in sync in `pe_space::dop853_hash`, `space_hash` binary,
+and `physics_engine_rs.canonical_dop853_hash()`):
+
+- Same IC as IAS15 hash (Earth-μ Kepler, `a=1e7`, `e=0.5`, …).
+- DOP853 adaptive, `atol=rtol=1e-10`, initial `dt=T/80`.
+- **48 accepted** adaptive steps; hash FNV-1a 64 over packed `(x‖v)`.
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `91c17dda5aa7f80e` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+`cargo run -p pe-space --bin space_hash --release` prints figure-eight, IAS15,
+then DOP853 (three lines).
+
+### Canonical Cummins heave-decay hash (locked)
+
+Scenario (`pe_hydro::canonical_cummins_hash`, `cummins_hash` binary,
+`physics_engine_rs.canonical_cummins_hash()`):
+
+- Box 40×8×2 m, freshwater, mass `= ρ L B T`, `z0=0.1` m.
+- Kernel: `ω∈[1e-3,4]` rad/s (64 samples), `dt=0.05` s, 200 `K(t)` samples.
+- Free decay 400 steps; hash FNV-1a 64 over `z` samples.
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `1ee2f57b9c89c3ae` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+Helper: `cargo run -p pe-hydro --bin cummins_hash --release`.
 
 ### Canonical blast-pyramid hash (locked)
 

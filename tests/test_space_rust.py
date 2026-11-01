@@ -134,3 +134,52 @@ def test_canonical_ias15_hash_stable():
     h2 = pe.canonical_ias15_hash()
     assert h1 == h2
     assert h1 == 0xB918884CA264B70D
+
+
+def test_canonical_dop853_hash_stable():
+    h1 = pe.canonical_dop853_hash()
+    h2 = pe.canonical_dop853_hash()
+    assert h1 == h2
+    assert h1 == 0x91C17DDA5AA7F80E
+
+
+def test_nbody_dop853_kepler_closes():
+    mu = pe.EARTH_MU
+    a = 1.0e7
+    r = a
+    v = math.sqrt(mu / r)
+    t = 2.0 * math.pi * math.sqrt(a**3 / mu)
+    flat = pe.nbody_integrate(
+        [1.0],
+        [[r, 0.0, 0.0]],
+        [[0.0, v, 0.0]],
+        t_end=t,
+        dt=t / 40.0,
+        integrator="dop853",
+        mu=mu,
+    )
+    pos = np.asarray(flat).reshape(-1, 3)
+    err = abs(np.linalg.norm(pos[0]) - a) / a
+    assert err < 1e-6
+
+
+def test_nbody_whfast_corrector_runs():
+    m0, m1, a = 1.0, 1e-3, 1.0
+    v = math.sqrt((m0 + m1) / a)
+    x0 = -a * m1 / (m0 + m1)
+    x1 = a * m0 / (m0 + m1)
+    v0 = -v * m1 / (m0 + m1)
+    v1 = v * m0 / (m0 + m1)
+    flat = pe.nbody_integrate(
+        [m0, m1],
+        [[x0, 0.0, 0.0], [x1, 0.0, 0.0]],
+        [[0.0, v0, 0.0], [0.0, v1, 0.0]],
+        t_end=2.0 * math.pi,
+        dt=0.05,
+        integrator="whfast_c5",
+        geometric=True,
+        g_const=1.0,
+    )
+    pos = np.asarray(flat).reshape(-1, 3)
+    sep = np.linalg.norm(pos[1] - pos[0])
+    assert abs(sep - a) < 5e-3

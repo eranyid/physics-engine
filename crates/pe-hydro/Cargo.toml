@@ -30,3 +30,7 @@ path = "src/bin/wave_body_hash.rs"
 [[bin]]
 name = "m11_hash"
 path = "src/bin/m11_hash.rs"
+
+[[bin]]
+name = "cummins_hash"
+path = "src/bin/cummins_hash.rs"

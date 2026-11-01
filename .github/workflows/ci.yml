@@ -267,17 +267,20 @@ jobs:
             exit 1
           fi
 
-      - name: Compute canonical M7 space hashes (figure-eight + IAS15)
+      - name: Compute canonical M7 space hashes (figure-eight + IAS15 + DOP853)
         shell: bash
         run: |
           set -euo pipefail
           OUT=$(cargo run -p pe-space --bin space_hash --release | tr -d '\r')
           HASH8=$(echo "$OUT" | sed -n '1p')
           HASH15=$(echo "$OUT" | sed -n '2p')
+          HASHD=$(echo "$OUT" | sed -n '3p')
           echo "Figure-eight hash on ${{ matrix.os }}: $HASH8"
           echo "IAS15 hash on ${{ matrix.os }}: $HASH15"
+          echo "DOP853 hash on ${{ matrix.os }}: $HASHD"
           EXPECTED8=4633eb9e6412be18
           EXPECTED15=b918884ca264b70d
+          EXPECTEDD=91c17dda5aa7f80e
           if [ "$HASH8" != "$EXPECTED8" ]; then
             echo "::error::Space figure-eight hash mismatch on ${{ matrix.os }}: got $HASH8 expected $EXPECTED8"
             echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
@@ -285,6 +288,24 @@ jobs:
           fi
           if [ "$HASH15" != "$EXPECTED15" ]; then
             echo "::error::Space IAS15 hash mismatch on ${{ matrix.os }}: got $HASH15 expected $EXPECTED15"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+          if [ "$HASHD" != "$EXPECTEDD" ]; then
+            echo "::error::Space DOP853 hash mismatch on ${{ matrix.os }}: got $HASHD expected $EXPECTEDD"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+
+      - name: Compute canonical Cummins heave-decay hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-hydro --bin cummins_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical Cummins hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=1ee2f57b9c89c3ae
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::Cummins determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
             echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
             exit 1
           fi

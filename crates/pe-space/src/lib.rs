@@ -49,8 +49,10 @@ pub use diagnostics::{angular_momentum, kinetic_energy, potential_energy, total_
 pub use field::{CentralMu, GravityField, NBodyPointMass};
 pub use integrator::{AdaptiveStep, Integrator, StepResult};
 pub use integrators::{
-    dormand_prince_8_7, ias15, leapfrog, rk4, rkf78, whfast, whfast_with, yoshida4, Dop853, Ias15,
-    Leapfrog, Rk4, Rkf78, Whfast, WhfastCoords, Yoshida4, DEFAULT_EPSILON_B, RADAU_H,
+    butcher_consistency_residual, dop853, dormand_prince_8_7, ias15, leapfrog, ode_step,
+    ode_step_fixed, rk4, rkf78, whfast, whfast_with, yoshida4, Dop853, Ias15, Leapfrog, Rk4, Rkf78,
+    Whfast, WhfastCoords, WhfastCorrector, Yoshida4, DEFAULT_EPSILON_B, DOP853_B, DOP853_C,
+    DOP853_E3, DOP853_E5, DOP853_N_STAGES, DOP853_N_STAGES_EXTENDED, INTERPOLATOR_POWER, RADAU_H,
 };
 pub use kepler::{
     elements_to_state, mean_motion, orbital_period, propagate_universal, state_to_elements,
@@ -62,7 +64,7 @@ pub use perturbations::{
     SrpModel, ThirdBody,
 };
 pub use scenarios::{
-    figure_eight_hash, figure_eight_state, ias15_hash, FIGURE_EIGHT_HASH_STEPS,
-    FIGURE_EIGHT_PERIOD, FIGURE_EIGHT_PERIOD_RETURN, IAS15_HASH_STEPS,
+    dop853_hash, figure_eight_hash, figure_eight_state, ias15_hash, DOP853_HASH_STEPS,
+    FIGURE_EIGHT_HASH_STEPS, FIGURE_EIGHT_PERIOD, FIGURE_EIGHT_PERIOD_RETURN, IAS15_HASH_STEPS,
 };
 pub use state::{NBodyState, OriginRebase};
