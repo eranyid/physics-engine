@@ -1,8 +1,8 @@
 //! Analytic and system tests for pe-ballistics.
 
 use approx::assert_relative_eq;
-use pe_ballistics::ammo::{bundled_profiles, AmmoProfile};
-use pe_ballistics::drag::analytic_cd;
+use pe_ballistics::ammo::{bundled_by_name, bundled_profiles, AmmoProfile};
+use pe_ballistics::drag::{analytic_cd, bc_imperial_to_si, g1_table, g7_table, DragModelRef};
 use pe_ballistics::hitscan::{segment_vs_box, ShapeRef};
 use pe_ballistics::impact::{poncelet_depth, recht_ipson_residual};
 use pe_ballistics::oracles::{
@@ -10,6 +10,7 @@ use pe_ballistics::oracles::{
 };
 use pe_ballistics::projectile::{MuzzlePose, ProjectileSystem, ShotId};
 use pe_ballistics::{ballistics_volley_hash, EARTH_OMEGA};
+use pe_aero::turbulence::WindField;
 use pe_collision::BoxShape;
 use pe_math::{libm_ops, Vec3};
 
@@ -217,4 +218,173 @@ fn segment_box_hit() {
 #[test]
 fn volley_hash_bit_stable() {
     assert_eq!(ballistics_volley_hash(), ballistics_volley_hash());
+}
+
+#[test]
+fn g1_g7_tables_match_jbm_endpoints() {
+    let g1 = g1_table();
+    let g7 = g7_table();
+    assert_eq!(g1.mach.len(), 79);
+    assert_eq!(g7.mach.len(), 84);
+    assert_relative_eq!(g1.cd_linear(1.0), 0.4805, epsilon = 0.0);
+    assert_relative_eq!(g7.cd_linear(1.05), 0.4043, epsilon = 0.0);
+}
+
+#[test]
+fn ammo_serde_roundtrip_and_legacy_drag_alias() {
+    let p = bundled_by_name("5.56_55gr_fmjbt_federal_ae193").unwrap();
+    let j = p.to_json().unwrap();
+    let q = AmmoProfile::from_json(&j).unwrap();
+    assert_eq!(p.name, q.name);
+    assert_relative_eq!(p.mass_kg, q.mass_kg, epsilon = 0.0);
+    assert_relative_eq!(p.muzzle_velocity_m_s, q.muzzle_velocity_m_s, epsilon = 0.0);
+    assert!(matches!(q.bc.drag_model, DragModelRef::G1));
+    // Legacy tag deserialises to G1.
+    let legacy = r#"{
+      "version": 1,
+      "name": "legacy",
+      "caliber_m": 0.009,
+      "mass_kg": 0.008,
+      "muzzle_velocity_m_s": 350.0,
+      "bc": {
+        "value_si": 100.0,
+        "drag_model": "G1StandIn",
+        "table": null,
+        "provenance": { "note": "test", "verified": false }
+      },
+      "length_m": 0.015,
+      "twist_m_per_rev": 0.25,
+      "form_factor": 1.0,
+      "barrel_length_ref_m": null,
+      "velocity_std_m_s": 0.0,
+      "dispersion_std_rad": 0.0,
+      "provenance": { "note": "test", "verified": false }
+    }"#;
+    let leg = AmmoProfile::from_json(legacy).unwrap();
+    assert!(matches!(leg.bc.drag_model, DragModelRef::G1));
+}
+
+#[test]
+fn every_verified_ammo_row_has_citation() {
+    for p in bundled_profiles() {
+        if p.provenance.verified {
+            assert!(!p.provenance.note.trim().is_empty(), "{}", p.name);
+        }
+        if p.bc.provenance.verified {
+            assert!(!p.bc.provenance.note.trim().is_empty(), "bc {}", p.name);
+        }
+    }
+}
+
+/// G1 BC 0.5, 2800 fps, ICAO sea-level, sight height 0, flat fire.
+///
+/// Independent open calculator (py_ballisticcalc 2.2.0, TableG1, Atmo.icao(),
+/// Weapon sight_height=0) measured on 2026-11-01:
+///
+/// | yd | drop (in) | TOF (s) | vel (fps) |
+/// | 100 | -2.3199 | 0.110872 | 2615.05 |
+/// | 200 | -9.7308 | 0.229701 | 2437.52 |
+/// | 300 | -23.0023 | 0.357326 | 2266.97 |
+/// | 400 | -43.0505 | 0.494724 | 2103.16 |
+/// | 500 | -70.9732 | 0.643012 | 1946.36 |
+///
+/// Tolerance: drop within **5% relative or 1.0 inch abs** (whichever larger);
+/// TOF within **3%**; velocity within **2%**. Linear Cd(Mach) interpolation.
+#[test]
+fn g1_bc05_2800fps_drop_tof_vs_py_ballisticcalc() {
+    let mut profile = bundled_by_name("oracle_g1_bc0.5_2800fps").unwrap();
+    assert_relative_eq!(profile.bc.value_si, bc_imperial_to_si(0.5), epsilon = 1e-9);
+    assert!(matches!(profile.bc.drag_model, DragModelRef::G1));
+    profile.velocity_std_m_s = 0.0;
+    profile.dispersion_std_rad = 0.0;
+
+    let ranges_yd = [100.0, 200.0, 300.0, 400.0, 500.0];
+    let ranges_m: Vec<f64> = ranges_yd.iter().map(|y| y * 0.9144).collect();
+    // Fine step; calm ICAO sea-level (pe-aero ISA); spin/Magnus off for point-mass oracle.
+    let mut sys = ProjectileSystem::new(0.0);
+    sys.enable_spin_effects = false;
+    sys.wind = WindField::steady(Vec3::zero());
+    let pidx = sys.add_profile(profile);
+    let _ = sys.spawn(
+        ShotId(1),
+        pidx,
+        MuzzlePose {
+            position: Vec3::zero(),
+            direction: Vec3::unit_x(),
+            barrel_length_m: None,
+        },
+    );
+    let mut rows = Vec::new();
+    let dt = 1.0 / 4000.0;
+    let mut next_ri = 0usize;
+    let max_range = ranges_m[ranges_m.len() - 1];
+    while next_ri < ranges_m.len() && sys.t < 5.0 {
+        if !sys.projectiles[0].alive {
+            break;
+        }
+        let x_before = sys.projectiles[0].x.x;
+        let z_before = sys.projectiles[0].x.z;
+        let t_before = sys.t;
+        let v_before = sys.projectiles[0].v.norm();
+        sys.step(dt, &[], &[]);
+        let p = &sys.projectiles[0];
+        let x_after = p.x.x;
+        while next_ri < ranges_m.len()
+            && x_before <= ranges_m[next_ri]
+            && x_after >= ranges_m[next_ri]
+        {
+            let r = ranges_m[next_ri];
+            let alpha = ((r - x_before) / (x_after - x_before).max(1e-12)).clamp(0.0, 1.0);
+            let drop = z_before + alpha * (p.x.z - z_before);
+            let speed = v_before + alpha * (p.v.norm() - v_before);
+            let time = t_before + alpha * (sys.t - t_before);
+            rows.push((drop, time, speed));
+            next_ri += 1;
+        }
+        if x_after > max_range + 1.0 {
+            break;
+        }
+    }
+
+    assert_eq!(rows.len(), 5, "expected 5 range samples, got {}", rows.len());
+
+    // py_ballisticcalc oracle (inches, seconds, fps)
+    let ref_drop_in: [f64; 5] = [-2.3199, -9.7308, -23.0023, -43.0505, -70.9732];
+    let ref_tof: [f64; 5] = [0.110872, 0.229701, 0.357326, 0.494724, 0.643012];
+    let ref_fps: [f64; 5] = [2615.05, 2437.52, 2266.97, 2103.16, 1946.36];
+
+    for i in 0..5 {
+        let drop_in = rows[i].0 / 0.0254;
+        let tof = rows[i].1;
+        let fps = rows[i].2 / 0.3048;
+        let tol_drop = (ref_drop_in[i].abs() * 0.05).max(1.0);
+        let err_drop = (drop_in - ref_drop_in[i]).abs();
+        assert!(
+            err_drop <= tol_drop,
+            "yd={} drop_in={:.3} ref={:.3} err={:.3} tol={:.3}",
+            ranges_yd[i],
+            drop_in,
+            ref_drop_in[i],
+            err_drop,
+            tol_drop
+        );
+        let err_tof = ((tof - ref_tof[i]) / ref_tof[i]).abs();
+        assert!(
+            err_tof <= 0.03,
+            "yd={} tof={:.5} ref={:.5} rel={:.4}",
+            ranges_yd[i],
+            tof,
+            ref_tof[i],
+            err_tof
+        );
+        let err_v = ((fps - ref_fps[i]) / ref_fps[i]).abs();
+        assert!(
+            err_v <= 0.02,
+            "yd={} fps={:.1} ref={:.1} rel={:.4}",
+            ranges_yd[i],
+            fps,
+            ref_fps[i],
+            err_v
+        );
+    }
 }
