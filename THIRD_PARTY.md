@@ -150,6 +150,24 @@ Clean-room formulas only — **no** third-party simulation source translated:
 - **Not used:** Vugts (1968) tabulated sections, WAMIT/NEMOH panel outputs,
   certified airfoil polars, commercial BEM codes.
 
+### M21 note (`pe-hydro` 6-DOF Cummins / forward speed / ITTC / maneuvering)
+
+Clean-room formulas only — **no** third-party simulation source translated:
+
+- Cummins (1962) / Ogilvie (1964) — matrix retardation + convolution (extends
+  M11 heave path to 6-DOF with strip \(A_\infty\), \(K_{ij}\), GM restoring).
+- Salvesen, Tuck & Faltinsen (1970) — encounter frequency and forward-speed
+  strip radiation corrections (end terms + \(\int a_{33}\)).
+- ITTC Recommended Procedures — **1957 ship-model correlation line**
+  \(C_f = 0.075/(\log_{10}R_n-2)^2\) implemented exactly. Holtrop–Mennen
+  coefficient tables **not** transcribed (unverified in-tree).
+- Nomoto, K. et al. (1957) — first-order K–T steering (analytic step oracle).
+- MMG standard method structure after Yasukawa & Yoshimura (2015) — **structure
+  only**; bundled linear derivatives marked **unverified**. No KVLCC2/SIMMAN
+  table copied.
+- Surge \(A_{11}^\infty\) uses nominal \(C_x=0.5\) (**unverified**); propeller /
+  rudder force helpers marked **unverified** unless caller supplies cited maps.
+
 ### Blast / ballistics note (`pe-blast`, `pe-ballistics`)
 
 Clean-room formulas only — **no** third-party simulation *code* translated:

@@ -340,6 +340,19 @@ jobs:
             exit 1
           fi
 
+      - name: Compute canonical 6-DOF Cummins hash (M21)
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-hydro --bin cummins6_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical Cummins6 hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=b72a60e18efd983d
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::Cummins6 determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+
       - name: Compute canonical wave-body hash
         shell: bash
         run: |
