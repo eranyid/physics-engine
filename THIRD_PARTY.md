@@ -267,5 +267,14 @@ Clean-room formulas only — **no** third-party SPH/PBF source translated
 - Godot bindings: [`godot`](https://crates.io/crates/godot) (**godot-rust /
   gdext**, **MPL-2.0**). Used as a Cargo dependency from `godot/`; **no** gdext
   source is copied into this tree. Godot Engine itself is MIT
-  (<https://godotengine.org/license/>). Editor/headless runs are **unverified**
-  in CI — see [`docs/GODOT.md`](docs/GODOT.md).
+  (<https://godotengine.org/license/>). Linux headless Godot 4.3-stable CI is
+  required (`docs/GODOT.md`); Windows/macOS are **build-only** for `pe-godot`;
+  editor interactive play remains **unverified** in CI.
+
+### M25 note (Godot game surface)
+
+- Scene queries (`raycast` / `overlap_aabb` / `sphere_cast`) are clean-room
+  analytic geometry in `pe-collision::queries` (promoted from the prior
+  pe-ffi-private helpers). No third-party query code copied.
+- Joint / contact / stepping bindings wrap existing `pe-collision` APIs; no new
+  third-party physics source.
