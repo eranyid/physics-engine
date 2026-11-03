@@ -10,6 +10,7 @@ description = "Versioned scene serialization (JSON/RON/binary) and bit-exact sta
 pe-math = { workspace = true }
 pe-core = { workspace = true }
 pe-collision = { workspace = true }
+pe-blast = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 ron = { workspace = true }

@@ -366,16 +366,39 @@ jobs:
             exit 1
           fi
 
-      - name: Compute canonical blast-pyramid hash
+      - name: Compute canonical blast hashes (pyramid + M20)
         shell: bash
         run: |
           set -euo pipefail
-          HASH=$(cargo run -p pe-blast --bin blast_hash --release | tr -d '\r\n' | tail -n1)
-          echo "Canonical blast hash on ${{ matrix.os }}: $HASH"
-          EXPECTED=b51e11e89d4dd055
-          if [ "$HASH" != "$EXPECTED" ]; then
-            echo "::error::Blast determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+          OUT=$(cargo run -p pe-blast --bin blast_hash --release | tr -d '\r')
+          HASH_PYRAMID=$(printf '%s\n' "$OUT" | sed -n '1p')
+          HASH_EXTERNAL=$(printf '%s\n' "$OUT" | sed -n '2p')
+          HASH_FRAGMENTS=$(printf '%s\n' "$OUT" | sed -n '3p')
+          HASH_DESTRUCTION=$(printf '%s\n' "$OUT" | sed -n '4p')
+          echo "Canonical blast hashes on ${{ matrix.os }}: $HASH_PYRAMID $HASH_EXTERNAL $HASH_FRAGMENTS $HASH_DESTRUCTION"
+          EXPECTED_PYRAMID=b51e11e89d4dd055
+          EXPECTED_EXTERNAL=693b60be33f9b8f2
+          EXPECTED_FRAGMENTS=36d3f61d77c14859
+          EXPECTED_DESTRUCTION=38f55bac9ab3d16f
+          if [ -z "$HASH_DESTRUCTION" ]; then
+            echo "::error::Blast hash binary expected 4 lines"
+            exit 1
+          fi
+          if [ "$HASH_PYRAMID" != "$EXPECTED_PYRAMID" ]; then
+            echo "::error::Blast pyramid hash mismatch on ${{ matrix.os }}: got $HASH_PYRAMID expected $EXPECTED_PYRAMID"
             echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+          if [ "$HASH_EXTERNAL" != "$EXPECTED_EXTERNAL" ]; then
+            echo "::error::Blast ExternalLoads hash mismatch on ${{ matrix.os }}: got $HASH_EXTERNAL expected $EXPECTED_EXTERNAL"
+            exit 1
+          fi
+          if [ "$HASH_FRAGMENTS" != "$EXPECTED_FRAGMENTS" ]; then
+            echo "::error::Blast fragments hash mismatch on ${{ matrix.os }}: got $HASH_FRAGMENTS expected $EXPECTED_FRAGMENTS"
+            exit 1
+          fi
+          if [ "$HASH_DESTRUCTION" != "$EXPECTED_DESTRUCTION" ]; then
+            echo "::error::Blast destruction hash mismatch on ${{ matrix.os }}: got $HASH_DESTRUCTION expected $EXPECTED_DESTRUCTION"
             exit 1
           fi
 

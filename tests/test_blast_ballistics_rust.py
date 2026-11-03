@@ -62,4 +62,25 @@ def test_demo_volley_advances():
 
 def test_hashes_stable():
     assert pe.canonical_blast_hash() == pe.canonical_blast_hash()
+    assert pe.canonical_blast_hash() == 0xB51E11E89D4DD055
+    assert pe.canonical_blast_external_hash() == 0x693B60BE33F9B8F2
+    assert pe.canonical_blast_fragments_hash() == 0x36D3F61D77C14859
+    assert pe.canonical_blast_destruction_hash() == 0x38F55BAC9AB3D16F
     assert pe.canonical_ballistics_hash() == pe.canonical_ballistics_hash()
+
+
+def test_gurney_cylindrical_cm_half():
+    v = pe.blast_gurney_velocity(2440.0, 0.5, "cylindrical")
+    assert v == pytest.approx(2440.0 * math.sqrt(0.4), rel=1e-12)
+
+
+def test_mott_mean_closed_form():
+    assert pe.blast_mott_mean_mass(0.01) == pytest.approx(0.02)
+    samples = pe.blast_mott_sample_many(7, 0.01, 8)
+    assert len(samples) == 8
+    assert samples == pe.blast_mott_sample_many(7, 0.01, 8)
+
+
+def test_rigid_wall_reflection_limits():
+    assert pe.blast_rigid_wall_reflection(1e-8) == pytest.approx(2.0, rel=1e-5)
+    assert pe.blast_rigid_wall_reflection(1e10) == pytest.approx(8.0, rel=1e-6)

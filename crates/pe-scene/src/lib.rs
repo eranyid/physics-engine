@@ -10,6 +10,8 @@
 #![deny(missing_docs)]
 
 pub mod binary;
+/// Blast / fracture descriptor conversions (schema v3).
+pub mod blast_convert;
 /// Conversions between scene descriptors and engine types.
 pub mod convert;
 pub mod document;
@@ -17,6 +19,10 @@ pub mod error;
 pub mod migrate;
 pub mod types;
 
+pub use blast_convert::{
+    apply_blast_loading_desc, blast_params_from_desc, blast_source_from_desc,
+    exposed_face_from_desc,
+};
 pub use convert::force_to_box;
 
 pub use document::{
@@ -26,7 +32,8 @@ pub use document::{
 };
 pub use error::SceneError;
 pub use types::{
-    BodyDesc, ForceDesc, JointDesc, JointKindDesc, MaterialDesc, RuntimeSnapshot, ShapeDesc,
+    BlastLoadParamsDesc, BlastLoadingDesc, BlastSourceDesc, BodyDesc, ExposedFaceDesc, ForceDesc,
+    FractureCompoundDesc, JointDesc, JointKindDesc, MaterialDesc, RuntimeSnapshot, ShapeDesc,
     SolverSettings, StateSnapshot, StaticDesc, SCENE_BINARY_MAGIC, SCENE_SCHEMA_V1,
     SCENE_SCHEMA_VERSION,
 };

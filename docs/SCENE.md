@@ -12,8 +12,8 @@ generators, solver settings (including CCD), packed state, and solver runtime
 | RON | `to_ron_pretty` / `from_ron` | Same |
 | Binary | `to_binary` / `from_binary` (`PESC` + version + JSON payload) | Yes (preferred for save/load/continue) |
 
-Schema field: `schema_version` (current = **2**). Migration:
-`pe_scene::migrate::migrate_to_current` — v1 documents load and bump to v2;
+Schema field: `schema_version` (current = **3**). Migration:
+`pe_scene::migrate::migrate_to_current` — v1/v2 documents load and bump to v3;
 unknown/future versions error with a clear `UnsupportedVersion` message.
 Documents reject unknown fields (`deny_unknown_fields`) via
 `SceneError::UnknownField`.
@@ -28,7 +28,18 @@ Documents reject unknown fields (`deny_unknown_fields`) via
 | CCD params | `ccd_speculative`, `ccd_speculative_distance`, `ccd_toi`, `ccd_toi_max_iters`, `ccd_toi_tolerance` |
 | Joints | Unchanged kinds (distance, revolute, prismatic, weld, wheel, mouse) — already in v1 |
 
-v1 files that omit the new fields still load (defaults applied). Frozen fixture:
+### Schema v3 additions (M20 blast / destruction)
+
+| Feature | Descriptor |
+| --- | --- |
+| Blast loading | `blast: Vec<BlastLoadingDesc>` (source + faces + KB/RH params) |
+| Fracture compounds | `fracture_compounds: Vec<FractureCompoundDesc>` (chunk/bond indices + `σ_f`) |
+
+Blast loads are **not** stage-1 `ForceGenerator` trait objects — apply each step
+with `pe_scene::apply_blast_loading_desc` into an `ExternalLoads` registered on
+the world. Cohesive bonds remain ordinary joints with `break_force`.
+
+v1/v2 files that omit the new fields still load (defaults applied). Frozen fixture:
 `crates/pe-scene/tests/fixtures/v1_box_ground.json`.
 
 Malformed input returns [`SceneError`] — loaders **never panic** (fuzzed in
@@ -63,7 +74,8 @@ See [`DETERMINISM.md`](DETERMINISM.md).
 ## Limits / deferred
 
 - Force generators are a fixed stage-1 enum (`UniformGravity`, drag, spring, …).
-  Aero/hydro/space generators are **not** in the scene schema yet.
+  Aero/hydro/space generators are **not** in the scene schema yet. Blast is
+  schema-v3 metadata + `ExternalLoads` (see above), not a `ForceDesc` variant.
 - Trait-object forces on a live `World` cannot be reverse-engineered —
   `SceneDocument::capture` requires the caller to pass the `forces` list.
 - JSON decimal floats for body mass/inertia/solver tuning can lose ULPs if edited
