@@ -103,7 +103,7 @@ impl BlastLoadParams {
         require_finite(self.drag_cd, "drag_cd")?;
         require_non_negative(self.shadow_factor, "shadow_factor")?;
         require_finite(self.gamma, "gamma")?;
-        if !(self.gamma > 1.0) {
+        if self.gamma <= 1.0 {
             return Err(BlastError::InvalidParameter("gamma must be > 1"));
         }
         Ok(self)
