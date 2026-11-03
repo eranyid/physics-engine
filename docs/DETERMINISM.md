@@ -1,4 +1,4 @@
-# Determinism policy (stages 1–3 / M2–M9 + M8 soft + fluids + M11 Morison/seakeeping/BEM)
+# Determinism policy (stages 1–3 / M2–M9 + M8 soft + fluids + M11 Morison/seakeeping/BEM + M21)
 
 ## Guarantees
 
@@ -55,6 +55,8 @@ Cross-check helpers:
   `physics_engine_rs.canonical_materials_hash()`
 - M11 Morison+BEM: `cargo run -p pe-hydro --bin m11_hash --release` /
   `physics_engine_rs.canonical_m11_hash()`
+- M21 6-DOF Cummins: `cargo run -p pe-hydro --bin cummins6_hash --release` /
+  `physics_engine_rs.canonical_cummins6_hash()`
 - 6-DOF FDM: `cargo run -p pe-aero --bin fdm_hash --release` /
   `physics_engine_rs.canonical_fdm_hash()` (+ Dryden gust line /
   `canonical_dryden_gust_hash()` + FDM+held-gust line /
@@ -312,6 +314,24 @@ Scenario (`pe_hydro::canonical_cummins_hash`, `cummins_hash` binary,
 | Windows (CI) | same expected | CI asserts equality |
 
 Helper: `cargo run -p pe-hydro --bin cummins_hash --release`.
+
+### Canonical 6-DOF Cummins hash (locked, M21)
+
+Scenario (`pe_hydro::canonical_cummins6_hash`, `cummins6_hash` binary,
+`physics_engine_rs.canonical_cummins6_hash()`):
+
+- Box 40×8×2 m, freshwater, mass `= ρ L B T`, box inertias; `GM_T` with KG=draft.
+- Kernel: ω∈[1e-3,4] rad/s (48 samples), `dt=0.05` s, 120 `K(t)` samples, 12 strips.
+- Free decay from heave `z0=0.08` m, 300 steps; hash FNV-1a 64 over heave samples.
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `b72a60e18efd983d` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+Helper: `cargo run -p pe-hydro --bin cummins6_hash --release`.
+Existing heave `cummins_hash` (`1ee2f57b9c89c3ae`) is **unchanged**.
 
 ### Canonical blast-pyramid hash (locked)
 

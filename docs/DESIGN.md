@@ -61,6 +61,8 @@ see [`AERO.md`](AERO.md).
 
 **M11 Morison / seakeeping / BEM:** `pe-hydro::morison`, `pe-hydro::seakeeping`
 (STF heave/pitch strip theory); `pe-aero::bem` (Glauert BEMT + Prandtl tip loss).
+**M21 ships/sea:** `pe-hydro::cummins6` (6-DOF Cummins), `forward_speed` (STF),
+`resistance` (ITTC-57), `maneuvering` (Nomoto / linear MMG).
 Docs: [`SEAKEEPING.md`](SEAKEEPING.md), [`ROTOR.md`](ROTOR.md). Soft bodies /
 particle fluids remain separate tracks. Joints/islands/sleep (M5) and CCD +
 convex/GJK (M6) are shipped; see [`JOINTS.md`](JOINTS.md) and

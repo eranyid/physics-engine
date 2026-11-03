@@ -66,6 +66,9 @@ See [`DETERMINISM.md`](DETERMINISM.md).
 
 - Force generators are a fixed stage-1 enum (`UniformGravity`, drag, spring, …).
   Aero/hydro/space generators are **not** in the scene schema yet.
+  **M21 ships/sea** (`Cummins6Dof`, Nomoto, `HullDrag::ittc57`) wire through the
+  Rust/Python API beside scene-loaded bodies; see [`SEAKEEPING.md`](SEAKEEPING.md).
+  Full hydro `ForceDesc` variants are deferred so locked scene hashes stay unchanged.
 - Trait-object forces on a live `World` cannot be reverse-engineered —
   `SceneDocument::capture` requires the caller to pass the `forces` list.
 - JSON decimal floats for body mass/inertia/solver tuning can lose ULPs if edited
