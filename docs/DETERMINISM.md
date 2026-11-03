@@ -333,21 +333,37 @@ Scenario (`pe_hydro::canonical_cummins6_hash`, `cummins6_hash` binary,
 Helper: `cargo run -p pe-hydro --bin cummins6_hash --release`.
 Existing heave `cummins_hash` (`1ee2f57b9c89c3ae`) is **unchanged**.
 
-### Canonical blast-pyramid hash (locked)
+### Canonical blast hashes (locked)
 
-Scenario (`pe_blast::blast_pyramid_hash`, `blast_hash` binary,
-`physics_engine_rs.canonical_blast_hash()`):
+`cargo run -p pe-blast --bin blast_hash --release` prints **four** lines
+(`blast_pyramid_hash`, `blast_external_loads_hash`, `blast_fragments_hash`,
+`blast_destruction_hash`). Python:
+`canonical_blast_hash` / `canonical_blast_external_hash` /
+`canonical_blast_fragments_hash` / `canonical_blast_destruction_hash`.
+
+**Line 1 — pyramid (legacy Kinney impulse)** — unchanged from pre-M20:
 
 - 6-box pyramid (rows 1+2+3), mass 10 kg, half-extent 0.25 m, uniform gravity.
 - Friedlander blast load from `W_eq=1 kg` at `(-2,0,0.5)` m on exposed −x faces.
-- 200× RK4 steps at `dt=1/240` with per-step blast impulses.
+- 200× RK4 steps at `dt=1/240` with per-step `apply_blast_impulse` (Kinney path).
 - Hash: FNV-1a 64 over packed `State`.
 
-| Platform | Hash (hex) | Status |
-| --- | --- | --- |
-| Linux x86_64 (CI + local) | `b51e11e89d4dd055` | locked |
-| macOS (CI) | same expected | CI asserts equality |
-| Windows (CI) | same expected | CI asserts equality |
+**Line 2 — ExternalLoads KB/RH** — same geometry; Kingery–Bulmash
+incident+reflected + dynamic-pressure drag via `ExternalLoads` (no occlusion).
+
+**Line 3 — Gurney/Mott fragments** — 32 fragments, cylindrical Gurney
+`√(2E)=2440`, `C/M=0.5`, Mott `μ=0.02`, seed `0xFBA57001`, 60 steps @
+`dt=1/120` into `ProjectileSystem` (analytic drag, spin off). FNV-1a over
+`(id,x,v,mass,alive)`.
+
+**Line 4 — Voronoi destruction** — 4-chunk Voronoi compound on a plane, soft
+breakable bonds, KB blast via `ExternalLoads`, 180 contact steps @ `dt=1/120`.
+
+| Platform | Pyramid | External | Fragments | Destruction | Status |
+| --- | --- | --- | --- | --- | --- |
+| Linux x86_64 (CI + local) | `b51e11e89d4dd055` | `693b60be33f9b8f2` | `36d3f61d77c14859` | `38f55bac9ab3d16f` | locked |
+| macOS (CI) | same | same | same | same | CI asserts equality |
+| Windows (CI) | same | same | same | same | CI asserts equality |
 
 ### Canonical ballistics volley hash (locked)
 

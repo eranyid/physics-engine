@@ -1,4 +1,4 @@
-//! Schema migration. v1 documents load and bump to the current schema (v2).
+//! Schema migration. Older documents load and bump to the current schema (v3).
 
 use crate::document::SceneDocument;
 use crate::error::SceneError;
@@ -8,8 +8,8 @@ use crate::types::SCENE_SCHEMA_VERSION;
 ///
 /// - Current version → no-op.
 /// - Future versions → [`SceneError::UnsupportedVersion`].
-/// - v1 → v2: additive (convex/rounded shapes, fuller CCD fields, body bullet);
-///   documents without those fields remain valid.
+/// - v1 → v2 → v3: additive (convex/rounded/CCD; then blast/fracture fields with
+///   empty defaults).
 /// - Other older hops → [`SceneError::MigrationStub`].
 pub fn migrate_to_current(schema_version: u32) -> Result<u32, SceneError> {
     if schema_version == SCENE_SCHEMA_VERSION {
@@ -21,8 +21,8 @@ pub fn migrate_to_current(schema_version: u32) -> Result<u32, SceneError> {
             max_supported: SCENE_SCHEMA_VERSION,
         });
     }
-    // v1 → v2: field defaults cover missing convex/rounded/CCD extensions.
-    if schema_version == 1 && SCENE_SCHEMA_VERSION >= 2 {
+    // v1 / v2 → v3: field defaults cover missing extensions.
+    if (1..SCENE_SCHEMA_VERSION).contains(&schema_version) {
         return Ok(SCENE_SCHEMA_VERSION);
     }
     Err(SceneError::MigrationStub {

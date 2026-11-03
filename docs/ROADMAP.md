@@ -360,6 +360,11 @@ ported early because the Python oracle already exists.
 - Blast: Hopkinson–Cranz, Kinney–Graham, Friedlander, Swisdak/Kingery–Bulmash
   (verified coeffs), Rankine–Hugoniot, Sedov–Taylor (`ξ₀` from energy integral),
   1-D Euler HLLC/MUSCL/SSP-RK2 (Sod), rigid-body Friedlander loads, Gurney/Mott.
+- **M20:** KB incident+reflected + RH dynamic-pressure drag on rigid faces via
+  `ExternalLoads`, AABB shadowing, Mott/Gurney → `ProjectileSystem` fragments,
+  Voronoi cohesive compounds with material `σ_f` break thresholds, scene schema
+  v3 blast/fracture descriptors, locked multi-line blast hashes (pyramid
+  `b51e11e89d4dd055` unchanged).
 - Ballistics: `AmmoProfile` (serde), SoA `ProjectileSystem` (per-shot RNG), ISA +
   Dryden wind, Coriolis/Eötvös, spin/Magnus models, hit-scan, Poncelet /
   Recht–Ipson, ballistic tables; **G1/G7 JBM/BRL Cd tables** (linear interp,

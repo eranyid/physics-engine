@@ -186,7 +186,10 @@ Clean-room formulas only — **no** third-party simulation *code* translated:
   point-blast similarity (energy integral for `ξ₀`).
 - Toro (2009) HLLC / exact Riemann / MUSCL; Gottlieb–Shu SSP-RK2; Sod (1978).
 - Gurney (1943) BRL 405 energy method (caller-supplied `√(2E)`); Mott (1947)
-  fragment mass distribution.
+  fragment mass distribution. Built-in table entries for TNT / Comp B / HMX
+  `√(2E)` are **unverified** handbook-order figures (Cooper-style summaries) —
+  not locked to a fetched BRL table cell; callers should supply sourced values
+  for production.
 - Exterior ballistics oracles / Coriolis–Eötvös (McCoy textbook forms); Poncelet
   penetration; Recht & Ipson (1963) residual velocity.
 
