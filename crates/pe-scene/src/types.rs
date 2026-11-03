@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 ///
 /// - **v1:** primitives (sphere/box/capsule/plane), joints, basic CCD bools.
 /// - **v2:** + convex hulls, rounded shapes, body bullet flag, fuller CCD params.
-pub const SCENE_SCHEMA_VERSION: u32 = 2;
+/// - **v3:** + optional blast loading / fracture-compound authoring descriptors.
+pub const SCENE_SCHEMA_VERSION: u32 = 3;
 
 /// Schema version of the frozen v1 fixture (migration tests).
 pub const SCENE_SCHEMA_V1: u32 = 1;
@@ -191,6 +192,126 @@ pub enum ForceDesc {
         /// Torque [N·m].
         tau: [f64; 3],
     },
+}
+
+/// Blast source descriptor (TNT-eq engineering load — no chemistry).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct BlastSourceDesc {
+    /// Burst origin [m].
+    pub origin: [f64; 3],
+    /// TNT-equivalent mass [kg].
+    pub w_eq_kg: f64,
+    /// Burst time [s].
+    #[serde(default)]
+    pub t0: f64,
+    /// Ambient pressure [Pa].
+    #[serde(default = "default_p0")]
+    pub p0: f64,
+    /// Engineering `t_d` at Z=1 [s] (Kinney path).
+    #[serde(default = "default_td")]
+    pub td_at_z1: f64,
+    /// Friedlander decay `b`.
+    #[serde(default = "default_decay_b")]
+    pub decay_b: f64,
+}
+
+fn default_p0() -> f64 {
+    101_325.0
+}
+fn default_td() -> f64 {
+    0.01
+}
+fn default_decay_b() -> f64 {
+    1.0
+}
+
+/// Exposed face for blast loading.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ExposedFaceDesc {
+    /// Body index.
+    pub body: usize,
+    /// Face centre [m].
+    pub center: [f64; 3],
+    /// Outward normal.
+    pub normal: [f64; 3],
+    /// Area [m²].
+    pub area: f64,
+}
+
+/// Blast load model knobs (schema v3).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct BlastLoadParamsDesc {
+    /// `"kinney"` or `"kingery_bulmash"` (default).
+    #[serde(default = "default_op_model")]
+    pub overpressure: String,
+    /// `"incident_only"` or `"incident_reflected"` (default).
+    #[serde(default = "default_refl")]
+    pub reflection: String,
+    /// Dynamic-pressure drag `C_d` (0 = off).
+    #[serde(default = "default_cd")]
+    pub drag_cd: f64,
+    /// Shadow attenuation when occluded (`0` = full shadow).
+    #[serde(default)]
+    pub shadow_factor: f64,
+}
+
+fn default_op_model() -> String {
+    "kingery_bulmash".into()
+}
+fn default_refl() -> String {
+    "incident_reflected".into()
+}
+fn default_cd() -> f64 {
+    1.0
+}
+
+impl Default for BlastLoadParamsDesc {
+    fn default() -> Self {
+        Self {
+            overpressure: default_op_model(),
+            reflection: default_refl(),
+            drag_cd: default_cd(),
+            shadow_factor: 0.0,
+        }
+    }
+}
+
+/// One blast loading block (source + faces + params). Applied by the caller via
+/// `pe_blast` + `ExternalLoads` — not a stage-1 `ForceGenerator` trait object.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct BlastLoadingDesc {
+    /// Source.
+    pub source: BlastSourceDesc,
+    /// Exposed faces (ascending body order recommended).
+    #[serde(default)]
+    pub faces: Vec<ExposedFaceDesc>,
+    /// Load parameters.
+    #[serde(default)]
+    pub params: BlastLoadParamsDesc,
+}
+
+/// Pre-fractured compound bookkeeping (bonds are ordinary `joints` with
+/// `break_force`). Optional Voronoi authoring metadata for tooling.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct FractureCompoundDesc {
+    /// Debug name.
+    #[serde(default)]
+    pub name: String,
+    /// Body indices of Voronoi chunks (into `bodies`).
+    pub chunk_bodies: Vec<usize>,
+    /// Joint indices of cohesive bonds (into `joints`).
+    #[serde(default)]
+    pub bond_joints: Vec<usize>,
+    /// Fracture stress [Pa] used to derive break forces (`σ · A`).
+    pub fracture_stress_pa: f64,
+    /// Optional Voronoi seed (authoring only).
+    #[serde(default)]
+    pub voronoi_seed: Option<u64>,
 }
 
 /// Joint kind payload.

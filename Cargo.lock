@@ -673,6 +673,8 @@ version = "0.1.0"
 dependencies = [
  "approx",
  "criterion",
+ "pe-ballistics",
+ "pe-collision",
  "pe-core",
  "pe-math",
  "proptest",
@@ -787,6 +789,7 @@ name = "pe-scene"
 version = "0.1.0"
 dependencies = [
  "approx",
+ "pe-blast",
  "pe-collision",
  "pe-core",
  "pe-math",

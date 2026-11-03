@@ -713,6 +713,8 @@ pub fn canonical_bake_scene() -> SceneDocument {
         },
         state: None,
         runtime: None,
+        blast: Vec::new(),
+        fracture_compounds: Vec::new(),
     }
 }
 

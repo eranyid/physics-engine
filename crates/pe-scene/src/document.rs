@@ -14,8 +14,8 @@ use crate::convert::{
 use crate::error::{map_format_error, SceneError};
 use crate::migrate::migrate_document;
 use crate::types::{
-    BodyDesc, ForceDesc, JointDesc, MaterialDesc, RuntimeSnapshot, ShapeDesc, SolverSettings,
-    StateSnapshot, StaticDesc, SCENE_SCHEMA_VERSION,
+    BlastLoadingDesc, BodyDesc, ForceDesc, FractureCompoundDesc, JointDesc, MaterialDesc,
+    RuntimeSnapshot, ShapeDesc, SolverSettings, StateSnapshot, StaticDesc, SCENE_SCHEMA_VERSION,
 };
 
 /// Full scene: bodies, shapes, materials, joints, forces, solver, optional state.
@@ -48,6 +48,12 @@ pub struct SceneDocument {
     /// Optional solver runtime for bit-exact continue.
     #[serde(default)]
     pub runtime: Option<RuntimeSnapshot>,
+    /// Optional blast loading blocks (schema v3; applied by caller via pe-blast).
+    #[serde(default)]
+    pub blast: Vec<BlastLoadingDesc>,
+    /// Optional fracture-compound bookkeeping (schema v3).
+    #[serde(default)]
+    pub fracture_compounds: Vec<FractureCompoundDesc>,
 }
 
 impl Default for SceneDocument {
@@ -63,6 +69,8 @@ impl Default for SceneDocument {
             solver: SolverSettings::default(),
             state: None,
             runtime: None,
+            blast: Vec::new(),
+            fracture_compounds: Vec::new(),
         }
     }
 }
@@ -313,6 +321,8 @@ impl SceneDocument {
                 sleep_time_bits: cw.sleep.sleep_time.iter().map(|x| x.to_bits()).collect(),
                 bullet: cw.bullet.clone(),
             }),
+            blast: Vec::new(),
+            fracture_compounds: Vec::new(),
         })
     }
 
@@ -382,6 +392,8 @@ impl SceneDocument {
             },
             state: None,
             runtime: None,
+            blast: Vec::new(),
+            fracture_compounds: Vec::new(),
         }
     }
 }
@@ -533,6 +545,8 @@ pub fn godot_drop_box_result() -> (f64, u64) {
         },
         state: None,
         runtime: None,
+        blast: Vec::new(),
+        fracture_compounds: Vec::new(),
     };
     let mut cw = doc.instantiate().expect("godot drop scene");
     let dt = 1.0 / 60.0;

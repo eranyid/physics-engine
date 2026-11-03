@@ -41,6 +41,8 @@ fn free_fall_scene(z0: f64, v0: [f64; 3]) -> SceneDocument {
         },
         state: None,
         runtime: None,
+        blast: Vec::new(),
+        fracture_compounds: Vec::new(),
     }
 }
 
@@ -124,6 +126,8 @@ fn uniform_rotation_slerp_vs_analytic() {
         },
         state: None,
         runtime: None,
+        blast: Vec::new(),
+        fracture_compounds: Vec::new(),
     };
     let dt = 1.0 / 240.0;
     let opt = BakeOptions {
@@ -199,6 +203,8 @@ fn pendulum_small_angle_period_from_bake() {
         },
         state: None,
         runtime: None,
+        blast: Vec::new(),
+        fracture_compounds: Vec::new(),
     };
     let dt = 1.0 / 240.0;
     let t_theory = 2.0 * core::f64::consts::PI * libm_ops::sqrt(length / G);
