@@ -179,11 +179,13 @@ Sizes are relative engineering scope, not calendar schedules.
 - **Models:** linear Airy / Stokes II / Gerstner + spectral (PM/JONSWAP) in
   `pe-hydro` (**shipped**); Morison forces (**shipped** M11); STF strip heave/pitch
   (**shipped** M11); heave Cummins (**shipped**); **M21** 6-DOF Cummins + STF
-  forward speed + ITTC-57 + Nomoto/MMG (**shipped**).
+  forward speed + ITTC-57 + Nomoto/MMG (**shipped**); **M23** oracle tighten +
+  KVLCC2 Yasukawa coeffs (**shipped**).
 - **Validation:** Airy elevation/kinematics + dispersion oracles; spectral `H_s`;
   wave-coupled buoyancy heave; Morison closed-form pile force; long-wave heave RAO→1;
-  roll decay analytic; Nomoto K–T analytic; ITTC-57 `C_f` identity.
-- **Effort:** L (v1 waves + M11 + M21 seakeeping done).
+  roll decay analytic; Nomoto K–T analytic; ITTC-57 `C_f` identity;
+  RK4 undamped energy; box RAO closed form; KVLCC2 turning vs Yasukawa Exp.
+- **Effort:** L (v1 waves + M11 + M21 + M23 seakeeping done).
 
 ### D8 — Materials (elasticity, plasticity, friction, thermal)
 
@@ -339,10 +341,15 @@ ported early because the Python oracle already exists.
   [`BENCHMARKS.md`](BENCHMARKS.md).
 - **M21 ships/sea (shipped):** `cummins6` matrix Cummins (6-DOF), STF forward-speed
   / encounter frequency, ITTC-57 `C_f` (exact), Nomoto K–T + linear MMG-style
-  3-DOF (MMG derivatives **unverified**); cross-OS `cummins6_hash`
-  (`b72a60e18efd983d`). Heave `cummins_hash` unchanged.
-- **Deferred:** MacCamy–Fuchs; Vugts tables; verified Holtrop–Mennen /
-  KVLCC2–SIMMAN tables; swirl induction `a'`; certified airfoil polars.
+  3-DOF; cross-OS `cummins6_hash` (`b72a60e18efd983d`). Heave `cummins_hash`
+  unchanged.
+- **M23 hydro oracle tighten (shipped):** RK4 undamped energy + order-4 dt-halving;
+  quantitative kernel-truncation L1 bound; box-barge closed-form RAO sweep;
+  KVLCC2 MMG coeffs from Yasukawa & Yoshimura (2015) Table 3 with turning-circle
+  vs Table 4 Exp.; Holtrop–Mennen still **unimplemented** (unverified primary).
+  Locked `cummins6_hash` unchanged.
+- **Deferred:** MacCamy–Fuchs; Vugts tables; Holtrop–Mennen tables; swirl
+  induction `a'`; certified airfoil polars.
 
 ### Blast / ballistics track
 

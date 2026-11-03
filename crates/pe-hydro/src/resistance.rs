@@ -15,10 +15,11 @@
 //! # Residual / wave resistance
 //!
 //! A caller-supplied residual coefficient `C_r` (or a Froude-linear surrogate)
-//! may be added: `C_t = C_f + C_r`. **Holtrop–Mennen** full resistance
-//! decomposition is **not** implemented here — its empirical coefficient tables
-//! are not verified against a primary citation in this tree. Any residual
-//! defaults below are marked **unverified**.
+//! may be added: `C_t = C_f + C_r`. **Holtrop–Mennen** (1982) full resistance
+//! decomposition is **intentionally unimplemented** — the empirical coefficient
+//! tables were not verified against a primary/reproduction source accessible
+//! for transcription in this tree (M23). Any residual defaults below are marked
+//! **unverified**.
 //!
 //! # References
 //! - ITTC Recommended Procedures — 1957 ship-model correlation line.

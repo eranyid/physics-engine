@@ -189,10 +189,18 @@ fixed-length (deterministic, no `HashMap`).
 | Roll decay RK4 vs analytic (\(\dot\phi(0)=0\)) | **0.05%** | **~1e-14** |
 | Heave natural \(\omega_3\) (coupled \(M+A_\infty,C\)) vs strip | **0.5%** | **~0.078%** |
 | Long-wave head-seas heave RAO \|RAO−1\| (strip FD) | **2%** | **~0.0038%** |
-| Undamped (\(K\equiv0\)) energy envelope drift, dt=0.01, ~40 s | **3%** | **~1.3%** |
-| Kernel truncation L1 tail: longer horizon ≤ shorter | monotone | passes |
-| Step-size: mid closer to fine than coarse (or tiny) | qualitative | passes |
-| Cross-OS `cummins6_hash` | locked | `b72a60e18efd983d` |
+| Undamped (\(K\equiv0\)) energy envelope, RK4, dt=0.01, ~40 s | **1e-8** | **~2.2e-10** |
+| RK4 dt-halving order vs analytic HO (zero-crossing) | **[3.5, 4.5]** | **~4.00** |
+| Kernel truncation: \(\max\|\Delta z\|\) vs \(20\cdot\mathrm{L1}_{tail}\cdot\|v\|_\infty T/(m+A_\infty)\) | factor **20** | passes (≪) |
+| Box barge heave/pitch RAO vs closed-form strip integrals (incl. resonance) | **0.5% rel** (abs floor \(5\cdot10^{-4}\)) | **≲ 0.4%** |
+| \(A_\infty\), \(C\) matrix asymmetry | **1e-12** rel | **~0** |
+| Cross-OS `cummins6_hash` (semi-implicit path; unchanged) | locked | `b72a60e18efd983d` |
+
+**Energy-drift root cause (M23).** The M21 ~1.3% undamped envelope drift at
+`dt=0.01` was **semi-implicit Euler** (order-1), not a non-symmetric
+\(A_\infty\)/\(C\) coupling or kernel artefact. Matrices are symmetric to machine
+epsilon. Default [`Cummins6Dof::step`] stays semi-implicit so the locked hash is
+unchanged; oracles use [`Cummins6Dof::step_rk4`].
 
 ---
 
@@ -252,18 +260,25 @@ Analytic step (\(r(0)=0\)): \(r(t)=K\delta(1-e^{-t/T})\),
 | Numerical Nomoto step vs analytic (\(dt=10^{-3}\), 40 s) | **0.2%** | **~2e-4% / 0.003%** |
 | Zig-zag 10°/10° rudder switch | qualitative | passes |
 
-KVLCC2 / SIMMAN hydrodynamic derivatives are **not** transcribed (would need a
-verified primary table). Validation oracle is **analytic Nomoto**, not a
-published turning-circle table.
+### KVLCC2 MMG (Yasukawa & Yoshimura 2015)
 
-### Linear MMG-style 3-DOF (unverified derivatives)
+Coefficients transcribed from the **primary** paper Table 3 (Springer PDF),
+including \(w_{P0}=0.40\), \((k_0,k_1,k_2)=(0.2931,-0.2753,-0.1385)\),
+\(x'_R=-0.5\). L7-model geometry from Table 1. Turning indices vs Table 4 Exp.
+(MARIN / SIMMAN L7 free-running):
 
-Surge–sway–yaw with rudder and propeller thrust. Bundled
-`nominal_linear_mmg_unverified` coefficients are **unverified**. Quasi-steady
-sway reduction yields equivalent Nomoto \((K,T)\) when stable.
+| Check | Tolerance | Measured |
+| --- | --- | --- |
+| \(+35^\circ\) advance \(A_D'/L_{pp}\) vs Exp. 3.25 | **12%** | **~10.4%** (got ≈2.91) |
+| \(+35^\circ\) tactical diameter \(D_T'/L_{pp}\) vs Exp. 3.34 | **12%** | **~6.4%** (got ≈3.13) |
 
-Propeller / rudder force helpers are marked **unverified** unless the caller
-supplies a cited \(K_T\) / \(C_{L\alpha}\).
+Yasukawa’s own Cal. was 3.31 / 3.36 (~2% vs Exp.). The 12% tol covers
+clean-room discretisation / self-propulsion \(n_P\) solve without loosening
+past a documented band. Demo `nominal_linear_mmg_unverified` remains for
+tutorials only.
+
+Propeller / rudder **helper** APIs outside the KVLCC2 path stay marked
+**unverified** unless the caller supplies a cited map.
 
 ---
 
@@ -283,5 +298,7 @@ supplies a cited \(K_T\) / \(C_{L\alpha}\).
 ## Deferred
 
 Tabulated Vugts / Frank close-fit sections; 3-D panel diffraction;
-MacCamy–Fuchs; verified Holtrop–Mennen tables; KVLCC2/SIMMAN derivative sets;
-viscous roll damping maps; certified propeller open-water curves.
+MacCamy–Fuchs; **Holtrop–Mennen** full resistance tables (1982 ISP formulas /
+coefficients not verified against a primary reproduction in-tree — left
+unimplemented); viscous roll damping maps; additional propeller open-water
+curves beyond the KVLCC2 \(K_T\) polynomial.

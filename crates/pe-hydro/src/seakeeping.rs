@@ -344,6 +344,94 @@ fn solve4(mut a: [[f64; 4]; 4], mut b: [f64; 4]) -> [f64; 4] {
     x
 }
 
+/// Closed-form strip integrals for a **uniform** rectangular barge.
+///
+/// For constant sectional `a₃₃(ω)`, `b₃₃(ω)`, beam `B`, length `L` about midship:
+///
+/// ```text
+/// A₃₃ = a₃₃ L,   A₃₅ = A₅₃ = 0,   A₅₅ = a₃₃ L³/12
+/// ```
+/// (same pattern for `Bᵢⱼ` and waterplane `Cᵢⱼ` with `c′ = ρ g B`).
+///
+/// Excitation uses the same FK depth attenuation and STF Haskind diffraction
+/// as [`excitation_fk_diffraction`], integrated in closed form:
+/// `∫_{-L/2}^{L/2} e^{i k x} dx = L · sinc(k L / 2)` (complex via cos/sin of 0
+/// for the even heave channel; pitch uses the odd `∫ x e^{ikx} dx`).
+///
+/// This is the analytic evaluation of *this module's* strip model (Lewis-circle
+/// `a₃₃`/`b₃₃` surrogates) — not a Vugts table or 3-D panel RAO.
+#[allow(clippy::too_many_arguments)]
+pub fn box_barge_rao_closed_form(
+    length: f64,
+    beam: f64,
+    draft: f64,
+    mass: f64,
+    iyy: f64,
+    rho: f64,
+    omega: f64,
+    depth: f64,
+    g: f64,
+) -> HeavePitchRao {
+    let k = solve_wave_number(omega, depth, g);
+    let a33 = sectional_a33(rho, omega, beam, draft, 1.0, g);
+    let b33 = sectional_b33(rho, omega, beam, draft, 1.0, g);
+    let l = length;
+    let l3_12 = l * l * l / 12.0;
+    let mut a = [[0.0; 2]; 2];
+    let mut b = [[0.0; 2]; 2];
+    let mut c = [[0.0; 2]; 2];
+    a[0][0] = a33 * l;
+    a[1][1] = a33 * l3_12;
+    b[0][0] = b33 * l;
+    b[1][1] = b33 * l3_12;
+    let c_prime = rho * g * beam;
+    c[0][0] = c_prime * l;
+    c[1][1] = c_prime * l3_12;
+    // Closed-form ∫ e^{ikx} dx and ∫ x e^{ikx} dx on [-L/2, L/2].
+    let half = 0.5 * l;
+    let (int_e_re, int_e_im, int_xe_re, int_xe_im) = if libm_ops::fabs(k) < 1e-12 {
+        (l, 0.0, 0.0, 0.0)
+    } else {
+        // ∫ cos(kx) dx = 2 sin(kL/2)/k ; ∫ sin(kx) dx = 0 (odd)
+        // ∫ x cos(kx) dx = 0 (odd); ∫ x sin(kx) dx = 2(sin(q)−q cos(q))/k², q=kL/2
+        let q = k * half;
+        let s = libm_ops::sin(q);
+        let c0 = libm_ops::cos(q);
+        let int_cos = 2.0 * s / k;
+        let int_x_sin = 2.0 * (s - q * c0) / (k * k);
+        (int_cos, 0.0, 0.0, int_x_sin)
+    };
+    let z = -0.5 * draft;
+    let atten = pressure_atten(k, depth, z);
+    let fk = rho * g * beam * atten;
+    // Match [`excitation_fk_diffraction`]: FK · e^{ikx} plus Haskind (−iω b₃₃) e^{ikx}.
+    let d_coef = omega * b33;
+    let f3_re = fk * int_e_re + d_coef * int_e_im;
+    let f3_im = fk * int_e_im - d_coef * int_e_re;
+    let f5_re = -fk * int_xe_re - d_coef * int_xe_im;
+    let f5_im = -fk * int_xe_im + d_coef * int_xe_re;
+
+    let w2 = omega * omega;
+    let mut zr = [[0.0; 2]; 2];
+    let mut zi = [[0.0; 2]; 2];
+    let mass_diag = [mass, iyy];
+    for r in 0..2 {
+        for col in 0..2 {
+            let md = if r == col { mass_diag[r] } else { 0.0 };
+            zr[r][col] = -w2 * (md + a[r][col]) + c[r][col];
+            zi[r][col] = omega * b[r][col];
+        }
+    }
+    let (xi_re, xi_im) = solve2x2_complex(zr, zi, [f3_re, f5_re], [f3_im, f5_im]);
+    HeavePitchRao {
+        omega,
+        heave: libm_ops::hypot(xi_re[0], xi_im[0]),
+        pitch: libm_ops::hypot(xi_re[1], xi_im[1]),
+        heave_phase: libm_ops::atan2(xi_im[0], xi_re[0]),
+        pitch_phase: libm_ops::atan2(xi_im[1], xi_re[1]),
+    }
+}
+
 /// Analytic heave natural frequency [rad/s] for a box barge (no coupling).
 ///
 /// `ω₃ = √(ρ g A_wp / (m + A₃₃))` with `A₃₃` from strip `a₃₃∞` (high-frequency).

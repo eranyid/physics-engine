@@ -162,11 +162,15 @@ Clean-room formulas only — **no** third-party simulation source translated:
   \(C_f = 0.075/(\log_{10}R_n-2)^2\) implemented exactly. Holtrop–Mennen
   coefficient tables **not** transcribed (unverified in-tree).
 - Nomoto, K. et al. (1957) — first-order K–T steering (analytic step oracle).
-- MMG standard method structure after Yasukawa & Yoshimura (2015) — **structure
-  only**; bundled linear derivatives marked **unverified**. No KVLCC2/SIMMAN
-  table copied.
-- Surge \(A_{11}^\infty\) uses nominal \(C_x=0.5\) (**unverified**); propeller /
-  rudder force helpers marked **unverified** unless caller supplies cited maps.
+- Yasukawa, H. & Yoshimura, Y. (2015). Introduction of MMG standard method for
+  ship maneuvering predictions. *J. Mar. Sci. Technol.* **20**, 37–52
+  (Springer PDF) — KVLCC2 Table 1 geometry, Table 3 hydrodynamic coefficients
+  (including \(w_{P0}\), \(K_T\) polynomial), Table 4 Exp. turning indices
+  transcribed as **published numbers only** (clean-room MMG code). Demo
+  `nominal_linear_mmg_unverified` remains unmarked as verified.
+- Surge \(A_{11}^\infty\) uses nominal \(C_x=0.5\) (**unverified**); generic
+  propeller / rudder helpers outside the KVLCC2 path marked **unverified**
+  unless caller supplies cited maps. Holtrop–Mennen (1982) **not** transcribed.
 
 ### Blast / ballistics note (`pe-blast`, `pe-ballistics`)
 
