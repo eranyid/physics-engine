@@ -24,6 +24,7 @@ pub mod islands;
 pub mod joints;
 pub mod manifold;
 pub mod narrowphase;
+pub mod queries;
 pub mod scratch;
 pub mod shapes;
 pub mod soft_step;
@@ -45,6 +46,7 @@ pub use joints::{
 };
 pub use manifold::{Contact, ContactPoint, FeatureId, ManifoldPoint};
 pub use narrowphase::{collide, DedicatedNarrowPhase, NarrowPhase};
+pub use queries::{overlap_aabb, raycast, sphere_cast, RayHit, ShapeCastHit};
 pub use scratch::{StepPhaseTimes, StepScratch};
 pub use shapes::{Aabb, BoxShape, Capsule, Material, Plane, Shape, Sphere};
 pub use softness::{SoftStepParams, Softness, SolverMode};

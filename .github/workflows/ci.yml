@@ -93,7 +93,7 @@ jobs:
         run: ./crates/pe-ffi/c_tests/run_c_test.sh
 
   pe-godot-headless:
-    name: pe-godot headless drop test (Linux)
+    name: pe-godot headless suite (Linux)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -112,10 +112,30 @@ jobs:
       - name: Download Godot (verify official SHA-512)
         run: ./godot/ci/download_godot.sh
 
-      - name: Headless drop test (y tolerance + state hash)
-        run: ./godot/ci/run_headless_drop.sh
-        # Required job: Linux headless Godot 4.3-stable actually loads the
-        # GDExtension and runs ci_drop_test.tscn. Measured results: docs/GODOT.md.
+      - name: Headless suite (drop hash + shapes + joint + raycast + contact)
+        run: ./godot/ci/run_headless_suite.sh
+        # Required job: Linux headless Godot 4.3-stable loads the GDExtension
+        # and runs ci_drop_test + M25 scene tests. Measured: docs/GODOT.md.
+
+  pe-godot-build:
+    name: pe-godot build (${{ matrix.os }})
+    # Build-only on Windows/macOS: pinned headless Godot CI runner is Linux.
+    # Interactive editor play remains unverified on all platforms.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.99.1"
+
+      - name: cargo build -p pe-godot
+        run: cargo build -p pe-godot
 
   maturin-pytest:
     name: maturin wheel + oracle pytest

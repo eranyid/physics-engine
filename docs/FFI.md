@@ -58,10 +58,17 @@ Build/run the CI smoke test:
 
 ## Queries & events
 
-- `pe_world_raycast` — spheres/planes exact; box/capsule use AABB hits
+Implementations live in [`pe_collision::queries`](../crates/pe-collision/src/queries.rs)
+(shared with the Godot GDExtension). The C ABI wraps the same functions:
+
+- `pe_world_raycast` — spheres/planes exact; box/capsule/convex use AABB hits
   (**approximate normals**; documented as unverified for exact OBB).
 - `pe_world_overlap_aabb` — broad AABB overlap indices.
 - `pe_world_get_contacts` — contacts from the **last** `pe_world_step`.
+
+Rust also exposes `sphere_cast` (analytic vs sphere/plane; expanded-AABB vs
+other shapes) for Godot / native callers; not yet in the C header (additive
+follow-up).
 
 ## Limits / deferred
 
