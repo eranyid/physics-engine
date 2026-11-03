@@ -33,8 +33,8 @@
 //! # Limits / deferred
 //!
 //! - This module's [`HeavePitchTd`] freezes matrices at one `ω_ref`; for
-//!   retardation convolution see [`crate::cummins`].
-//! - No forward speed (`U = 0`); no roll/sway/yaw; no viscous roll damping.
+//!   retardation convolution see [`crate::cummins`] (heave) and
+//!   [`crate::cummins6`] (6-DOF). Forward-speed STF: [`crate::forward_speed`].
 //! - Lewis/circular substitute — **not** ITTC/Vugts tabulated sections.
 //! - Diffraction is the STF strip Haskind approximation, not a 3-D panel code.
 //!

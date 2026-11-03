@@ -53,6 +53,7 @@ cargo run -p pe-hydro --bin aero_hydro_hash --release
 cargo run -p pe-soft --bin soft_hash --release
 cargo run -p pe-soft --bin materials_hash --release
 cargo run -p pe-hydro --bin m11_hash --release
+cargo run -p pe-hydro --bin cummins6_hash --release
 ```
 
 ## Example (stage 1, Python oracle)

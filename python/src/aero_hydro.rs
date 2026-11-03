@@ -19,13 +19,15 @@ use pe_hydro::waves::{AiryWave, SpectralOcean, Wave, WaveField};
 use pe_hydro::{
     airy_inertia_closed_form, angle_of_vanishing_stability, box_added_mass_heave,
     box_added_mass_surge, box_barge_stations, box_heave_natural_omega_earth, box_heave_retardation,
-    box_righting_arm_curve, canonical_cummins_hash as cummins_hash_rs,
-    canonical_m11_hash as m11_hash_rs, canonical_wave_body_hash as wave_body_hash_rs,
-    check_imo_is_code, damping_from_retardation, deep_water_wavelength, group_speed,
-    heave_period_earth, heave_period_with_added_mass, heave_pitch_rao, integrate_morison_fixed,
+    box_righting_arm_curve, canonical_cummins6_hash as cummins6_hash_rs,
+    canonical_cummins_hash as cummins_hash_rs, canonical_m11_hash as m11_hash_rs,
+    canonical_wave_body_hash as wave_body_hash_rs, check_imo_is_code, damping_from_retardation,
+    deep_water_wavelength, encounter_frequency_deep, group_speed, heave_period_earth,
+    heave_period_with_added_mass, heave_pitch_rao, integrate_morison_fixed, ittc57_cf,
     metacentric_height, phase_speed, pierson_moskowitz_hs_approx, relative_l2, righting_arm,
     righting_moment, roll_natural_period, roll_period_earth, solve_wave_number, Buoyancy,
-    CumminsHeave, HullDrag, MorisonMember, WaveDrag, NOMINAL_CD_CIRCULAR, NOMINAL_CM_CIRCULAR,
+    CumminsHeave, HullDrag, MorisonMember, NomotoKT, WaveDrag, NOMINAL_CD_CIRCULAR,
+    NOMINAL_CM_CIRCULAR, NU_FRESHWATER_20C_NOMINAL,
 };
 use pe_math::{Quat, Vec3, STANDARD_GRAVITY};
 use pyo3::exceptions::PyValueError;
@@ -1062,6 +1064,37 @@ fn canonical_cummins_hash() -> u64 {
     cummins_hash_rs()
 }
 
+/// Canonical 6-DOF Cummins free-decay hash (M21, cross-OS determinism).
+#[pyfunction]
+fn canonical_cummins6_hash() -> u64 {
+    cummins6_hash_rs()
+}
+
+/// ITTC-1957 frictional coefficient `C_f(R_n)`.
+#[pyfunction]
+fn ittc57_friction_cf(reynolds: f64) -> f64 {
+    ittc57_cf(reynolds)
+}
+
+/// Nomoto first-order yaw-rate step response [rad/s].
+#[pyfunction]
+fn nomoto_r_step(k: f64, t_const: f64, delta: f64, time: f64) -> f64 {
+    NomotoKT::new(k, t_const).r_step(delta, time)
+}
+
+/// Nomoto first-order heading step response [rad].
+#[pyfunction]
+fn nomoto_psi_step(k: f64, t_const: f64, delta: f64, time: f64) -> f64 {
+    NomotoKT::new(k, t_const).psi_step(delta, time)
+}
+
+/// Encounter frequency [rad/s] (deep water): `ω_e = ω − U (ω²/g) cos χ`.
+#[pyfunction]
+#[pyo3(signature = (omega, speed_u, heading_rad=0.0))]
+fn encounter_frequency_py(omega: f64, speed_u: f64, heading_rad: f64) -> f64 {
+    encounter_frequency_deep(omega, speed_u, heading_rad, STANDARD_GRAVITY)
+}
+
 /// Build heave retardation `K(t)` samples for a box barge; returns `(dt, K, A_inf, C)`.
 #[pyfunction]
 #[pyo3(signature = (length, beam, draft, dt=0.05, n_time=200, omega_max=4.0, n_omega=64, rho=None, n_strips=16))]
@@ -1249,6 +1282,12 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(canonical_wave_body_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_m11_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_cummins_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(canonical_cummins6_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(ittc57_friction_cf, m)?)?;
+    m.add_function(wrap_pyfunction!(nomoto_r_step, m)?)?;
+    m.add_function(wrap_pyfunction!(nomoto_psi_step, m)?)?;
+    m.add_function(wrap_pyfunction!(encounter_frequency_py, m)?)?;
+    m.add("NU_FRESHWATER_20C_NOMINAL", NU_FRESHWATER_20C_NOMINAL)?;
     m.add_function(wrap_pyfunction!(cummins_box_kernel, m)?)?;
     m.add_function(wrap_pyfunction!(cummins_free_decay, m)?)?;
     m.add_function(wrap_pyfunction!(cummins_k_b_consistency, m)?)?;
