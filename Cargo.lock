@@ -688,6 +688,7 @@ dependencies = [
  "criterion",
  "pe-core",
  "pe-math",
+ "pe-scene",
  "proptest",
  "rayon",
 ]
@@ -718,6 +719,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "pe-examples"
+version = "0.1.0"
+dependencies = [
+ "pe-aero",
+ "pe-collision",
+ "pe-core",
+ "pe-math",
+ "pe-space",
+]
+
+[[package]]
 name = "pe-ffi"
 version = "0.1.0"
 dependencies = [
@@ -726,6 +738,7 @@ dependencies = [
  "pe-core",
  "pe-math",
  "pe-scene",
+ "proptest",
 ]
 
 [[package]]

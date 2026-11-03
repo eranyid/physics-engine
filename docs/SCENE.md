@@ -43,7 +43,9 @@ v1/v2 files that omit the new fields still load (defaults applied). Frozen fixtu
 `crates/pe-scene/tests/fixtures/v1_box_ground.json`.
 
 Malformed input returns [`SceneError`] — loaders **never panic** (fuzzed in
-`crates/pe-scene/tests/roundtrip.rs`).
+`crates/pe-scene/tests/roundtrip.rs`, including random bytes / JSON / RON and
+structured near-valid mutations; invalid mass fails `instantiate` with
+`SceneError::Invalid`).
 
 ## Bit-exact continue
 

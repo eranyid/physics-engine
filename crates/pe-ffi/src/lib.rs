@@ -22,7 +22,7 @@ mod world;
 pub use error::{
     PE_ERR_ARG, PE_ERR_BOUNDS, PE_ERR_NULL, PE_ERR_PANIC, PE_ERR_SCENE, PE_ERR_UNSUPPORTED, PE_OK,
 };
-pub use world::PeContactEvent;
+pub use world::{PeContactEvent, PeWorld};
 
 use core::ffi::{c_char, c_int, c_void};
 use core::ptr;
@@ -36,7 +36,7 @@ use pe_core::RigidBody;
 use pe_math::{Quat, Vec3};
 use pe_scene::SceneDocument;
 use queries::{overlap_aabb, raycast};
-use world::{parse_shape, PeWorld};
+use world::parse_shape;
 
 fn catch<F: FnOnce() -> c_int>(f: F) -> c_int {
     match catch_unwind(AssertUnwindSafe(f)) {
@@ -130,16 +130,33 @@ pub unsafe extern "C" fn pe_world_add_body(
         if shape_kind == 3 {
             return PE_ERR_ARG;
         }
+        // Reject NaN/Inf on pose / velocity / inertia / material before constructors.
+        for v in [
+            px, py, pz, vx, vy, vz, qw, qx, qy, qz, wx, wy, wz, ixx, iyy, izz,
+        ] {
+            if !v.is_finite() {
+                return PE_ERR_ARG;
+            }
+        }
+        if !(restitution.is_finite() && friction.is_finite()) {
+            return PE_ERR_ARG;
+        }
         let shape = match parse_shape(shape_kind, sa, sb, sc, 0.0) {
             Ok(s) => s,
             Err(e) => return e,
         };
-        let body = RigidBody::new(mass)
-            .with_position(Vec3::new(px, py, pz))
-            .with_velocity(Vec3::new(vx, vy, vz))
-            .with_orientation(Quat::new(qw, qx, qy, qz))
-            .with_angular_velocity(Vec3::new(wx, wy, wz))
-            .with_inertia_diag(ixx, iyy, izz);
+        let body = match RigidBody::try_new(mass)
+            .and_then(|b| {
+                b.with_position(Vec3::new(px, py, pz))
+                    .with_velocity(Vec3::new(vx, vy, vz))
+                    .with_angular_velocity(Vec3::new(wx, wy, wz))
+                    .try_with_orientation(Quat::new(qw, qx, qy, qz))
+            })
+            .and_then(|b| b.try_with_inertia_diag(ixx, iyy, izz))
+        {
+            Ok(b) => b,
+            Err(_) => return PE_ERR_ARG,
+        };
         let mat = Material::new(restitution, friction);
         let w = &mut *world;
         let idx = w.cw.add_dynamic_body(body, shape, mat);
@@ -172,6 +189,11 @@ pub unsafe extern "C" fn pe_world_add_static(
     catch(|| {
         if world.is_null() {
             return PE_ERR_NULL;
+        }
+        for v in [px, py, pz, restitution, friction] {
+            if !v.is_finite() {
+                return PE_ERR_ARG;
+            }
         }
         let shape = match parse_shape(shape_kind, sa, sb, sc, sd) {
             Ok(s) => s,
@@ -308,14 +330,21 @@ pub unsafe extern "C" fn pe_world_set_transforms(
         let pos = slice::from_raw_parts(pos, count * 3);
         let quat = slice::from_raw_parts(quat, count * 4);
         for i in 0..count {
-            w.cw.world.state.x[i] = Vec3::new(pos[3 * i], pos[3 * i + 1], pos[3 * i + 2]);
-            w.cw.world.state.q[i] = Quat::new(
+            let p = Vec3::new(pos[3 * i], pos[3 * i + 1], pos[3 * i + 2]);
+            let q = Quat::new(
                 quat[4 * i],
                 quat[4 * i + 1],
                 quat[4 * i + 2],
                 quat[4 * i + 3],
-            )
-            .normalize();
+            );
+            if !p.is_finite() {
+                return PE_ERR_ARG;
+            }
+            let Some(qn) = q.try_normalize() else {
+                return PE_ERR_ARG;
+            };
+            w.cw.world.state.x[i] = p;
+            w.cw.world.state.q[i] = qn;
             w.cw.wake_body(i);
         }
         PE_OK

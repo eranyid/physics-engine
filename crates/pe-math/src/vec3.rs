@@ -70,6 +70,12 @@ impl Vec3 {
         self.x * self.x + self.y * self.y + self.z * self.z
     }
 
+    /// True when every component is finite (not NaN / ±∞).
+    #[inline]
+    pub fn is_finite(self) -> bool {
+        self.x.is_finite() && self.y.is_finite() && self.z.is_finite()
+    }
+
     /// Dot product.
     #[inline]
     pub fn dot(self, other: Self) -> f64 {

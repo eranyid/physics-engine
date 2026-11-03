@@ -2,6 +2,8 @@
 
 use pe_math::{Quat, Vec3};
 
+use crate::error::BodyError;
+
 /// Stable index into a [`crate::World`]'s body arrays.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct BodyId(pub usize);
@@ -34,9 +36,20 @@ pub struct RigidBody {
 
 impl RigidBody {
     /// Create a body with the given mass [kg] and identity inertia / zero state.
+    ///
+    /// # Panics
+    /// Panics if `mass` is non-finite or not strictly positive. Prefer
+    /// [`try_new`](Self::try_new) at crate / FFI boundaries.
     pub fn new(mass: f64) -> Self {
-        assert!(mass > 0.0, "mass must be positive");
-        Self {
+        Self::try_new(mass).expect("mass must be positive")
+    }
+
+    /// Fallible constructor: mass must be finite and `> 0`.
+    pub fn try_new(mass: f64) -> Result<Self, BodyError> {
+        if !(mass.is_finite() && mass > 0.0) {
+            return Err(BodyError::InvalidMass);
+        }
+        Ok(Self {
             mass,
             inertia_body: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
             position: Vec3::zero(),
@@ -44,7 +57,7 @@ impl RigidBody {
             orientation: Quat::identity(),
             angular_velocity: Vec3::zero(),
             name: String::new(),
-        }
+        })
     }
 
     /// Builder: set world position [m].
@@ -60,10 +73,21 @@ impl RigidBody {
     }
 
     /// Builder: set body-frame inertia [kg m²].
+    ///
+    /// # Panics
+    /// Panics if the tensor is non-finite, asymmetric, or not positive definite.
+    /// Prefer [`try_with_inertia`](Self::try_with_inertia) at crate boundaries.
     pub fn with_inertia(mut self, i: [[f64; 3]; 3]) -> Self {
-        Self::validate_inertia(&i);
+        Self::validate_inertia(&i).expect("invalid inertia");
         self.inertia_body = i;
         self
+    }
+
+    /// Fallible inertia setter (symmetric positive-definite, finite entries).
+    pub fn try_with_inertia(mut self, i: [[f64; 3]; 3]) -> Result<Self, BodyError> {
+        Self::validate_inertia(&i)?;
+        self.inertia_body = i;
+        Ok(self)
     }
 
     /// Builder: diagonal body-frame inertia [kg m²].
@@ -71,10 +95,24 @@ impl RigidBody {
         self.with_inertia([[ixx, 0.0, 0.0], [0.0, iyy, 0.0], [0.0, 0.0, izz]])
     }
 
-    /// Builder: orientation (normalized).
+    /// Fallible diagonal inertia setter.
+    pub fn try_with_inertia_diag(self, ixx: f64, iyy: f64, izz: f64) -> Result<Self, BodyError> {
+        self.try_with_inertia([[ixx, 0.0, 0.0], [0.0, iyy, 0.0], [0.0, 0.0, izz]])
+    }
+
+    /// Builder: orientation (normalized; non-finite / zero → identity).
+    ///
+    /// Prefer [`try_with_orientation`](Self::try_with_orientation) when rejection
+    /// of bad quaternions is required.
     pub fn with_orientation(mut self, q: Quat) -> Self {
         self.orientation = q.normalize();
         self
+    }
+
+    /// Fallible orientation setter (normalizes a finite non-zero quaternion).
+    pub fn try_with_orientation(mut self, q: Quat) -> Result<Self, BodyError> {
+        self.orientation = q.try_normalize().ok_or(BodyError::InvalidOrientation)?;
+        Ok(self)
     }
 
     /// Builder: world-frame angular velocity [rad/s].
@@ -83,14 +121,41 @@ impl RigidBody {
         self
     }
 
-    fn validate_inertia(i: &[[f64; 3]; 3]) {
+    /// Validate that pose / velocity / inertia / orientation are finite and usable.
+    pub fn validate(&self) -> Result<(), BodyError> {
+        if !(self.mass.is_finite() && self.mass > 0.0) {
+            return Err(BodyError::InvalidMass);
+        }
+        if !self.position.is_finite() {
+            return Err(BodyError::NonFinite("position"));
+        }
+        if !self.velocity.is_finite() {
+            return Err(BodyError::NonFinite("velocity"));
+        }
+        if !self.angular_velocity.is_finite() {
+            return Err(BodyError::NonFinite("angular_velocity"));
+        }
+        if self.orientation.try_normalize().is_none() {
+            return Err(BodyError::InvalidOrientation);
+        }
+        Self::validate_inertia(&self.inertia_body)?;
+        Ok(())
+    }
+
+    fn validate_inertia(i: &[[f64; 3]; 3]) -> Result<(), BodyError> {
+        for row in i {
+            for &v in row {
+                if !v.is_finite() {
+                    return Err(BodyError::InvalidInertia("non-finite entry"));
+                }
+            }
+        }
         // Symmetry
         for r in 0..3 {
             for c in 0..3 {
-                assert!(
-                    (i[r][c] - i[c][r]).abs() < 1e-12,
-                    "inertia tensor must be symmetric"
-                );
+                if (i[r][c] - i[c][r]).abs() >= 1e-12 {
+                    return Err(BodyError::InvalidInertia("must be symmetric"));
+                }
             }
         }
         // Positive-definite via leading minors (Sylvester) for 3×3
@@ -99,10 +164,10 @@ impl RigidBody {
         let d3 = i[0][0] * (i[1][1] * i[2][2] - i[1][2] * i[2][1])
             - i[0][1] * (i[1][0] * i[2][2] - i[1][2] * i[2][0])
             + i[0][2] * (i[1][0] * i[2][1] - i[1][1] * i[2][0]);
-        assert!(
-            d1 > 0.0 && d2 > 0.0 && d3 > 0.0,
-            "inertia must be positive definite"
-        );
+        if !(d1 > 0.0 && d2 > 0.0 && d3 > 0.0) {
+            return Err(BodyError::InvalidInertia("must be positive definite"));
+        }
+        Ok(())
     }
 }
 
@@ -129,13 +194,22 @@ pub fn inertia_solid_cylinder(mass: f64, r: f64, h: f64) -> [[f64; 3]; 3] {
 }
 
 /// Invert a 3×3 matrix (for body inertia). Panics if singular.
+///
+/// Prefer [`try_invert3`] at crate boundaries.
 pub fn invert3(m: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
+    try_invert3(m).expect("singular matrix")
+}
+
+/// Fallible 3×3 invert. Returns [`BodyError::SingularMatrix`] when `det ≈ 0`.
+pub fn try_invert3(m: &[[f64; 3]; 3]) -> Result<[[f64; 3]; 3], BodyError> {
     let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
         - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
         + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
-    assert!(det.abs() > 0.0, "singular matrix");
+    if !(det.is_finite() && det.abs() > 0.0) {
+        return Err(BodyError::SingularMatrix);
+    }
     let inv_det = 1.0 / det;
-    [
+    Ok([
         [
             (m[1][1] * m[2][2] - m[1][2] * m[2][1]) * inv_det,
             (m[0][2] * m[2][1] - m[0][1] * m[2][2]) * inv_det,
@@ -151,7 +225,7 @@ pub fn invert3(m: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
             (m[0][1] * m[2][0] - m[0][0] * m[2][1]) * inv_det,
             (m[0][0] * m[1][1] - m[0][1] * m[1][0]) * inv_det,
         ],
-    ]
+    ])
 }
 
 /// Matrix-vector product `M v` for 3×3 row-major.
@@ -206,5 +280,46 @@ mod tests {
         assert_abs_diff_eq!(i[0][0], 1.0, epsilon = 1e-15);
         assert_abs_diff_eq!(i[1][1], 1.0, epsilon = 1e-15);
         assert_abs_diff_eq!(i[2][2], 1.0, epsilon = 1e-15);
+    }
+
+    #[test]
+    fn try_new_rejects_non_positive_mass() {
+        assert!(matches!(
+            RigidBody::try_new(0.0),
+            Err(BodyError::InvalidMass)
+        ));
+        assert!(matches!(
+            RigidBody::try_new(-1.0),
+            Err(BodyError::InvalidMass)
+        ));
+        assert!(matches!(
+            RigidBody::try_new(f64::NAN),
+            Err(BodyError::InvalidMass)
+        ));
+        assert!(matches!(
+            RigidBody::try_new(f64::INFINITY),
+            Err(BodyError::InvalidMass)
+        ));
+        assert!(RigidBody::try_new(1.0).is_ok());
+    }
+
+    #[test]
+    fn try_with_inertia_rejects_nan_and_non_pd() {
+        let b = RigidBody::try_new(1.0).unwrap();
+        assert!(matches!(
+            b.clone()
+                .try_with_inertia([[f64::NAN, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+            Err(BodyError::InvalidInertia(_))
+        ));
+        assert!(matches!(
+            b.try_with_inertia_diag(-1.0, 1.0, 1.0),
+            Err(BodyError::InvalidInertia(_))
+        ));
+    }
+
+    #[test]
+    fn try_invert3_rejects_singular() {
+        let z = [[0.0; 3]; 3];
+        assert_eq!(try_invert3(&z), Err(BodyError::SingularMatrix));
     }
 }

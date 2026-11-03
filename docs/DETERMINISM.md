@@ -523,3 +523,15 @@ Within Rust, `test_rust_determinism_repeat`, `determinism_bitwise_repeat`, and
 The stage-3 hash is asserted equal on repeat via `canonical_aero_hydro_hash`.
 The M7 figure-eight hash is asserted equal on repeat via `canonical_space_hash` /
 `figure_eight_hash_bit_stable_on_repeat`.
+
+### M22 invariant / snapshot determinism
+
+- `pe-core` / `pe-collision` property+invariant suites assert state stays finite after
+  random steps, contact-free / symmetric-contact momentum conservation, and
+  bit-identical hashes on repeat.
+- Mid-run `SceneDocument::capture` → binary → `instantiate` continues with the same
+  later `state_hash64` as an uninterrupted run (`pe-collision/tests/properties.rs`).
+- Island-ordered parallel solve remains bit-identical across 1/2/8 threads
+  (`pe-collision` feature `parallel`, `tests/perf_determinism.rs`).
+- Long-run drift bounds: [`STABILITY.md`](STABILITY.md). **No locked hash values
+  changed in M22.**

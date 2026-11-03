@@ -17,6 +17,7 @@ GDExtension (`godot/`) ship as M8. Python remains the oracle for cross-checks.
 - C ABI: [docs/FFI.md](docs/FFI.md)
 - Godot: [docs/GODOT.md](docs/GODOT.md)
 - Combat (armor, penetration, ricochet, spall): [docs/COMBAT.md](docs/COMBAT.md)
+- Stability (long-run drift bounds): [docs/STABILITY.md](docs/STABILITY.md)
 
 **Status:** M0–M9 done (incl. M6 convex); M11 Morison / seakeeping / BEM done; soft/fluids parallel tracks.
 - Stage 1: rigid bodies, gravity, drag, springs, integrators, diagnostics (Python + Rust)
@@ -32,13 +33,26 @@ python3 -m venv .venv
 .venv/bin/pytest -m slow -q  # long energy / stack / trim / roll runs
 ```
 
+## Examples (Rust)
+
+```bash
+cargo run -p pe-examples --bin bouncing_ball --release
+cargo run -p pe-examples --bin pyramid --release
+cargo run -p pe-examples --bin orbit --release
+cargo run -p pe-examples --bin falling_aircraft --release
+```
+
 ## Rust core + wheel
 
 ```bash
 # Toolchain pinned in rust-toolchain.toml
-cargo test --workspace
+cargo test --workspace --exclude pe-godot --exclude pe-examples
+cargo build -p pe-examples --bins
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
+# Opt-in long-run stability (also Monday cron / workflow_dispatch):
+# cargo test -p pe-collision --test stability --release -- --ignored --nocapture
+```
 
 # abi3 wheel (requires maturin + venv)
 .venv/bin/pip install maturin

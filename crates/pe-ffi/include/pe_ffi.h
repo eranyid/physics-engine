@@ -46,7 +46,7 @@
 #define PE_ERR_UNSUPPORTED 6
 
 /**
- * Host-owned simulation world.
+ * Host-owned simulation world (opaque to C; usable from Rust tests via rlib).
  */
 typedef struct PeWorld PeWorld;
 

@@ -14,6 +14,7 @@ members = [
     "crates/pe-fluid",
     "crates/pe-scene",
     "crates/pe-ffi",
+    "examples",
     "godot",
     "python",
 ]

@@ -49,6 +49,14 @@ impl State {
         }
         out
     }
+
+    /// True when every packed component is finite (no NaN / ±∞ escaped a step).
+    pub fn all_finite(&self) -> bool {
+        self.x.iter().all(|v| v.is_finite())
+            && self.q.iter().all(|q| q.is_finite())
+            && self.v.iter().all(|v| v.is_finite())
+            && self.l.iter().all(|v| v.is_finite())
+    }
 }
 
 /// Simulation world owning bodies (SoA) and ordered force generators.

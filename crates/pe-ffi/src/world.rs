@@ -8,7 +8,7 @@ use pe_scene::{force_to_box, ForceDesc};
 
 use crate::error::PE_ERR_ARG;
 
-/// Host-owned simulation world.
+/// Host-owned simulation world (opaque to C; usable from Rust tests via rlib).
 pub struct PeWorld {
     pub(crate) cw: ContactWorld,
     pub(crate) forces: Vec<ForceDesc>,
@@ -61,12 +61,37 @@ impl PeWorld {
     }
 }
 
+/// Parse a shape kind + parameters; rejects NaN/Inf and non-positive sizes.
 pub(crate) fn parse_shape(kind: i32, a: f64, b: f64, c: f64, d: f64) -> Result<Shape, i32> {
     match kind {
-        0 => Ok(Shape::Sphere(Sphere::new(a))),
-        1 => Ok(Shape::Box(BoxShape::new(a, b, c))),
-        2 => Ok(Shape::Capsule(Capsule::new(a, b))),
-        3 => Ok(Shape::Plane(Plane::new(Vec3::new(a, b, c), d))),
+        0 => {
+            if !(a.is_finite() && a > 0.0) {
+                return Err(PE_ERR_ARG);
+            }
+            Ok(Shape::Sphere(Sphere::new(a)))
+        }
+        1 => {
+            if !(a.is_finite() && b.is_finite() && c.is_finite() && a > 0.0 && b > 0.0 && c > 0.0) {
+                return Err(PE_ERR_ARG);
+            }
+            Ok(Shape::Box(BoxShape::new(a, b, c)))
+        }
+        2 => {
+            if !(a.is_finite() && b.is_finite() && a > 0.0 && b >= 0.0) {
+                return Err(PE_ERR_ARG);
+            }
+            Ok(Shape::Capsule(Capsule::new(a, b)))
+        }
+        3 => {
+            if !(a.is_finite() && b.is_finite() && c.is_finite() && d.is_finite()) {
+                return Err(PE_ERR_ARG);
+            }
+            let n = Vec3::new(a, b, c);
+            if n.norm_squared() <= 0.0 {
+                return Err(PE_ERR_ARG);
+            }
+            Ok(Shape::Plane(Plane::new(n, d)))
+        }
         _ => Err(PE_ERR_ARG),
     }
 }
