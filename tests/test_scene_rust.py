@@ -1,4 +1,4 @@
-"""Scene schema v2 load/save bindings (physics_engine_rs)."""
+"""Scene schema v3 load/save bindings (physics_engine_rs)."""
 
 from __future__ import annotations
 
@@ -19,9 +19,9 @@ V1_FIXTURE = (
 )
 
 
-def test_scene_schema_version_is_v2():
-    assert pe.SCENE_SCHEMA_VERSION == 2
-    assert pe.scene_schema_version() == 2
+def test_scene_schema_version_is_v3():
+    assert pe.SCENE_SCHEMA_VERSION == 3
+    assert pe.scene_schema_version() == 3
 
 
 def test_canonical_scene_hashes_locked():
@@ -30,27 +30,29 @@ def test_canonical_scene_hashes_locked():
     assert pe.canonical_scene_roundtrip_hash() == pe.canonical_collision_hash()
 
 
-def test_v1_fixture_migrates_to_v2():
+def test_v1_fixture_migrates_to_v3():
     raw = V1_FIXTURE.read_text()
     assert '"schema_version": 1' in raw or '"schema_version":1' in raw
-    assert pe.scene_json_schema_version(raw) == 2
+    assert pe.scene_json_schema_version(raw) == 3
     pretty = pe.scene_load_json(raw)
     doc = json.loads(pretty)
-    assert doc["schema_version"] == 2
+    assert doc["schema_version"] == 3
     assert doc["bodies"][0]["name"] == "box0"
+    assert doc.get("blast", []) == []
+    assert doc.get("fracture_compounds", []) == []
 
 
 def test_json_binary_roundtrip_pyramid():
     src = pe.scene_canonical_pyramid_json()
     doc = json.loads(src)
-    assert doc["schema_version"] == 2
+    assert doc["schema_version"] == 3
     assert len(doc["bodies"]) == 10
     compact = pe.scene_roundtrip_json(src)
     blob = pe.scene_json_to_binary(compact)
     assert blob[:4] == b"PESC"
     back = pe.scene_load_binary(blob)
     doc2 = json.loads(back)
-    assert doc2["schema_version"] == 2
+    assert doc2["schema_version"] == 3
     assert len(doc2["shapes"]) == 10
 
 

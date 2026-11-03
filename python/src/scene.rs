@@ -1,4 +1,4 @@
-//! PyO3 bindings for `pe-scene` (schema v2 load/save).
+//! PyO3 bindings for `pe-scene` (schema v3 load/save).
 
 use pe_scene::{
     canonical_scene_convex_roundtrip_hash as scene_convex_hash,
@@ -79,7 +79,7 @@ fn scene_load_binary(bytes: &[u8]) -> PyResult<String> {
         .map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
-/// Canonical pyramid scene as pretty JSON (schema v2).
+/// Canonical pyramid scene as pretty JSON (current schema).
 #[pyfunction]
 fn scene_canonical_pyramid_json() -> PyResult<String> {
     SceneDocument::canonical_pyramid()
@@ -87,7 +87,7 @@ fn scene_canonical_pyramid_json() -> PyResult<String> {
         .map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
-/// Canonical convex (hull + capsule + rounded) scene as pretty JSON (schema v2).
+/// Canonical convex (hull + capsule + rounded) scene as pretty JSON (current schema).
 #[pyfunction]
 fn scene_canonical_convex_json() -> PyResult<String> {
     SceneDocument::canonical_convex_document()
