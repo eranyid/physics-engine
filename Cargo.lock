@@ -775,6 +775,7 @@ dependencies = [
  "pe-aero",
  "pe-core",
  "pe-math",
+ "proptest",
 ]
 
 [[package]]

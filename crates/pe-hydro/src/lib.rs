@@ -13,8 +13,12 @@
 //! frequency [`forward_speed`], ITTC-57 resistance [`resistance`], Nomoto /
 //! linear MMG maneuvering [`maneuvering`]. See `docs/SEAKEEPING.md`.
 //!
-//! **Deferred:** MacCamy–Fuchs; tabulated Vugts sections; verified Holtrop–
-//! Mennen coefficient tables (1982 primary formulas not transcribed).
+//! **M27:** finite-input [`error::HydroError`] / `try_*` constructors; Holtrop–
+//! Mennen 1982 calm-water resistance ([`holtrop`]) verified against the
+//! published ISP §5 numerical example.
+//!
+//! **Deferred:** MacCamy–Fuchs; tabulated Vugts sections; Holtrop 1984 high-Fn
+//! wave branch as the default path (1984 form-factor helper is exposed).
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
@@ -23,9 +27,11 @@
 pub mod clip;
 pub mod cummins;
 pub mod cummins6;
+pub mod error;
 pub mod force;
 pub mod forward_speed;
 pub mod helpers;
+pub mod holtrop;
 pub mod hull;
 pub mod maneuvering;
 pub mod morison;
@@ -46,6 +52,7 @@ pub use cummins6::{
     matrix_asymmetry, roll_decay_analytic, roll_decay_rk4, sectional_a22_inf, sectional_b22,
     solve6, truncation_tail_l1, Cummins6Dof, MatrixRetardationKernel, RigidMass6, N_DOF,
 };
+pub use error::HydroError;
 pub use force::{Buoyancy, FrictionModel, HullDrag, WaveDrag};
 pub use forward_speed::{
     assemble_strip_matrices_forward_speed, encounter_frequency, encounter_frequency_deep,
@@ -56,6 +63,11 @@ pub use helpers::{
     box_righting_arm_curve, check_imo_is_code, heave_period, heave_period_earth,
     heave_period_with_added_mass, metacentric_height, righting_arm, righting_moment, roll_period,
     roll_period_earth, IsCodeResult,
+};
+pub use holtrop::{
+    form_factor_1_plus_k1_1982, form_factor_1_plus_k_1984, half_angle_of_entrance, holtrop_mennen,
+    length_of_run, try_holtrop_mennen, wetted_surface, HoltropInput, HoltropResult, SternType,
+    KNOTS_TO_MS, RHO_SEAWATER_HOLTROP_15C,
 };
 pub use hull::{
     sphere_cap_volume, BoxHull, ConvexMeshHull, CylinderHull, Hull, SphereHull, SubmergedState,
@@ -74,8 +86,9 @@ pub use morison::{
 };
 pub use resistance::{
     calm_water_resistance, froude_number, ittc57_cf, ittc57_cf_from_speed, ittc57_friction_force,
-    residual_cf_linear_froude_unverified, reynolds_number, NU_FRESHWATER_20C_NOMINAL,
-    NU_SEAWATER_15C_NOMINAL,
+    residual_cf_linear_froude_unverified, reynolds_number, try_calm_water_resistance,
+    try_froude_number, try_ittc57_cf, try_ittc57_cf_from_speed, try_ittc57_friction_force,
+    try_reynolds_number, NU_FRESHWATER_20C_NOMINAL, NU_SEAWATER_15C_NOMINAL,
 };
 pub use scenarios::{canonical_m11_hash, canonical_wave_body_hash};
 pub use seakeeping::{

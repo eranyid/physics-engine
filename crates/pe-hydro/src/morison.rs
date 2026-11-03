@@ -33,6 +33,7 @@ use pe_core::world::{State, World};
 use pe_math::libm_ops;
 use pe_math::Vec3;
 
+use crate::error::{require_finite, require_positive, HydroError};
 use crate::waves::{AiryWave, Wave, WaveField};
 
 /// Nominal (unverified) Morison coefficients for a smooth circular cylinder.
@@ -62,16 +63,42 @@ pub struct MorisonMember {
 
 impl MorisonMember {
     /// Build a member. `diameter` [m] > 0; `n_segments` ≥ 1.
+    ///
+    /// Panics on invalid size. Prefer [`try_new`](Self::try_new).
     pub fn new(a: Vec3, b: Vec3, diameter: f64, cm: f64, cd: f64, n_segments: usize) -> Self {
-        assert!(diameter > 0.0 && n_segments >= 1);
-        Self {
+        Self::try_new(a, b, diameter, cm, cd, n_segments).expect("invalid Morison member")
+    }
+
+    /// Fallible member: finite endpoints, `diameter > 0`, finite `cm`/`cd`,
+    /// `n_segments ≥ 1`.
+    pub fn try_new(
+        a: Vec3,
+        b: Vec3,
+        diameter: f64,
+        cm: f64,
+        cd: f64,
+        n_segments: usize,
+    ) -> Result<Self, HydroError> {
+        if !a.is_finite() {
+            return Err(HydroError::NonFinite("member.a"));
+        }
+        if !b.is_finite() {
+            return Err(HydroError::NonFinite("member.b"));
+        }
+        require_positive(diameter, "diameter")?;
+        require_finite(cm, "cm")?;
+        require_finite(cd, "cd")?;
+        if n_segments < 1 {
+            return Err(HydroError::InvalidParameter("n_segments must be ≥ 1"));
+        }
+        Ok(Self {
             a,
             b,
             diameter,
             cm,
             cd,
             n_segments,
-        }
+        })
     }
 
     /// Vertical circular cylinder on the z-axis from `z_bottom` to `z_top` [m].
@@ -84,6 +111,27 @@ impl MorisonMember {
         n_segments: usize,
     ) -> Self {
         Self::new(
+            Vec3::new(0.0, 0.0, z_bottom),
+            Vec3::new(0.0, 0.0, z_top),
+            diameter,
+            cm,
+            cd,
+            n_segments,
+        )
+    }
+
+    /// Fallible vertical cylinder helper.
+    pub fn try_vertical_cylinder(
+        z_bottom: f64,
+        z_top: f64,
+        diameter: f64,
+        cm: f64,
+        cd: f64,
+        n_segments: usize,
+    ) -> Result<Self, HydroError> {
+        require_finite(z_bottom, "z_bottom")?;
+        require_finite(z_top, "z_top")?;
+        Self::try_new(
             Vec3::new(0.0, 0.0, z_bottom),
             Vec3::new(0.0, 0.0, z_top),
             diameter,

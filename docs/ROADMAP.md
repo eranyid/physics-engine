@@ -385,10 +385,14 @@ ported early because the Python oracle already exists.
 - **M23 hydro oracle tighten (shipped):** RK4 undamped energy + order-4 dt-halving;
   quantitative kernel-truncation L1 bound; box-barge closed-form RAO sweep;
   KVLCC2 MMG coeffs from Yasukawa & Yoshimura (2015) Table 3 with turning-circle
-  vs Table 4 Exp.; Holtrop–Mennen still **unimplemented** (unverified primary).
-  Locked `cummins6_hash` unchanged.
-- **Deferred:** MacCamy–Fuchs; Vugts tables; Holtrop–Mennen tables; swirl
-  induction `a'`; certified airfoil polars.
+  vs Table 4 Exp. Locked `cummins6_hash` unchanged.
+- **M27 hardening + Holtrop (shipped):** `BlastError` / `HydroError` + `try_*`
+  constructors for pe-blast / pe-hydro public entry points; proptests; Python
+  boundary validation. Holtrop–Mennen **1982** calm-water resistance verified
+  against ISP §5 numerical example (`docs/STABILITY.md` oracle table). Locked
+  blast / cummins / scene / bake / godot hashes unchanged.
+- **Deferred:** MacCamy–Fuchs; Vugts tables; Holtrop 1984 high-Fn default path;
+  swirl induction `a'`; certified airfoil polars.
 
 ### Blast / ballistics track
 

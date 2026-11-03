@@ -7,6 +7,7 @@ use pe_math::libm_ops;
 use pe_math::{Quat, Vec3};
 
 use crate::clip::convex_mesh_submerged;
+use crate::error::{require_positive, HydroError};
 
 /// Fresh-water density [kg/m³].
 pub const RHO_FRESHWATER: f64 = 1000.0;
@@ -57,16 +58,22 @@ pub struct BoxHull {
 
 impl BoxHull {
     /// Create a box hull; all dimensions [m] must be positive.
+    ///
+    /// Panics on non-positive dimensions. Prefer [`try_new`](Self::try_new).
     pub fn new(length: f64, beam: f64, depth: f64) -> Self {
-        assert!(
-            length > 0.0 && beam > 0.0 && depth > 0.0,
-            "hull dimensions must be positive"
-        );
-        Self {
+        Self::try_new(length, beam, depth).expect("hull dimensions must be positive")
+    }
+
+    /// Fallible box hull: finite, strictly positive `length`/`beam`/`depth` [m].
+    pub fn try_new(length: f64, beam: f64, depth: f64) -> Result<Self, HydroError> {
+        require_positive(length, "length")?;
+        require_positive(beam, "beam")?;
+        require_positive(depth, "depth")?;
+        Ok(Self {
             length,
             beam,
             depth,
-        }
+        })
     }
 
     /// Upright draft from keel [m]: `T = m / (ρ L B)`.
@@ -172,9 +179,17 @@ pub struct CylinderHull {
 
 impl CylinderHull {
     /// Create; `radius` and `height` [m] must be positive.
+    ///
+    /// Panics on non-positive sizes. Prefer [`try_new`](Self::try_new).
     pub fn new(radius: f64, height: f64) -> Self {
-        assert!(radius > 0.0 && height > 0.0);
-        Self { radius, height }
+        Self::try_new(radius, height).expect("cylinder dimensions must be positive")
+    }
+
+    /// Fallible cylinder hull.
+    pub fn try_new(radius: f64, height: f64) -> Result<Self, HydroError> {
+        require_positive(radius, "radius")?;
+        require_positive(height, "height")?;
+        Ok(Self { radius, height })
     }
 
     /// Upright draft from keel [m]: `T = m / (ρ π r²)`.
@@ -262,9 +277,16 @@ pub struct SphereHull {
 
 impl SphereHull {
     /// Create; `radius` [m] must be positive.
+    ///
+    /// Panics on non-positive radius. Prefer [`try_new`](Self::try_new).
     pub fn new(radius: f64) -> Self {
-        assert!(radius > 0.0);
-        Self { radius }
+        Self::try_new(radius).expect("sphere radius must be positive")
+    }
+
+    /// Fallible sphere hull.
+    pub fn try_new(radius: f64) -> Result<Self, HydroError> {
+        require_positive(radius, "radius")?;
+        Ok(Self { radius })
     }
 
     /// Solid volume [m³]: `4/3 π R³`.

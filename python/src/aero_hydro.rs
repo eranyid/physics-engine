@@ -23,11 +23,11 @@ use pe_hydro::{
     canonical_cummins_hash as cummins_hash_rs, canonical_m11_hash as m11_hash_rs,
     canonical_wave_body_hash as wave_body_hash_rs, check_imo_is_code, damping_from_retardation,
     deep_water_wavelength, encounter_frequency_deep, group_speed, heave_period_earth,
-    heave_period_with_added_mass, heave_pitch_rao, integrate_morison_fixed, ittc57_cf,
-    metacentric_height, phase_speed, pierson_moskowitz_hs_approx, relative_l2, righting_arm,
-    righting_moment, roll_natural_period, roll_period_earth, solve_wave_number, Buoyancy,
-    CumminsHeave, HullDrag, MorisonMember, NomotoKT, WaveDrag, NOMINAL_CD_CIRCULAR,
-    NOMINAL_CM_CIRCULAR, NU_FRESHWATER_20C_NOMINAL,
+    heave_period_with_added_mass, heave_pitch_rao, integrate_morison_fixed, metacentric_height,
+    phase_speed, pierson_moskowitz_hs_approx, relative_l2, righting_arm, righting_moment,
+    roll_natural_period, roll_period_earth, solve_wave_number, try_holtrop_mennen, try_ittc57_cf,
+    Buoyancy, CumminsHeave, HoltropInput, HullDrag, MorisonMember, NomotoKT, WaveDrag,
+    NOMINAL_CD_CIRCULAR, NOMINAL_CM_CIRCULAR, NU_FRESHWATER_20C_NOMINAL,
 };
 use pe_math::{Quat, Vec3, STANDARD_GRAVITY};
 use pyo3::exceptions::PyValueError;
@@ -342,10 +342,11 @@ pub struct PyBoxHull {
 #[allow(non_snake_case)]
 impl PyBoxHull {
     #[new]
-    fn new(length: f64, beam: f64, depth: f64) -> Self {
-        Self {
-            inner: BoxHull::new(length, beam, depth),
-        }
+    fn new(length: f64, beam: f64, depth: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: BoxHull::try_new(length, beam, depth)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?,
+        })
     }
 
     fn upright_draft_for_mass(&self, mass: f64, rho: f64) -> f64 {
@@ -391,10 +392,11 @@ pub struct PyCylinderHull {
 #[pymethods]
 impl PyCylinderHull {
     #[new]
-    fn new(radius: f64, height: f64) -> Self {
-        Self {
-            inner: CylinderHull::new(radius, height),
-        }
+    fn new(radius: f64, height: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: CylinderHull::try_new(radius, height)
+                .map_err(|e| PyValueError::new_err(e.to_string()))?,
+        })
     }
 
     fn upright_draft_for_mass(&self, mass: f64, rho: f64) -> f64 {
@@ -412,10 +414,10 @@ pub struct PySphereHull {
 #[pymethods]
 impl PySphereHull {
     #[new]
-    fn new(radius: f64) -> Self {
-        Self {
-            inner: SphereHull::new(radius),
-        }
+    fn new(radius: f64) -> PyResult<Self> {
+        Ok(Self {
+            inner: SphereHull::try_new(radius).map_err(|e| PyValueError::new_err(e.to_string()))?,
+        })
     }
 
     fn volume(&self) -> f64 {
@@ -1072,20 +1074,40 @@ fn canonical_cummins6_hash() -> u64 {
 
 /// ITTC-1957 frictional coefficient `C_f(R_n)`.
 #[pyfunction]
-fn ittc57_friction_cf(reynolds: f64) -> f64 {
-    ittc57_cf(reynolds)
+fn ittc57_friction_cf(reynolds: f64) -> PyResult<f64> {
+    try_ittc57_cf(reynolds).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
 /// Nomoto first-order yaw-rate step response [rad/s].
 #[pyfunction]
-fn nomoto_r_step(k: f64, t_const: f64, delta: f64, time: f64) -> f64 {
-    NomotoKT::new(k, t_const).r_step(delta, time)
+fn nomoto_r_step(k: f64, t_const: f64, delta: f64, time: f64) -> PyResult<f64> {
+    Ok(NomotoKT::try_new(k, t_const)
+        .map_err(|e| PyValueError::new_err(e.to_string()))?
+        .r_step(delta, time))
 }
 
 /// Nomoto first-order heading step response [rad].
 #[pyfunction]
-fn nomoto_psi_step(k: f64, t_const: f64, delta: f64, time: f64) -> f64 {
-    NomotoKT::new(k, t_const).psi_step(delta, time)
+fn nomoto_psi_step(k: f64, t_const: f64, delta: f64, time: f64) -> PyResult<f64> {
+    Ok(NomotoKT::try_new(k, t_const)
+        .map_err(|e| PyValueError::new_err(e.to_string()))?
+        .psi_step(delta, time))
+}
+
+/// Holtrop–Mennen 1982 §5 example total resistance [N] and effective power [W].
+///
+/// Returns `(r_total_n, p_e_w)` for the published hypothetical single-screw ship
+/// at `speed_knots` (default 25).
+#[pyfunction]
+#[pyo3(signature = (speed_knots=25.0))]
+fn holtrop_1982_example_resistance(speed_knots: f64) -> PyResult<(f64, f64)> {
+    let mut inp = HoltropInput::holtrop_1982_example();
+    if !speed_knots.is_finite() || speed_knots < 0.0 {
+        return Err(PyValueError::new_err("speed_knots must be finite and ≥ 0"));
+    }
+    inp.speed = speed_knots * pe_hydro::KNOTS_TO_MS;
+    let r = try_holtrop_mennen(&inp).map_err(|e| PyValueError::new_err(e.to_string()))?;
+    Ok((r.r_total, r.p_e))
 }
 
 /// Encounter frequency [rad/s] (deep water): `ω_e = ω − U (ω²/g) cos χ`.
@@ -1286,6 +1308,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ittc57_friction_cf, m)?)?;
     m.add_function(wrap_pyfunction!(nomoto_r_step, m)?)?;
     m.add_function(wrap_pyfunction!(nomoto_psi_step, m)?)?;
+    m.add_function(wrap_pyfunction!(holtrop_1982_example_resistance, m)?)?;
     m.add_function(wrap_pyfunction!(encounter_frequency_py, m)?)?;
     m.add("NU_FRESHWATER_20C_NOMINAL", NU_FRESHWATER_20C_NOMINAL)?;
     m.add_function(wrap_pyfunction!(cummins_box_kernel, m)?)?;

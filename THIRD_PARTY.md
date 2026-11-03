@@ -159,8 +159,13 @@ Clean-room formulas only — **no** third-party simulation source translated:
 - Salvesen, Tuck & Faltinsen (1970) — encounter frequency and forward-speed
   strip radiation corrections (end terms + \(\int a_{33}\)).
 - ITTC Recommended Procedures — **1957 ship-model correlation line**
-  \(C_f = 0.075/(\log_{10}R_n-2)^2\) implemented exactly. Holtrop–Mennen
-  coefficient tables **not** transcribed (unverified in-tree).
+  \(C_f = 0.075/(\log_{10}R_n-2)^2\) implemented exactly.
+- Holtrop, J. & Mennen, G.G.J. (1982). An approximate power prediction method.
+  *Int. Shipbuild. Prog.* **29**(335), 166–170 — clean-room 1982 resistance
+  decomposition; Section 5 numerical example (R_T, component forces, P_E)
+  used as the locked oracle (M27). Holtrop, J. (1984). A statistical
+  re-analysis… ISP **31**(363) — 1984 form-factor helper exposed; high-Fn
+  wave branch not the default path.
 - Nomoto, K. et al. (1957) — first-order K–T steering (analytic step oracle).
 - Yasukawa, H. & Yoshimura, Y. (2015). Introduction of MMG standard method for
   ship maneuvering predictions. *J. Mar. Sci. Technol.* **20**, 37–52
@@ -170,7 +175,7 @@ Clean-room formulas only — **no** third-party simulation source translated:
   `nominal_linear_mmg_unverified` remains unmarked as verified.
 - Surge \(A_{11}^\infty\) uses nominal \(C_x=0.5\) (**unverified**); generic
   propeller / rudder helpers outside the KVLCC2 path marked **unverified**
-  unless caller supplies cited maps. Holtrop–Mennen (1982) **not** transcribed.
+  unless caller supplies cited maps.
 
 ### Blast / ballistics note (`pe-blast`, `pe-ballistics`)
 

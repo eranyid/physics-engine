@@ -234,12 +234,15 @@ C_f = \frac{0.075}{(\log_{10} R_n - 2)^2},\qquad R_n = VL/\nu
 | \(C_f(R_n=10^9)=0.075/49\) | **1e-14 rel** | bit-exact algebra |
 
 `HullDrag::ittc57` evaluates \(C_f(R_n)\) each step. Residual \(C_r\) remains
-caller-supplied. **Holtrop–Mennen** full coefficient tables are **not**
-implemented (not verified against a primary citation in-tree). Linear-Froude
+caller-supplied. **Holtrop–Mennen** (1982) calm-water resistance is implemented
+in `pe_hydro::holtrop` and verified against the published ISP §5 numerical
+example (see [`STABILITY.md`](STABILITY.md)). The 1984 high-Fn wave branch is
+deferred; the 1984 form-factor helper is exposed separately. Linear-Froude
 residual surrogate is marked **unverified**.
 
 Nominal \(\nu\) defaults (`NU_FRESHWATER_20C_NOMINAL`, …) are **unverified**
-handbook order — override for exact oracle work.
+handbook order — override for exact oracle work. Holtrop §5 uses
+`NU_SEAWATER_15C_NOMINAL` with \(\rho=1025\) kg/m³.
 
 ---
 
@@ -298,7 +301,6 @@ Propeller / rudder **helper** APIs outside the KVLCC2 path stay marked
 ## Deferred
 
 Tabulated Vugts / Frank close-fit sections; 3-D panel diffraction;
-MacCamy–Fuchs; **Holtrop–Mennen** full resistance tables (1982 ISP formulas /
-coefficients not verified against a primary reproduction in-tree — left
-unimplemented); viscous roll damping maps; additional propeller open-water
-curves beyond the KVLCC2 \(K_T\) polynomial.
+MacCamy–Fuchs; Holtrop 1984 high-Fn wave branch as the default path (1984
+form-factor helper is exposed); viscous roll damping maps; additional
+propeller open-water curves beyond the KVLCC2 \(K_T\) polynomial.
