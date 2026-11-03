@@ -726,6 +726,7 @@ dependencies = [
  "pe-collision",
  "pe-core",
  "pe-math",
+ "pe-scene",
  "pe-space",
 ]
 

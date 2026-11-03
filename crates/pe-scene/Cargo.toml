@@ -22,3 +22,7 @@ proptest = { workspace = true }
 [[bin]]
 name = "scene_hash"
 path = "src/bin/scene_hash.rs"
+
+[[bin]]
+name = "bake_hash"
+path = "src/bin/bake_hash.rs"

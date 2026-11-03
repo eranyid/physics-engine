@@ -34,9 +34,36 @@ use pe_collision::shapes::Material;
 use pe_collision::StaticCollider;
 use pe_core::RigidBody;
 use pe_math::{Quat, Vec3};
-use pe_scene::SceneDocument;
+use pe_scene::{bake_scene, BakeOptions, BakeReduceParams, SceneDocument};
 use queries::{overlap_aabb, raycast};
 use world::parse_shape;
+
+fn cstr_to_str<'a>(p: *const c_char) -> Result<&'a str, c_int> {
+    if p.is_null() {
+        return Err(PE_ERR_NULL);
+    }
+    // SAFETY: caller guarantees a valid NUL-terminated C string.
+    let c = unsafe { std::ffi::CStr::from_ptr(p) };
+    c.to_str().map_err(|_| PE_ERR_ARG)
+}
+
+fn write_bytes_out(src: &[u8], buf: *mut u8, buf_len: usize, out_len: *mut usize) -> c_int {
+    if out_len.is_null() {
+        return PE_ERR_NULL;
+    }
+    // SAFETY: out_len non-null.
+    unsafe {
+        *out_len = src.len();
+    }
+    if buf.is_null() || buf_len < src.len() {
+        return PE_ERR_BOUNDS;
+    }
+    // SAFETY: buf holds buf_len bytes.
+    unsafe {
+        slice::from_raw_parts_mut(buf, src.len()).copy_from_slice(src);
+    }
+    PE_OK
+}
 
 fn catch<F: FnOnce() -> c_int>(f: F) -> c_int {
     match catch_unwind(AssertUnwindSafe(f)) {
@@ -545,6 +572,108 @@ pub unsafe extern "C" fn pe_world_load_scene(
         w.forces = doc.forces;
         w.cw = cw;
         w.last_contacts.clear();
+        PE_OK
+    })
+}
+
+/// Bake a scene JSON document into a bake-curve JSON document (M24).
+///
+/// Runs the scene for `duration` seconds at fixed `physics_dt`, samples body
+/// transforms at `sample_fps` using Hermite (position) + slerp (rotation).
+///
+/// * `include_velocities` — non-zero to include linear/angular velocity curves.
+/// * `reduce_max_pos_error` — if `≥ 0`, enable keyframe reduction with this
+///   max position error [m]; pass a negative value to disable reduction.
+/// * `reduce_max_rot_error` — max rotation error [rad] when reduction is on
+///   (ignored when `reduce_max_pos_error < 0`).
+///
+/// Writes the required byte length to `out_len`. When `out_json` is null or
+/// `out_cap` is too small, returns [`PE_ERR_BOUNDS`] (size probe).
+///
+/// Rejects non-finite / non-positive `duration`, `physics_dt`, `sample_fps`
+/// with [`PE_ERR_ARG`]. Scene parse / bake failures → [`PE_ERR_SCENE`].
+///
+/// # Safety
+/// `scene_json` must be a valid UTF-8 NUL-terminated C string. `out_json` must
+/// hold `out_cap` bytes when non-null. `out_len` must be non-null.
+#[no_mangle]
+pub unsafe extern "C" fn pe_scene_bake(
+    scene_json: *const c_char,
+    duration: f64,
+    physics_dt: f64,
+    sample_fps: f64,
+    include_velocities: c_int,
+    reduce_max_pos_error: f64,
+    reduce_max_rot_error: f64,
+    out_json: *mut u8,
+    out_cap: usize,
+    out_len: *mut usize,
+) -> c_int {
+    catch(|| {
+        let s = match cstr_to_str(scene_json) {
+            Ok(s) => s,
+            Err(e) => return e,
+        };
+        if !duration.is_finite()
+            || duration <= 0.0
+            || !physics_dt.is_finite()
+            || physics_dt <= 0.0
+            || !sample_fps.is_finite()
+            || sample_fps <= 0.0
+        {
+            return PE_ERR_ARG;
+        }
+        let reduce = if reduce_max_pos_error >= 0.0 {
+            if !reduce_max_pos_error.is_finite()
+                || !reduce_max_rot_error.is_finite()
+                || reduce_max_rot_error < 0.0
+            {
+                return PE_ERR_ARG;
+            }
+            Some(BakeReduceParams {
+                max_position_error: reduce_max_pos_error,
+                max_rotation_error: reduce_max_rot_error,
+            })
+        } else {
+            None
+        };
+        let doc = match SceneDocument::from_json(s) {
+            Ok(d) => d,
+            Err(_) => return PE_ERR_SCENE,
+        };
+        let opt = BakeOptions {
+            duration,
+            physics_dt,
+            sample_fps,
+            include_velocities: include_velocities != 0,
+            reduce,
+        };
+        let bake = match bake_scene(&doc, &opt) {
+            Ok(b) => b,
+            Err(_) => return PE_ERR_SCENE,
+        };
+        let json = match bake.to_json() {
+            Ok(j) => j,
+            Err(_) => return PE_ERR_SCENE,
+        };
+        write_bytes_out(json.as_bytes(), out_json, out_cap, out_len)
+    })
+}
+
+/// Locked FNV-1a hash of the canonical bake JSON (cross-OS CI).
+///
+/// Writes the hash to `out_hash` when non-null. Returns [`PE_ERR_NULL`] if
+/// `out_hash` is null.
+///
+/// # Safety
+/// `out_hash` must be valid or null.
+#[no_mangle]
+pub unsafe extern "C" fn pe_canonical_bake_json_hash(out_hash: *mut u64) -> c_int {
+    catch(|| {
+        if out_hash.is_null() {
+            return PE_ERR_NULL;
+        }
+        *out_hash = pe_scene::canonical_bake_json_hash();
         PE_OK
     })
 }

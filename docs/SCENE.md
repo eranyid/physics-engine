@@ -73,6 +73,13 @@ See [`DETERMINISM.md`](DETERMINISM.md).
 `scene_load_binary` / `scene_canonical_*_json` / locked hash helpers. Tests:
 `tests/test_scene_rust.py`.
 
+## Simulation baking (M24)
+
+Offline transform curves for animation / DCC: [`BAKE.md`](BAKE.md).
+`pe_scene::bake_scene` runs a document at fixed `physics_dt`, samples with
+Hermite (position) + slerp (rotation), optional keyframe reduction, and writes
+bake schema v1 JSON. Locked hash: `cargo run -p pe-scene --bin bake_hash --release`.
+
 ## Limits / deferred
 
 - Force generators are a fixed stage-1 enum (`UniformGravity`, drag, spring, …).

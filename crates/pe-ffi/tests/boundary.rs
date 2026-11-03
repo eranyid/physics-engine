@@ -3,10 +3,12 @@
 //! Malformed input must return typed `PE_ERR_*` codes — never panic across the ABI.
 
 use pe_ffi::{
-    pe_version_string, pe_world_add_body, pe_world_add_static, pe_world_body_count,
-    pe_world_create, pe_world_destroy, pe_world_get_transforms, pe_world_set_transforms,
-    pe_world_step, PeWorld, PE_ERR_ARG, PE_ERR_BOUNDS, PE_ERR_NULL, PE_OK,
+    pe_canonical_bake_json_hash, pe_scene_bake, pe_version_string, pe_world_add_body,
+    pe_world_add_static, pe_world_body_count, pe_world_create, pe_world_destroy,
+    pe_world_get_transforms, pe_world_set_transforms, pe_world_step, PeWorld, PE_ERR_ARG,
+    PE_ERR_BOUNDS, PE_ERR_NULL, PE_ERR_SCENE, PE_OK,
 };
+use std::ffi::CString;
 use std::ptr;
 
 fn add_unit_sphere(world: *mut PeWorld) -> u32 {
@@ -246,4 +248,126 @@ fn null_transform_buffers_are_null_error() {
 #[test]
 fn version_string_is_non_null() {
     assert!(!pe_version_string().is_null());
+}
+
+#[test]
+fn bake_rejects_null_and_non_finite_args() {
+    let mut out_len = 0usize;
+    assert_eq!(
+        unsafe {
+            pe_scene_bake(
+                ptr::null(),
+                1.0,
+                1.0 / 240.0,
+                24.0,
+                1,
+                -1.0,
+                0.0,
+                ptr::null_mut(),
+                0,
+                &mut out_len,
+            )
+        },
+        PE_ERR_NULL
+    );
+    let scene = CString::new("{}").unwrap();
+    assert_eq!(
+        unsafe {
+            pe_scene_bake(
+                scene.as_ptr(),
+                f64::NAN,
+                1.0 / 240.0,
+                24.0,
+                1,
+                -1.0,
+                0.0,
+                ptr::null_mut(),
+                0,
+                &mut out_len,
+            )
+        },
+        PE_ERR_ARG
+    );
+    assert_eq!(
+        unsafe {
+            pe_scene_bake(
+                scene.as_ptr(),
+                1.0,
+                0.0,
+                24.0,
+                1,
+                -1.0,
+                0.0,
+                ptr::null_mut(),
+                0,
+                &mut out_len,
+            )
+        },
+        PE_ERR_ARG
+    );
+    // Empty JSON is a scene error (not a panic).
+    assert_eq!(
+        unsafe {
+            pe_scene_bake(
+                scene.as_ptr(),
+                1.0,
+                1.0 / 240.0,
+                24.0,
+                1,
+                -1.0,
+                0.0,
+                ptr::null_mut(),
+                0,
+                &mut out_len,
+            )
+        },
+        PE_ERR_SCENE
+    );
+}
+
+#[test]
+fn bake_canonical_scene_size_probe_and_hash() {
+    let scene_json = pe_scene::canonical_bake_scene().to_json().unwrap();
+    let c_scene = CString::new(scene_json).unwrap();
+    let mut out_len = 0usize;
+    let rc = unsafe {
+        pe_scene_bake(
+            c_scene.as_ptr(),
+            1.0,
+            1.0 / 240.0,
+            24.0,
+            1,
+            -1.0,
+            0.0,
+            ptr::null_mut(),
+            0,
+            &mut out_len,
+        )
+    };
+    assert_eq!(rc, PE_ERR_BOUNDS);
+    assert!(out_len > 100);
+    let mut buf = vec![0u8; out_len];
+    let rc = unsafe {
+        pe_scene_bake(
+            c_scene.as_ptr(),
+            1.0,
+            1.0 / 240.0,
+            24.0,
+            1,
+            -1.0,
+            0.0,
+            buf.as_mut_ptr(),
+            buf.len(),
+            &mut out_len,
+        )
+    };
+    assert_eq!(rc, PE_OK);
+    assert_eq!(out_len, buf.len());
+    let mut hash = 0u64;
+    assert_eq!(unsafe { pe_canonical_bake_json_hash(&mut hash) }, PE_OK);
+    assert_eq!(hash, pe_scene::CANONICAL_BAKE_JSON_HASH);
+    assert_eq!(
+        unsafe { pe_canonical_bake_json_hash(ptr::null_mut()) },
+        PE_ERR_NULL
+    );
 }

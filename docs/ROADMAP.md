@@ -232,6 +232,7 @@ ported early because the Python oracle already exists.
 | **M10** | Materials + soft v1 | Elastic validation; one soft demo with analytic check | **done** (shipped as M8 soft / `pe-soft`) |
 | **M11** | Fluids / blast v1 *or* deferred aero/hydro | Particle hydrostatic + blast scaling; Morison/seakeeping/BEM | **partial+** (blast earlier; **`pe-fluid` SPH/PBF/DFSPH + Akinci two-way rigid coupling shipped**; Morison/seakeeping/BEM done) |
 | **M22** | Hardening / safety | Property+fuzz tests; invariants (NaN, energy, momentum, determinism); long-run stability suite + `docs/STABILITY.md`; typed boundary errors; rustdoc; `.pyi`; `examples/` | **done** |
+| **M24** | Simulation baking | Offline scene → per-body Hermite/slerp transform curves; bake JSON schema; keyframe reduction; C/Python/CLI; locked hash; analytic oracles | **done** |
 | **M25** | Godot usable for games | Authored bodies/shapes/joints; raycast + sphere cast + overlap; contact signals; fixed-step + interpolation; Linux headless suite (drop hash locked); Win/macOS `pe-godot` build-only | **this PR** |
 
 ### M1–M2 as built (summary)
@@ -295,6 +296,19 @@ ported early because the Python oracle already exists.
   Default CI stays fast (no Criterion; slow pytest marker unchanged).
 - **Out of scope (M4):** waves, 6-DOF aero check-cases, blade element, compressibility
   — **waves + check-cases + compressibility + Dryden shipped in M9 follow-on** (this PR).
+
+### M24 as built (summary)
+
+- `pe-scene::bake`: run a scene for N seconds at fixed `physics_dt`, sample at
+  arbitrary fps with Hermite (position + velocities) and slerp (rotation);
+  optional Douglas–Peucker keyframe reduction with stated max error bounds.
+- Bake JSON schema v1 (`docs/BAKE.md`) + Swift C-API usage note; CLI
+  `pe-examples bake_scene`; `pe_scene_bake` / `pe_canonical_bake_json_hash` in
+  `pe-ffi`; Python `scene_bake_json`.
+- Oracles: free-fall/projectile vs analytic (½ g T Δt bound), uniform spin
+  slerp, small-angle pendulum period, reduction bound, bit-identical + locked
+  cross-OS JSON hash `3e9a97a85da0cbc6`, coincident-time resampling exact.
+- Does **not** touch `pe-blast` / `pe-hydro` / `pe-aero` / `pe-fluid` internals.
 
 ### M8 as built (summary)
 

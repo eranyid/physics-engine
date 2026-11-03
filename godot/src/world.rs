@@ -595,7 +595,7 @@ impl PePhysicsWorld {
         let prev_x = self.prev_x[i];
         let prev_q = self.prev_q[i];
         let x = prev_x * (1.0 - a) + cur_x * a;
-        let q = slerp_quat(prev_q, cur_q, a);
+        let q = prev_q.slerp(cur_q, a);
         (to_godot_vec3(x), to_godot_quat(q))
     }
 
@@ -669,16 +669,3 @@ impl PePhysicsWorld {
     }
 }
 
-fn slerp_quat(a: PeQuat, b: PeQuat, t: f64) -> PeQuat {
-    // Visual nlerp (stable; not on the deterministic f64 hash path).
-    let mut b = b;
-    let dot = a.w * b.w + a.x * b.x + a.y * b.y + a.z * b.z;
-    if dot < 0.0 {
-        b = PeQuat::new(-b.w, -b.x, -b.y, -b.z);
-    }
-    let w = a.w * (1.0 - t) + b.w * t;
-    let x = a.x * (1.0 - t) + b.x * t;
-    let y = a.y * (1.0 - t) + b.y * t;
-    let z = a.z * (1.0 - t) + b.z * t;
-    PeQuat::new(w, x, y, z).normalize()
-}

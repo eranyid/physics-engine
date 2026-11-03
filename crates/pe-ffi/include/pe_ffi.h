@@ -273,6 +273,50 @@ int pe_world_save_scene(const struct PeWorld *world,
 int pe_world_load_scene(struct PeWorld *world, const uint8_t *buf, uintptr_t buf_len);
 
 /**
+ * Bake a scene JSON document into a bake-curve JSON document (M24).
+ *
+ * Runs the scene for `duration` seconds at fixed `physics_dt`, samples body
+ * transforms at `sample_fps` using Hermite (position) + slerp (rotation).
+ *
+ * * `include_velocities` — non-zero to include linear/angular velocity curves.
+ * * `reduce_max_pos_error` — if `≥ 0`, enable keyframe reduction with this
+ *   max position error [m]; pass a negative value to disable reduction.
+ * * `reduce_max_rot_error` — max rotation error [rad] when reduction is on
+ *   (ignored when `reduce_max_pos_error < 0`).
+ *
+ * Writes the required byte length to `out_len`. When `out_json` is null or
+ * `out_cap` is too small, returns [`PE_ERR_BOUNDS`] (size probe).
+ *
+ * Rejects non-finite / non-positive `duration`, `physics_dt`, `sample_fps`
+ * with [`PE_ERR_ARG`]. Scene parse / bake failures → [`PE_ERR_SCENE`].
+ *
+ * # Safety
+ * `scene_json` must be a valid UTF-8 NUL-terminated C string. `out_json` must
+ * hold `out_cap` bytes when non-null. `out_len` must be non-null.
+ */
+int pe_scene_bake(const char *scene_json,
+                  double duration,
+                  double physics_dt,
+                  double sample_fps,
+                  int include_velocities,
+                  double reduce_max_pos_error,
+                  double reduce_max_rot_error,
+                  uint8_t *out_json,
+                  uintptr_t out_cap,
+                  uintptr_t *out_len);
+
+/**
+ * Locked FNV-1a hash of the canonical bake JSON (cross-OS CI).
+ *
+ * Writes the hash to `out_hash` when non-null. Returns [`PE_ERR_NULL`] if
+ * `out_hash` is null.
+ *
+ * # Safety
+ * `out_hash` must be valid or null.
+ */
+int pe_canonical_bake_json_hash(uint64_t *out_hash);
+
+/**
  * Library version string (static).
  */
 const char *pe_version_string(void);
