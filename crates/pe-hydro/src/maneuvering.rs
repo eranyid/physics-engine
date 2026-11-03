@@ -50,6 +50,8 @@
 
 use pe_math::libm_ops;
 
+use crate::error::{require_finite, require_positive, HydroError};
+
 /// Nomoto first-order steering indices.
 #[derive(Clone, Copy, Debug)]
 pub struct NomotoKT {
@@ -61,9 +63,17 @@ pub struct NomotoKT {
 
 impl NomotoKT {
     /// Construct with `K` [1/s], `T` [s] (`T > 0`).
+    ///
+    /// Panics if `T` is not strictly positive. Prefer [`try_new`](Self::try_new).
     pub fn new(k: f64, t: f64) -> Self {
-        assert!(t > 0.0, "Nomoto T must be positive");
-        Self { k, t }
+        Self::try_new(k, t).expect("Nomoto T must be positive")
+    }
+
+    /// Fallible Nomoto constructor: finite `K`, `T > 0`.
+    pub fn try_new(k: f64, t: f64) -> Result<Self, HydroError> {
+        require_finite(k, "nomoto.k")?;
+        require_positive(t, "nomoto.t")?;
+        Ok(Self { k, t })
     }
 
     /// Analytic yaw-rate step response [rad/s] for constant `delta` [rad].

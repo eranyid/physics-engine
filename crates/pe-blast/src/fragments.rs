@@ -21,6 +21,8 @@ use pe_ballistics::{
 use pe_math::libm_ops;
 use pe_math::{Vec3, Xoshiro256StarStar};
 
+use crate::error::{require_finite, require_positive, BlastError};
+
 /// Charge-to-metal mass ratio geometries for Gurney.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GurneyGeometry {
@@ -104,11 +106,21 @@ pub fn gurney_velocity(
     charge_to_mass: f64,
     geometry: GurneyGeometry,
 ) -> Option<f64> {
-    if gurney_sqrt_2e <= 0.0 || charge_to_mass <= 0.0 {
-        return None;
-    }
+    try_gurney_velocity(gurney_sqrt_2e, charge_to_mass, geometry).ok()
+}
+
+/// Fallible Gurney velocity with typed [`BlastError`].
+pub fn try_gurney_velocity(
+    gurney_sqrt_2e: f64,
+    charge_to_mass: f64,
+    geometry: GurneyGeometry,
+) -> Result<f64, BlastError> {
+    require_positive(gurney_sqrt_2e, "gurney_sqrt_2e")?;
+    require_positive(charge_to_mass, "charge_to_mass")?;
     let factor = geometry.cm_factor(charge_to_mass);
-    Some(gurney_sqrt_2e * libm_ops::sqrt(factor))
+    let v = gurney_sqrt_2e * libm_ops::sqrt(factor);
+    require_finite(v, "gurney_velocity")?;
+    Ok(v)
 }
 
 /// Ideal Gurney metal kinetic energy budget [J]: `½ M V²` with

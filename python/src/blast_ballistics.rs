@@ -6,9 +6,9 @@ use pe_ballistics::projectile::{MuzzlePose, ProjectileSystem, ShotId};
 use pe_ballistics::{ballistics_volley_hash, g0};
 use pe_blast::{
     blast_destruction_hash, blast_external_loads_hash, blast_fragments_hash, blast_pyramid_hash,
-    friedlander_pressure, gurney_velocity, mott_mean_mass, mott_sample_many, peak_overpressure,
-    positive_impulse, rigid_wall_reflection_coefficient, scaled_distance, xi0_gamma_14_spherical,
-    GurneyGeometry, GAMMA_AIR,
+    mott_mean_mass, mott_sample_many, rigid_wall_reflection_coefficient, try_friedlander_pressure,
+    try_gurney_velocity, try_peak_overpressure, try_positive_impulse, try_scaled_distance,
+    xi0_gamma_14_spherical, GurneyGeometry, GAMMA_AIR,
 };
 use pe_math::Vec3;
 use pyo3::exceptions::PyValueError;
@@ -48,27 +48,27 @@ fn canonical_ballistics_hash() -> u64 {
 /// Hopkinson–Cranz scaled distance `Z = R / W_eq^{1/3}` [m·kg^{-1/3}].
 #[pyfunction]
 fn blast_scaled_distance(range_m: f64, charge_mass_kg: f64, tnt_equivalence: f64) -> PyResult<f64> {
-    scaled_distance(range_m, charge_mass_kg, tnt_equivalence)
-        .ok_or_else(|| PyValueError::new_err("non-physical inputs"))
+    try_scaled_distance(range_m, charge_mass_kg, tnt_equivalence)
+        .map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
 /// Kinney–Graham peak overpressure [Pa] at scaled distance `z`.
 #[pyfunction]
 #[pyo3(signature = (z, p0=101_325.0))]
-fn blast_peak_overpressure(z: f64, p0: f64) -> f64 {
-    peak_overpressure(z, p0)
+fn blast_peak_overpressure(z: f64, p0: f64) -> PyResult<f64> {
+    try_peak_overpressure(z, p0).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
 /// Friedlander pressure [Pa] at time `t` [s] after arrival.
 #[pyfunction]
-fn blast_friedlander(t: f64, p_s: f64, t_d: f64, b: f64) -> f64 {
-    friedlander_pressure(t, p_s, t_d, b)
+fn blast_friedlander(t: f64, p_s: f64, t_d: f64, b: f64) -> PyResult<f64> {
+    try_friedlander_pressure(t, p_s, t_d, b).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
 /// Friedlander positive impulse [Pa·s].
 #[pyfunction]
-fn blast_friedlander_impulse(p_s: f64, t_d: f64, b: f64) -> f64 {
-    positive_impulse(p_s, t_d, b)
+fn blast_friedlander_impulse(p_s: f64, t_d: f64, b: f64) -> PyResult<f64> {
+    try_positive_impulse(p_s, t_d, b).map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
 /// Sedov–Taylor ξ₀ for γ=1.4 spherical.
@@ -91,8 +91,8 @@ fn blast_gurney_velocity(sqrt_2e: f64, charge_to_mass: f64, geometry: &str) -> P
             )))
         }
     };
-    gurney_velocity(sqrt_2e, charge_to_mass, g)
-        .ok_or_else(|| PyValueError::new_err("non-physical Gurney inputs"))
+    try_gurney_velocity(sqrt_2e, charge_to_mass, g)
+        .map_err(|e| PyValueError::new_err(e.to_string()))
 }
 
 /// Mott closed-form mean mass [kg]: `E[m] = 2 μ`.

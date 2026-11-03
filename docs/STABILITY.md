@@ -1,7 +1,12 @@
-# Long-run stability suite (M22)
+# Long-run stability suite (M22) + blast/hydro hardening (M27)
 
 Opt-in / scheduled checks for secular drift on stacks, joints, orbits, and
 aircraft trim. Default CI stays fast (`cargo test` skips `#[ignore]`).
+
+M27 extends finite-input validation (`try_*` / typed errors) to `pe-blast` and
+`pe-hydro`, with always-on proptests (no panics, finite outputs, monotonicity
+where physics demands it). Holtrop–Mennen 1982 is verified against the published
+ISP §5 numerical example (see oracle table below).
 
 ## How to run
 
@@ -21,6 +26,8 @@ Larger property suites (same tests, more cases):
 PROPTEST_CASES=256 cargo test -p pe-core --test properties --release
 PROPTEST_CASES=256 cargo test -p pe-collision --test properties --release
 PROPTEST_CASES=256 cargo test -p pe-scene --test roundtrip --release
+PROPTEST_CASES=256 cargo test -p pe-blast --test properties --release
+PROPTEST_CASES=256 cargo test -p pe-hydro --test properties --release
 ```
 
 CI: job `rust-stability` runs on Monday cron and `workflow_dispatch`
@@ -46,6 +53,31 @@ changes; **do not loosen bounds silently**.
 Fast invariant counterparts (always on in default CI) live in
 `pe-core/tests/invariants.rs` and `pe-collision/tests/properties.rs`
 (NaN/Inf escape, momentum, short inelastic KE bound, snapshot restore).
+M27: `pe-blast/tests/properties.rs`, `pe-hydro/tests/properties.rs`.
+
+## Holtrop–Mennen 1982 §5 oracle (M27)
+
+Source: Holtrop & Mennen (1982), *Int. Shipbuild. Prog.* **29**(335), 166–170,
+Section 5 numerical example (hypothetical single-screw ship, V = 25 knots).
+Measured on Linux x86_64 release build; **do not loosen**.
+
+| Quantity | Published | Measured | Abs error | Rel error | Bound |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Fn | 0.2868 | 0.286841 | 4.1e-5 | 0.014% | `< 5e-4` |
+| C_F | 0.001390 | 0.001390 | ~1e-8 | 0.001% | `< 5e-6` |
+| S [m²] | 7381.45 | 7381.449 | 9.3e-4 | ~0% | `< 1` |
+| 1+k₁ | 1.156 | 1.156444 | 4.4e-4 | 0.038% | `< 2e-3` |
+| L_R [m] | 81.385 | 81.3849 | 1.3e-4 | 0.0002% | `< 0.05` |
+| i_E [deg] | 12.08 | 12.0775 | 2.5e-3 | 0.021% | `< 0.15` |
+| R_F [kN] | 869.63 | 869.787 | 0.157 | 0.018% | `< 2` |
+| R_APP [kN] | 8.83 | 8.838 | 0.008 | 0.086% | `< 0.2` |
+| R_W [kN] | 557.11 | 556.953 | 0.157 | 0.028% | `< 5` |
+| R_B [kN] | 0.049 | 0.0492 | 1.9e-4 | 0.38% | `< 0.05` |
+| R_TR [kN] | 0.00 | 0.00 | 0 | — | `< 0.05` |
+| C_A | 0.000352 | 0.000352 | ~5e-7 | 0.14% | `< 5e-6` |
+| R_A [kN] | 221.98 | 220.572 | 1.41 | 0.63% | `< 2` |
+| R_T [kN] | 1793.26 | 1792.271 | 0.99 | 0.055% | `< 8` |
+| P_E [kW] | 23063 | 23050.6 | 12.4 | 0.054% | `< 120` |
 
 ## Notes
 
@@ -56,3 +88,5 @@ Fast invariant counterparts (always on in default CI) live in
 - Aircraft trim uses a **force-balance polar** (`C_m0 = C_mα = C_mq = 0`), matching
   the Python slow oracle — open-loop light-aircraft pitch derivatives are not
   held for 60 s without a controller (documented, not a silent loosen).
+- Holtrop path is the **1982** decomposition (matches §5). The 1984 form-factor
+  helper is exposed separately and is not the §5 oracle path.

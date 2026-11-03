@@ -15,18 +15,34 @@
 
 use pe_math::libm_ops;
 
+use crate::error::{require_finite, require_non_negative, require_positive, BlastError};
+
 /// Default sea-level ambient pressure [Pa] (ISA).
 pub const P0_DEFAULT: f64 = 101_325.0;
 
-/// Peak overpressure ratio `p_s / p_0` (dimensionless) at scaled distance `z`
-/// [m·kg^{-1/3}] from the Kinney–Graham formula.
-pub fn peak_overpressure_ratio(z: f64) -> f64 {
-    let z = z.max(0.0);
+fn kinney_ratio(z: f64) -> f64 {
     let num = 808.0 * (1.0 + (z / 4.5) * (z / 4.5));
     let d1 = 1.0 + (z / 0.048) * (z / 0.048);
     let d2 = 1.0 + (z / 0.32) * (z / 0.32);
     let d3 = 1.0 + (z / 1.35) * (z / 1.35);
     num / libm_ops::sqrt(d1 * d2 * d3)
+}
+
+/// Peak overpressure ratio `p_s / p_0` (dimensionless) at scaled distance `z`
+/// [m·kg^{-1/3}] from the Kinney–Graham formula.
+///
+/// Negative `z` is clamped to `0` (legacy). Prefer [`try_peak_overpressure_ratio`]
+/// at crate / FFI boundaries.
+pub fn peak_overpressure_ratio(z: f64) -> f64 {
+    kinney_ratio(z.max(0.0))
+}
+
+/// Fallible Kinney–Graham overpressure ratio (`z` finite and `≥ 0`).
+pub fn try_peak_overpressure_ratio(z: f64) -> Result<f64, BlastError> {
+    require_non_negative(z, "z")?;
+    let ratio = kinney_ratio(z);
+    require_finite(ratio, "peak_overpressure_ratio")?;
+    Ok(ratio)
 }
 
 /// Peak overpressure `p_s` [Pa] at scaled distance `z` [m·kg^{-1/3}] with
@@ -35,12 +51,27 @@ pub fn peak_overpressure(z: f64, p0: f64) -> f64 {
     peak_overpressure_ratio(z) * p0
 }
 
+/// Fallible peak overpressure [Pa].
+pub fn try_peak_overpressure(z: f64, p0: f64) -> Result<f64, BlastError> {
+    require_positive(p0, "p0")?;
+    Ok(try_peak_overpressure_ratio(z)? * p0)
+}
+
 /// Peak overpressure [Pa] from range and TNT-equivalent mass.
 ///
 /// - `range_m` [m], `w_eq_kg` [kg], `p0` [Pa].
 pub fn peak_overpressure_at(range_m: f64, w_eq_kg: f64, p0: f64) -> Option<f64> {
-    let z = crate::scaling::scaled_distance(range_m, w_eq_kg, 1.0)?;
-    Some(peak_overpressure(z, p0))
+    try_peak_overpressure_at(range_m, w_eq_kg, p0).ok()
+}
+
+/// Fallible peak overpressure from range / TNT-equivalent mass.
+pub fn try_peak_overpressure_at(
+    range_m: f64,
+    w_eq_kg: f64,
+    p0: f64,
+) -> Result<f64, BlastError> {
+    let z = crate::scaling::try_scaled_distance(range_m, w_eq_kg, 1.0)?;
+    try_peak_overpressure(z, p0)
 }
 
 #[cfg(test)]

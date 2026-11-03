@@ -31,6 +31,7 @@ use pe_core::{ExternalLoads, World};
 use pe_math::libm_ops;
 use pe_math::Vec3;
 
+use crate::error::{require_finite, require_non_negative, require_positive, BlastError};
 use crate::friedlander;
 use crate::kingery;
 use crate::kinney::{peak_overpressure, P0_DEFAULT};
@@ -95,6 +96,18 @@ impl BlastLoadParams {
             gamma: GAMMA_AIR,
         }
     }
+
+    /// Fallible validation: finite `drag_cd`/`shadow_factor`/`gamma`, `gamma > 1`,
+    /// and `shadow_factor ≥ 0`.
+    pub fn try_validate(self) -> Result<Self, BlastError> {
+        require_finite(self.drag_cd, "drag_cd")?;
+        require_non_negative(self.shadow_factor, "shadow_factor")?;
+        require_finite(self.gamma, "gamma")?;
+        if !(self.gamma > 1.0) {
+            return Err(BlastError::InvalidParameter("gamma must be > 1"));
+        }
+        Ok(self)
+    }
 }
 
 /// Blast source for engineering loads (TNT-equivalent mass only — no chemistry).
@@ -116,15 +129,41 @@ pub struct BlastSource {
 
 impl BlastSource {
     /// Default engineering source at the origin.
+    ///
+    /// Panics if `w_eq_kg` is non-finite or not strictly positive. Prefer
+    /// [`try_new`](Self::try_new) at crate / FFI boundaries.
     pub fn new(origin: Vec3, w_eq_kg: f64) -> Self {
-        Self {
+        Self::try_new(origin, w_eq_kg).expect("blast source: w_eq_kg must be positive")
+    }
+
+    /// Fallible constructor: finite origin, `w_eq_kg > 0`, default ambient /
+    /// duration / decay.
+    pub fn try_new(origin: Vec3, w_eq_kg: f64) -> Result<Self, BlastError> {
+        if !origin.is_finite() {
+            return Err(BlastError::NonFinite("origin"));
+        }
+        require_positive(w_eq_kg, "w_eq_kg")?;
+        Ok(Self {
             origin,
             w_eq_kg,
             t0: 0.0,
             p0: P0_DEFAULT,
             td_at_z1: 0.01,
             decay_b: 1.0,
+        })
+    }
+
+    /// Validate all scalar fields after manual construction / mutation.
+    pub fn try_validate(self) -> Result<Self, BlastError> {
+        if !self.origin.is_finite() {
+            return Err(BlastError::NonFinite("origin"));
         }
+        require_positive(self.w_eq_kg, "w_eq_kg")?;
+        require_finite(self.t0, "t0")?;
+        require_positive(self.p0, "p0")?;
+        require_positive(self.td_at_z1, "td_at_z1")?;
+        require_non_negative(self.decay_b, "decay_b")?;
+        Ok(self)
     }
 
     /// Scaled distance [m·kg^{-1/3}] to world point.
@@ -187,6 +226,30 @@ pub struct ExposedFace {
     pub normal: Vec3,
     /// Exposed area [m²].
     pub area: f64,
+}
+
+impl ExposedFace {
+    /// Fallible face constructor: finite pose vectors and `area > 0`.
+    pub fn try_new(
+        body: usize,
+        center: Vec3,
+        normal: Vec3,
+        area: f64,
+    ) -> Result<Self, BlastError> {
+        if !center.is_finite() {
+            return Err(BlastError::NonFinite("face.center"));
+        }
+        if !normal.is_finite() {
+            return Err(BlastError::NonFinite("face.normal"));
+        }
+        require_positive(area, "face.area")?;
+        Ok(Self {
+            body,
+            center,
+            normal,
+            area,
+        })
+    }
 }
 
 /// Angle-of-incidence factor: `max(0, cos θ)` with `θ` between blast direction
