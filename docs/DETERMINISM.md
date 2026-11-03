@@ -315,9 +315,6 @@ Scenario (`pe_hydro::canonical_cummins_hash`, `cummins_hash` binary,
 
 Helper: `cargo run -p pe-hydro --bin cummins_hash --release`.
 
-<<<<<<< HEAD
-### Canonical blast hashes (locked)
-=======
 ### Canonical 6-DOF Cummins hash (locked, M21)
 
 Scenario (`pe_hydro::canonical_cummins6_hash`, `cummins6_hash` binary,
@@ -336,8 +333,7 @@ Scenario (`pe_hydro::canonical_cummins6_hash`, `cummins6_hash` binary,
 Helper: `cargo run -p pe-hydro --bin cummins6_hash --release`.
 Existing heave `cummins_hash` (`1ee2f57b9c89c3ae`) is **unchanged**.
 
-### Canonical blast-pyramid hash (locked)
->>>>>>> origin/main
+### Canonical blast hashes (locked)
 
 `cargo run -p pe-blast --bin blast_hash --release` prints **four** lines
 (`blast_pyramid_hash`, `blast_external_loads_hash`, `blast_fragments_hash`,
