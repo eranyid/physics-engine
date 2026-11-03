@@ -230,12 +230,7 @@ pub struct ExposedFace {
 
 impl ExposedFace {
     /// Fallible face constructor: finite pose vectors and `area > 0`.
-    pub fn try_new(
-        body: usize,
-        center: Vec3,
-        normal: Vec3,
-        area: f64,
-    ) -> Result<Self, BlastError> {
+    pub fn try_new(body: usize, center: Vec3, normal: Vec3, area: f64) -> Result<Self, BlastError> {
         if !center.is_finite() {
             return Err(BlastError::NonFinite("face.center"));
         }

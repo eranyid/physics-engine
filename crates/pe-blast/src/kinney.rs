@@ -65,11 +65,7 @@ pub fn peak_overpressure_at(range_m: f64, w_eq_kg: f64, p0: f64) -> Option<f64> 
 }
 
 /// Fallible peak overpressure from range / TNT-equivalent mass.
-pub fn try_peak_overpressure_at(
-    range_m: f64,
-    w_eq_kg: f64,
-    p0: f64,
-) -> Result<f64, BlastError> {
+pub fn try_peak_overpressure_at(range_m: f64, w_eq_kg: f64, p0: f64) -> Result<f64, BlastError> {
     let z = crate::scaling::try_scaled_distance(range_m, w_eq_kg, 1.0)?;
     try_peak_overpressure(z, p0)
 }

@@ -59,7 +59,8 @@ pub use fragments::{
 };
 pub use friedlander::{
     positive_impulse, pressure as friedlander_pressure, sample as friedlander_sample,
-    try_positive_impulse, try_pressure as try_friedlander_pressure, try_sample as try_friedlander_sample,
+    try_positive_impulse, try_pressure as try_friedlander_pressure,
+    try_sample as try_friedlander_sample,
 };
 pub use kingery::{
     arrival_time, incident_impulse, incident_overpressure, positive_duration,

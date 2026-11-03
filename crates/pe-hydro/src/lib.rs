@@ -66,8 +66,8 @@ pub use helpers::{
 };
 pub use holtrop::{
     form_factor_1_plus_k1_1982, form_factor_1_plus_k_1984, half_angle_of_entrance, holtrop_mennen,
-    length_of_run, try_holtrop_mennen, wetted_surface, HoltropInput, HoltropResult,
-    SternType, KNOTS_TO_MS, RHO_SEAWATER_HOLTROP_15C,
+    length_of_run, try_holtrop_mennen, wetted_surface, HoltropInput, HoltropResult, SternType,
+    KNOTS_TO_MS, RHO_SEAWATER_HOLTROP_15C,
 };
 pub use hull::{
     sphere_cap_volume, BoxHull, ConvexMeshHull, CylinderHull, Hull, SphereHull, SubmergedState,

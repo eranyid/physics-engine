@@ -507,7 +507,11 @@ fn holtrop_mennen_1982_example_locked() {
     // M27: Holtrop–Mennen 1982 ISP §5 numerical example (primary PDF).
     use pe_hydro::{try_holtrop_mennen, HoltropInput};
     let r = try_holtrop_mennen(&HoltropInput::holtrop_1982_example()).unwrap();
-    assert!((r.r_total / 1e3 - 1793.26).abs() < 8.0, "RT={}", r.r_total / 1e3);
+    assert!(
+        (r.r_total / 1e3 - 1793.26).abs() < 8.0,
+        "RT={}",
+        r.r_total / 1e3
+    );
     assert!((r.p_e / 1e3 - 23063.0).abs() < 120.0, "PE={}", r.p_e / 1e3);
     let _ = ittc57_cf(1e9);
 }

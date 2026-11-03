@@ -228,7 +228,14 @@ pub fn length_of_run(l: f64, c_p: f64, lcb_pct: f64) -> f64 {
 }
 
 /// Holtrop 1982 form factor `1+k₁`.
-pub fn form_factor_1_plus_k1_1982(b: f64, t: f64, l: f64, c_p: f64, lcb_pct: f64, c_stern: f64) -> f64 {
+pub fn form_factor_1_plus_k1_1982(
+    b: f64,
+    t: f64,
+    l: f64,
+    c_p: f64,
+    lcb_pct: f64,
+    c_stern: f64,
+) -> f64 {
     let l_r = length_of_run(l, c_p, lcb_pct);
     let t_over_l = t / l;
     let c12 = if t_over_l > 0.05 {
@@ -268,15 +275,7 @@ pub fn form_factor_1_plus_k_1984(
 }
 
 /// Holtrop wetted-surface approximation [m²].
-pub fn wetted_surface(
-    l: f64,
-    b: f64,
-    t: f64,
-    c_m: f64,
-    c_b: f64,
-    c_wp: f64,
-    a_bt: f64,
-) -> f64 {
+pub fn wetted_surface(l: f64, b: f64, t: f64, c_m: f64, c_b: f64, c_wp: f64, a_bt: f64) -> f64 {
     l * (2.0 * t + b)
         * libm_ops::sqrt(c_m)
         * (0.453 + 0.4425 * c_b - 0.2862 * c_m - 0.003467 * (b / t) + 0.3696 * c_wp)
@@ -350,19 +349,15 @@ pub fn try_holtrop_mennen(input: &HoltropInput) -> Result<HoltropResult, HydroEr
     let c_f = try_ittc57_cf_from_speed(input.speed, input.l, input.nu)?;
     let s = match input.s_hull {
         Some(s) => s,
-        None => wetted_surface(input.l, input.b, input.t, input.c_m, c_b, input.c_wp, input.a_bt),
+        None => wetted_surface(
+            input.l, input.b, input.t, input.c_m, c_b, input.c_wp, input.a_bt,
+        ),
     };
     require_finite(s, "S")?;
 
     let l_r = length_of_run(input.l, c_p, input.lcb_pct);
-    let one_plus_k1 = form_factor_1_plus_k1_1982(
-        input.b,
-        input.t,
-        input.l,
-        c_p,
-        input.lcb_pct,
-        input.c_stern,
-    );
+    let one_plus_k1 =
+        form_factor_1_plus_k1_1982(input.b, input.t, input.l, c_p, input.lcb_pct, input.c_stern);
     require_finite(one_plus_k1, "1+k1")?;
 
     let i_e = match input.i_e_deg {
@@ -393,9 +388,7 @@ pub fn try_holtrop_mennen(input: &HoltropInput) -> Result<HoltropResult, HydroEr
 
     let c3 = if input.a_bt > 0.0 {
         0.56 * libm_ops::pow(input.a_bt, 1.5)
-            / (input.b
-                * input.t
-                * (0.31 * libm_ops::sqrt(input.a_bt) + input.t_f - input.h_b))
+            / (input.b * input.t * (0.31 * libm_ops::sqrt(input.a_bt) + input.t_f - input.h_b))
     } else {
         0.0
     };
@@ -429,7 +422,8 @@ pub fn try_holtrop_mennen(input: &HoltropInput) -> Result<HoltropResult, HydroEr
             * input.rho
             * input.g
             * libm_ops::exp(
-                m1 * libm_ops::pow(froude, d) + m2 * libm_ops::cos(lambda * libm_ops::pow(froude, -2.0)),
+                m1 * libm_ops::pow(froude, d)
+                    + m2 * libm_ops::cos(lambda * libm_ops::pow(froude, -2.0)),
             )
     } else {
         0.0
@@ -442,8 +436,7 @@ pub fn try_holtrop_mennen(input: &HoltropInput) -> Result<HoltropResult, HydroEr
             0.0
         } else {
             let p_b = 0.56 * libm_ops::sqrt(input.a_bt) / pb_den;
-            let fni_den = input.g
-                * (input.t_f - input.h_b - 0.25 * libm_ops::sqrt(input.a_bt))
+            let fni_den = input.g * (input.t_f - input.h_b - 0.25 * libm_ops::sqrt(input.a_bt))
                 + 0.15 * input.speed * input.speed;
             if fni_den <= 0.0 {
                 0.0
