@@ -1,5 +1,6 @@
 /* Smoke test for pe_ffi C ABI. Built and run from CI. */
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -73,6 +74,23 @@ int main(void) {
   /* null destroy is fine */
   pe_world_destroy(NULL);
   pe_world_destroy(w);
+
+  /* M24 bake: size probe + locked hash */
+  {
+    uint64_t bake_hash = 0;
+    EXPECT(pe_canonical_bake_json_hash(&bake_hash) == PE_OK);
+    EXPECT(bake_hash == 0x3e9a97a85da0cbc6ULL);
+    EXPECT(pe_canonical_bake_json_hash(NULL) == PE_ERR_NULL);
+
+    const char *bad = "{}";
+    size_t need = 0;
+    EXPECT(pe_scene_bake(bad, 1.0, 1.0 / 240.0, 24.0, 1, -1.0, 0.0, NULL, 0,
+                         &need) == PE_ERR_SCENE);
+    EXPECT(pe_scene_bake(NULL, 1.0, 1.0 / 240.0, 24.0, 1, -1.0, 0.0, NULL, 0,
+                         &need) == PE_ERR_NULL);
+    EXPECT(pe_scene_bake(bad, 0.0, 1.0 / 240.0, 24.0, 1, -1.0, 0.0, NULL, 0,
+                         &need) == PE_ERR_ARG);
+  }
 
   if (failures) {
     fprintf(stderr, "%d failure(s)\n", failures);

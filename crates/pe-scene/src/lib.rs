@@ -9,6 +9,8 @@
 
 #![deny(missing_docs)]
 
+/// Simulation baking (offline transform curves for animation / DCC tools).
+pub mod bake;
 pub mod binary;
 /// Conversions between scene descriptors and engine types.
 pub mod convert;
@@ -17,6 +19,11 @@ pub mod error;
 pub mod migrate;
 pub mod types;
 
+pub use bake::{
+    bake_json_hash64, bake_scene, canonical_bake_document, canonical_bake_json_hash,
+    canonical_bake_scene, hermite_position, BakeBodyCurve, BakeDocument, BakeInterpolation,
+    BakeOptions, BakeReduceParams, BAKE_SCHEMA_VERSION, CANONICAL_BAKE_JSON_HASH,
+};
 pub use convert::force_to_box;
 
 pub use document::{

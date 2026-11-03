@@ -63,6 +63,13 @@ Build/run the CI smoke test:
 - `pe_world_overlap_aabb` — broad AABB overlap indices.
 - `pe_world_get_contacts` — contacts from the **last** `pe_world_step`.
 
+## Simulation baking (M24)
+
+`pe_scene_bake` runs a scene JSON offline and writes bake-curve JSON (Hermite +
+slerp; optional keyframe reduction). `pe_canonical_bake_json_hash` exposes the
+locked cross-OS digest. Finite timing args and null checks match the M22
+boundary policy. Schema / Swift note: [`BAKE.md`](BAKE.md).
+
 ## Limits / deferred
 
 - No multi-world islands API beyond what `ContactWorld` exposes.

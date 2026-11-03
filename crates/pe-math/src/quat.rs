@@ -178,6 +178,46 @@ impl Quat {
     pub fn scale(self, s: f64) -> Self {
         Self::new(self.w * s, self.x * s, self.y * s, self.z * s)
     }
+
+    /// Dot product of the 4-tuples (used by slerp).
+    #[inline]
+    pub fn dot(self, other: Self) -> f64 {
+        self.w * other.w + self.x * other.x + self.y * other.y + self.z * other.z
+    }
+
+    /// Spherical linear interpolation from `self` to `other` at `t ∈ [0, 1]`.
+    ///
+    /// Takes the short arc (negates `other` when `dot < 0`). Near-parallel
+    /// quaternions fall back to normalized lerp. Uses portable [`libm_ops`]
+    /// (`acos` / `sin`) so results are bit-stable across OS on the deterministic path.
+    pub fn slerp(self, other: Self, t: f64) -> Self {
+        let a = self.normalize();
+        let mut b = other.normalize();
+        let mut d = a.dot(b);
+        if d < 0.0 {
+            b = b.scale(-1.0);
+            d = -d;
+        }
+        // Clamp for acos domain (portable libm).
+        let d_clamped = d.clamp(-1.0, 1.0);
+        // Near-identical: nlerp avoids 0/0 in sin(ω).
+        if d_clamped > 0.999_5 {
+            return (a.scale(1.0 - t) + b.scale(t)).normalize();
+        }
+        let omega = libm_ops::acos(d_clamped);
+        let sin_omega = libm_ops::sin(omega);
+        let w0 = libm_ops::sin((1.0 - t) * omega) / sin_omega;
+        let w1 = libm_ops::sin(t * omega) / sin_omega;
+        (a.scale(w0) + b.scale(w1)).normalize()
+    }
+
+    /// Angle [rad] between two unit quaternions (short arc, in `[0, π]`).
+    pub fn angle_between(self, other: Self) -> f64 {
+        let a = self.normalize();
+        let b = other.normalize();
+        let d = a.dot(b).abs().clamp(0.0, 1.0);
+        2.0 * libm_ops::acos(d)
+    }
 }
 
 impl Default for Quat {
@@ -268,6 +308,37 @@ mod tests {
         assert_abs_diff_eq!(q1.z, q2.z, epsilon = 1e-15);
         let q0 = Quat::exp_rotvec(Vec3::zero());
         assert_eq!(q0, Quat::identity());
+    }
+
+    #[test]
+    fn slerp_endpoints_and_midpoint() {
+        let a = Quat::identity();
+        let b = Quat::from_axis_angle(Vec3::unit_z(), core::f64::consts::FRAC_PI_2);
+        let q0 = a.slerp(b, 0.0);
+        let q1 = a.slerp(b, 1.0);
+        assert_abs_diff_eq!(q0.w, a.w, epsilon = 1e-15);
+        assert_abs_diff_eq!(q1.w, b.w, epsilon = 1e-15);
+        assert_abs_diff_eq!(q1.z, b.z, epsilon = 1e-15);
+        let qh = a.slerp(b, 0.5);
+        let expected = Quat::from_axis_angle(Vec3::unit_z(), core::f64::consts::FRAC_PI_4);
+        assert_abs_diff_eq!(qh.w, expected.w, epsilon = 1e-14);
+        assert_abs_diff_eq!(qh.z, expected.z, epsilon = 1e-14);
+    }
+
+    #[test]
+    fn slerp_matches_analytic_uniform_spin() {
+        let axis = Vec3::unit_y();
+        let q0 = Quat::identity();
+        let q1 = Quat::from_axis_angle(axis, 1.0);
+        for k in 0..=10 {
+            let t = k as f64 / 10.0;
+            let q = q0.slerp(q1, t);
+            let analytic = Quat::from_axis_angle(axis, t);
+            assert_abs_diff_eq!(q.w, analytic.w, epsilon = 1e-14);
+            assert_abs_diff_eq!(q.x, analytic.x, epsilon = 1e-14);
+            assert_abs_diff_eq!(q.y, analytic.y, epsilon = 1e-14);
+            assert_abs_diff_eq!(q.z, analytic.z, epsilon = 1e-14);
+        }
     }
 
     proptest! {

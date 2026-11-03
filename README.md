@@ -14,6 +14,7 @@ GDExtension (`godot/`) ship as M8. Python remains the oracle for cross-checks.
 - Seakeeping / Morison: [docs/SEAKEEPING.md](docs/SEAKEEPING.md)
 - Rotor BEM: [docs/ROTOR.md](docs/ROTOR.md)
 - Scene I/O: [docs/SCENE.md](docs/SCENE.md)
+- Simulation baking: [docs/BAKE.md](docs/BAKE.md)
 - C ABI: [docs/FFI.md](docs/FFI.md)
 - Godot: [docs/GODOT.md](docs/GODOT.md)
 - Combat (armor, penetration, ricochet, spall): [docs/COMBAT.md](docs/COMBAT.md)
@@ -40,6 +41,7 @@ cargo run -p pe-examples --bin bouncing_ball --release
 cargo run -p pe-examples --bin pyramid --release
 cargo run -p pe-examples --bin orbit --release
 cargo run -p pe-examples --bin falling_aircraft --release
+cargo run -p pe-examples --bin bake_scene --release
 ```
 
 ## Rust core + wheel
@@ -68,6 +70,7 @@ cargo run -p pe-soft --bin soft_hash --release
 cargo run -p pe-soft --bin materials_hash --release
 cargo run -p pe-hydro --bin m11_hash --release
 cargo run -p pe-hydro --bin cummins6_hash --release
+cargo run -p pe-scene --bin bake_hash --release
 ```
 
 ## Example (stage 1, Python oracle)

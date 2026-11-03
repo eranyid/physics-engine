@@ -79,6 +79,18 @@ Scenario (must stay in sync in the binary, Rust test, and Python helper):
 | macOS (CI) | same expected | CI asserts equality |
 | Windows (CI) | same expected | CI asserts equality |
 
+### Canonical bake JSON hash (locked, M24)
+
+`cargo run -p pe-scene --bin bake_hash --release` prints one line: FNV-1a 64 over
+the compact JSON bytes of the canonical projectile bake (`duration=1`,
+`physics_dt=1/240`, `sample_fps=24`, velocities on). See [`BAKE.md`](BAKE.md).
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `3e9a97a85da0cbc6` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
 ### Canonical scene save/load/continue hashes (locked)
 
 `cargo run -p pe-scene --bin scene_hash --release` prints three lines:
