@@ -186,4 +186,40 @@ proptest! {
     fn fuzz_ron_no_panic(s in ".*") {
         let _ = SceneDocument::from_ron(&s);
     }
+
+    /// Structured near-valid JSON with mutated fields must error or load — never panic.
+    #[test]
+    fn fuzz_mutated_pyramid_json_no_panic(
+        mass in -10.0f64..10.0,
+        extra_field in any::<bool>(),
+        bad_version in any::<bool>(),
+        truncate in any::<bool>(),
+    ) {
+        let mut doc = SceneDocument::canonical_pyramid();
+        if !doc.bodies.is_empty() {
+            doc.bodies[0].mass = mass;
+        }
+        let mut v: serde_json::Value = serde_json::from_str(&doc.to_json().unwrap()).unwrap();
+        if extra_field {
+            v["zzz_unknown"] = serde_json::json!(42);
+        }
+        if bad_version {
+            v["schema_version"] = serde_json::json!(999);
+        }
+        let mut s = v.to_string();
+        if truncate && s.len() > 16 {
+            s.truncate(s.len() / 2);
+        }
+        let _ = SceneDocument::from_json(&s);
+    }
+}
+
+#[test]
+fn random_scene_instantiate_rejects_invalid_mass() {
+    let mut doc = SceneDocument::canonical_pyramid();
+    doc.bodies[0].mass = f64::NAN;
+    match doc.instantiate() {
+        Ok(_) => panic!("expected Invalid mass error"),
+        Err(err) => assert!(matches!(err, SceneError::Invalid { .. }), "{err:?}"),
+    }
 }

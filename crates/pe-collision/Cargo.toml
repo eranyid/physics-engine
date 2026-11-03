@@ -23,6 +23,7 @@ approx = { workspace = true }
 proptest = { workspace = true }
 criterion = { workspace = true }
 rayon = "1.10"
+pe-scene = { workspace = true }
 
 [[bench]]
 name = "contact_pyramids"

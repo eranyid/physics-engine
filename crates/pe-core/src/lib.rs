@@ -13,6 +13,7 @@
 
 pub mod body;
 pub mod diagnostics;
+pub mod error;
 pub mod external_loads;
 pub mod forces;
 pub mod integrators;
@@ -20,8 +21,9 @@ pub mod world;
 
 pub use body::{
     inertia_solid_box, inertia_solid_cylinder, inertia_solid_sphere, invert3, mat_mul,
-    mat_transpose, mat_vec, BodyId, RigidBody,
+    mat_transpose, mat_vec, try_invert3, BodyId, RigidBody,
 };
+pub use error::BodyError;
 pub use external_loads::{ExternalLoads, LoadBuffers};
 pub use forces::{
     ConstantTorque, ForceGenerator, LinearDrag, NewtonianGravity, QuadraticDrag, Spring,

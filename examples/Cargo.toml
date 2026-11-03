@@ -1,0 +1,31 @@
+[package]
+name = "pe-examples"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Runnable demos: bouncing ball, pyramid, orbit, falling aircraft"
+
+[[bin]]
+name = "bouncing_ball"
+path = "bouncing_ball.rs"
+
+[[bin]]
+name = "pyramid"
+path = "pyramid.rs"
+
+[[bin]]
+name = "orbit"
+path = "orbit.rs"
+
+[[bin]]
+name = "falling_aircraft"
+path = "falling_aircraft.rs"
+
+[dependencies]
+pe-math = { workspace = true }
+pe-core = { workspace = true }
+pe-collision = { workspace = true }
+pe-space = { workspace = true }
+pe-aero = { workspace = true }

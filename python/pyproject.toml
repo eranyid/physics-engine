@@ -21,3 +21,7 @@ manifest-path = "Cargo.toml"
 module-name = "physics_engine_rs"
 # abi3 is enabled via pyo3 feature abi3-py310 in Cargo.toml
 bindings = "pyo3"
+include = [
+    { path = "physics_engine_rs.pyi", format = ["sdist", "wheel"] },
+    { path = "py.typed", format = ["sdist", "wheel"] },
+]
