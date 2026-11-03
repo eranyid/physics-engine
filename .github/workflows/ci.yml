@@ -117,26 +117,6 @@ jobs:
         # Required job: Linux headless Godot 4.3-stable loads the GDExtension
         # and runs ci_drop_test + M25 scene tests. Measured: docs/GODOT.md.
 
-  pe-godot-build:
-    name: pe-godot build (${{ matrix.os }})
-    # Build-only on Windows/macOS: pinned headless Godot CI runner is Linux.
-    # Interactive editor play remains unverified on all platforms.
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: "1.99.1"
-
-      - name: cargo build -p pe-godot
-        run: cargo build -p pe-godot
-
   maturin-pytest:
     name: maturin wheel + oracle pytest
     runs-on: ubuntu-latest
@@ -182,6 +162,12 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: "1.99.1"
+
+      # Build-only pe-godot on Windows/macOS (no pinned headless Godot there).
+      # Folded into this job to avoid an extra macos-latest runner slot.
+      - name: cargo build -p pe-godot (Windows/macOS)
+        if: matrix.os != 'ubuntu-latest'
+        run: cargo build -p pe-godot
 
       - name: Compute canonical stage-1 hash
         shell: bash

@@ -103,7 +103,7 @@ fd52bb4ba8acc30ca5accd1c566d470ad7282f891ccc0995dfafabcf92bcf76280ce182bf9d80ebd
 | Check | Status |
 | --- | --- |
 | `cargo build -p pe-godot` on Linux | **Done in CI** (`rust` job builds workspace members; headless job rebuilds) |
-| `cargo build -p pe-godot` on Windows / macOS | **Done in CI** (job `pe-godot-build`, **build-only**) |
+| `cargo build -p pe-godot` on Windows / macOS | **Done in CI** (step on `determinism-hash` matrix, **build-only**) |
 | Godot 4.3-stable headless suite + drop hash | **Done in CI** (required job `pe-godot-headless`, Linux) |
 | Headless Godot on Windows / macOS | **Not run** (no pinned Godot runner in CI for those OS) |
 | Godot editor interactive play | **Unverified** in CI (use local editor + `main.tscn`) |
