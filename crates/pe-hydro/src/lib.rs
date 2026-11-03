@@ -14,7 +14,7 @@
 //! linear MMG maneuvering [`maneuvering`]. See `docs/SEAKEEPING.md`.
 //!
 //! **Deferred:** MacCamy–Fuchs; tabulated Vugts sections; verified Holtrop–
-//! Mennen coefficient tables; KVLCC2/SIMMAN derivative tables.
+//! Mennen coefficient tables (1982 primary formulas not transcribed).
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
@@ -43,8 +43,8 @@ pub use cummins::{
 pub use cummins6::{
     box_a_inf_matrix, box_hydrostatic_restoring, box_retardation_6dof, canonical_cummins6_hash,
     excitation_head_seas_6, excitation_head_seas_time, heave_pitch_natural_omegas,
-    roll_decay_analytic, roll_decay_rk4, sectional_a22_inf, sectional_b22, solve6,
-    truncation_tail_l1, Cummins6Dof, MatrixRetardationKernel, RigidMass6, N_DOF,
+    matrix_asymmetry, roll_decay_analytic, roll_decay_rk4, sectional_a22_inf, sectional_b22,
+    solve6, truncation_tail_l1, Cummins6Dof, MatrixRetardationKernel, RigidMass6, N_DOF,
 };
 pub use force::{Buoyancy, FrictionModel, HullDrag, WaveDrag};
 pub use forward_speed::{
@@ -62,8 +62,10 @@ pub use hull::{
     RHO_FRESHWATER, RHO_SEAWATER,
 };
 pub use maneuvering::{
+    kvlcc2_l7_geom, kvlcc2_marin_frmt_turning_35, kvlcc2_yasukawa2015_coeffs,
     nominal_linear_mmg_unverified, nomoto_from_linear_mmg, propeller_thrust_unverified,
-    rudder_force_unverified, zigzag_10_10, LinearMmgDerivatives, MmgPlanar, NomotoKT, NomotoState,
+    rudder_force_unverified, zigzag_10_10, Kvlcc2Geom, Kvlcc2Mmg, Kvlcc2MmgCoeffs,
+    LinearMmgDerivatives, MmgPlanar, NomotoKT, NomotoState, TurningIndices,
 };
 pub use morison::{
     airy_drag_closed_form_no_reversal, airy_inertia_closed_form, integrate_morison,
@@ -77,10 +79,10 @@ pub use resistance::{
 };
 pub use scenarios::{canonical_m11_hash, canonical_wave_body_hash};
 pub use seakeeping::{
-    assemble_strip_matrices, box_barge_stations, box_heave_natural_omega,
-    box_heave_natural_omega_earth, free_decay_heave, heave_pitch_rao, roll_natural_period,
-    sectional_a33, sectional_a33_inf, sectional_b33, HeavePitchRao, HeavePitchTd, StripMatrices,
-    StripStation,
+    assemble_strip_matrices, box_barge_rao_closed_form, box_barge_stations,
+    box_heave_natural_omega, box_heave_natural_omega_earth, free_decay_heave, heave_pitch_rao,
+    roll_natural_period, sectional_a33, sectional_a33_inf, sectional_b33, HeavePitchRao,
+    HeavePitchTd, StripMatrices, StripStation,
 };
 pub use waves::{
     deep_water_wavelength, dispersion_omega, group_speed, jonswap_spectrum, phase_speed,

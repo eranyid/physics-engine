@@ -470,25 +470,82 @@ impl Cummins6Dof {
         acc
     }
 
-    /// One semi-implicit step with external force/moment `f` [N, N·m].
-    pub fn step(&mut self, f: &[f64; N_DOF]) {
-        let dt = self.kernel.dt;
-        let mem = self.memory_force(&self.xi_dot);
+    /// Acceleration `ξ̈` at state `(ξ, ξ̇)` with external `f` (memory uses `v_now`
+    /// at lag 0 and the stored history for older lags).
+    fn accel_at(&self, xi: &[f64; N_DOF], v_now: &[f64; N_DOF], f: &[f64; N_DOF]) -> [f64; N_DOF] {
+        let mem = self.memory_force(v_now);
         let mut rhs = [0.0; N_DOF];
         for i in 0..N_DOF {
             let mut cx = 0.0;
             for j in 0..N_DOF {
-                cx += self.kernel.c[i][j] * self.xi[j];
+                cx += self.kernel.c[i][j] * xi[j];
             }
             rhs[i] = f[i] - mem[i] - cx;
         }
-        let acc = solve6(&self.m_tot, &rhs);
+        solve6(&self.m_tot, &rhs)
+    }
+
+    /// One semi-implicit Euler step with external force/moment `f` [N, N·m].
+    ///
+    /// Kept as the default path for [`canonical_cummins6_hash`] (locked). Prefer
+    /// [`Self::step_rk4`] for conservative / high-order oracles: at `dt=0.01`
+    /// over ~40 s the undamped energy envelope drift of this scheme is ~1.3%,
+    /// which is an integrator artefact (order-1), not an `A_∞`/`C` coupling bug.
+    pub fn step(&mut self, f: &[f64; N_DOF]) {
+        let dt = self.kernel.dt;
+        let acc = self.accel_at(&self.xi, &self.xi_dot, f);
         for i in 0..N_DOF {
             self.xi_dot[i] += dt * acc[i];
             self.xi[i] += dt * self.xi_dot[i];
         }
         self.t += dt;
-        self.hist.push(self.xi_dot);
+        self.push_hist(self.xi_dot);
+    }
+
+    /// Classical RK4 step of the first-order system `(ξ, ξ̇)`.
+    ///
+    /// Memory convolution uses the stage velocity at lag 0 and the history
+    /// frozen at the start of the step (standard engineering treatment of the
+    /// hereditary integral inside an explicit RK stage). When `K ≡ 0` the
+    /// scheme reduces to exact classical RK4 on the linear oscillator
+    /// `(M+A_∞) ξ̈ + C ξ = F`.
+    pub fn step_rk4(&mut self, f: &[f64; N_DOF]) {
+        let dt = self.kernel.dt;
+        let x0 = self.xi;
+        let v0 = self.xi_dot;
+
+        let a1 = self.accel_at(&x0, &v0, f);
+        let mut x2 = [0.0; N_DOF];
+        let mut v2 = [0.0; N_DOF];
+        for i in 0..N_DOF {
+            x2[i] = x0[i] + 0.5 * dt * v0[i];
+            v2[i] = v0[i] + 0.5 * dt * a1[i];
+        }
+        let a2 = self.accel_at(&x2, &v2, f);
+        let mut x3 = [0.0; N_DOF];
+        let mut v3 = [0.0; N_DOF];
+        for i in 0..N_DOF {
+            x3[i] = x0[i] + 0.5 * dt * v2[i];
+            v3[i] = v0[i] + 0.5 * dt * a2[i];
+        }
+        let a3 = self.accel_at(&x3, &v3, f);
+        let mut x4 = [0.0; N_DOF];
+        let mut v4 = [0.0; N_DOF];
+        for i in 0..N_DOF {
+            x4[i] = x0[i] + dt * v3[i];
+            v4[i] = v0[i] + dt * a3[i];
+        }
+        let a4 = self.accel_at(&x4, &v4, f);
+        for i in 0..N_DOF {
+            self.xi[i] = x0[i] + (dt / 6.0) * (v0[i] + 2.0 * v2[i] + 2.0 * v3[i] + v4[i]);
+            self.xi_dot[i] = v0[i] + (dt / 6.0) * (a1[i] + 2.0 * a2[i] + 2.0 * a3[i] + a4[i]);
+        }
+        self.t += dt;
+        self.push_hist(self.xi_dot);
+    }
+
+    fn push_hist(&mut self, v: [f64; N_DOF]) {
+        self.hist.push(v);
         let max_hist = self.kernel.n_time;
         if self.hist.len() > max_hist {
             let drop = self.hist.len() - max_hist;
@@ -497,12 +554,26 @@ impl Cummins6Dof {
     }
 
     /// Free decay for `n_steps` (zero excitation); returns heave samples.
+    ///
+    /// Uses the locked semi-implicit [`Self::step`] path (hash scenario).
     pub fn free_decay_heave(&mut self, n_steps: usize) -> Vec<f64> {
         let mut samples = Vec::with_capacity(n_steps + 1);
         samples.push(self.xi[2]);
         let zero = [0.0; N_DOF];
         for _ in 0..n_steps {
             self.step(&zero);
+            samples.push(self.xi[2]);
+        }
+        samples
+    }
+
+    /// Free-decay heave samples via [`Self::step_rk4`].
+    pub fn free_decay_heave_rk4(&mut self, n_steps: usize) -> Vec<f64> {
+        let mut samples = Vec::with_capacity(n_steps + 1);
+        samples.push(self.xi[2]);
+        let zero = [0.0; N_DOF];
+        for _ in 0..n_steps {
+            self.step_rk4(&zero);
             samples.push(self.xi[2]);
         }
         samples
@@ -521,6 +592,20 @@ impl Cummins6Dof {
         }
         0.5 * ke + 0.5 * pe
     }
+}
+
+/// Max absolute asymmetry `|M_ij − M_ji|` of a 6×6 matrix (diagnostic).
+pub fn matrix_asymmetry(m: &[[f64; N_DOF]; N_DOF]) -> f64 {
+    let mut best = 0.0;
+    for i in 0..N_DOF {
+        for j in (i + 1)..N_DOF {
+            let d = libm_ops::fabs(m[i][j] - m[j][i]);
+            if d > best {
+                best = d;
+            }
+        }
+    }
+    best
 }
 
 /// Solve `A x = b` for SPD-ish 6×6 via Gaussian elimination with partial pivot.
