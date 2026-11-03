@@ -125,6 +125,10 @@ pub struct DfsphWorld {
     neigh_lists: Vec<Vec<usize>>,
     /// Scratch for XSPH / ST.
     scratch_dv: Vec<Vec3>,
+    /// Per-fluid Δv attributed to boundary neighbours (pressure update).
+    dv_bound: Vec<Vec3>,
+    /// Scratch weights for distributing boundary reactions.
+    reaction_tmp: Vec<(usize, f64)>,
     /// Colour-field normals for surface tension.
     normals: Vec<Vec3>,
     /// Accumulated fluid→boundary force [N] on each particle (boundary slots only).
@@ -164,6 +168,8 @@ impl DfsphWorld {
             a_adv: vec![Vec3::zero(); n],
             neigh_lists: vec![Vec::new(); n],
             scratch_dv: vec![Vec3::zero(); n],
+            dv_bound: vec![Vec3::zero(); n],
+            reaction_tmp: Vec::new(),
             normals: vec![Vec3::zero(); n],
             boundary_force: vec![Vec3::zero(); n],
         };
@@ -183,6 +189,7 @@ impl DfsphWorld {
         self.kappa_v_warm.resize(n, 0.0);
         self.a_adv.resize(n, Vec3::zero());
         self.scratch_dv.resize(n, Vec3::zero());
+        self.dv_bound.resize(n, Vec3::zero());
         self.normals.resize(n, Vec3::zero());
         self.boundary_force.resize(n, Vec3::zero());
         if self.neigh_lists.len() != n {
@@ -428,8 +435,10 @@ impl DfsphWorld {
             &self.kappa
         };
         // Per-fluid Δv from boundary neighbours only (before cap), for reactions.
-        let mut dv_bound = vec![Vec3::zero(); n];
         for d in &mut self.scratch_dv {
+            *d = Vec3::zero();
+        }
+        for d in &mut self.dv_bound {
             *d = Vec3::zero();
         }
         for i in 0..n {
@@ -467,7 +476,7 @@ impl DfsphWorld {
                 }
             }
             self.scratch_dv[i] = dv * (-dt);
-            dv_bound[i] = dv_b * (-dt);
+            self.dv_bound[i] = dv_b * (-dt);
         }
         let dv_cap = self.params.max_velocity_correction;
         let mass = self.particles.mass;
@@ -486,12 +495,12 @@ impl DfsphWorld {
                 }
             }
             // Reaction from capped boundary-attributed Δv: F_b = −m Δv_b_capped / dt.
-            let dv_b = dv_bound[i] * scale;
+            let dv_b = self.dv_bound[i] * scale;
             if dv_b.norm_squared() > 0.0 {
                 let xi = self.particles.x[i];
                 // Distribute −m dv_b/dt onto boundary neighbours by |∇W| weights.
                 let mut wsum = 0.0;
-                let mut tmp: Vec<(usize, f64)> = Vec::new();
+                self.reaction_tmp.clear();
                 for &j in &self.neigh_lists[i] {
                     if self.particles.kind[j] != ParticleKind::Boundary {
                         continue;
@@ -502,11 +511,11 @@ impl DfsphWorld {
                     let r = (self.particles.x[j] - xi).norm();
                     let wt = (1.0 / r.max(1e-9)).min(1e6);
                     wsum += wt;
-                    tmp.push((j, wt));
+                    self.reaction_tmp.push((j, wt));
                 }
                 if wsum > 0.0 {
                     let fb_total = dv_b * (-mass * inv_dt);
-                    for (j, wt) in tmp {
+                    for &(j, wt) in &self.reaction_tmp {
                         self.boundary_force[j] += fb_total * (wt / wsum);
                     }
                 }

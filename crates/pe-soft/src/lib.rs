@@ -54,7 +54,10 @@ pub use builders::{
     add_shape_match_all, make_axial_bar_grid, make_axial_bar_springs, make_axial_bar_tets,
     make_balloon, make_cantilever, make_cloth, make_rope, make_soft_cube,
 };
-pub use collision::{SelfCollisionParams, StaticBox, StaticColliders, StaticPlane, StaticSphere};
+pub use collision::{
+    SelfCollisionParams, SelfCollisionScratch, StaticBox, StaticColliders, StaticPlane,
+    StaticSphere,
+};
 pub use constraint::{
     mesh_volume, tetra_dm_inv, tetra_volume, ConstraintSet, DihedralBendConstraint,
     DistanceBendConstraint, DistanceConstraint, Multiplier, PressureConstraint,

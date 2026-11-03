@@ -21,6 +21,8 @@ pub struct StepScratch {
     pub pairs: Vec<(usize, usize)>,
     /// Narrow-phase contacts for this detect.
     pub contacts: Vec<ContactPoint>,
+    /// Active (awake) contacts filtered for the PGS velocity solve.
+    pub active_contacts: Vec<ContactPoint>,
     /// Inverse masses (dynamics then zeros for statics).
     pub im: Vec<f64>,
     /// World-frame inverse inertia.
@@ -29,6 +31,22 @@ pub struct StepScratch {
     pub v: Vec<Vec3>,
     /// Angular momenta (extended with zeros for statics).
     pub l: Vec<Vec3>,
+    /// SAP order / active scratch (reused across steps).
+    pub sap_order: Vec<usize>,
+    /// SAP active-set scratch.
+    pub sap_active: Vec<usize>,
+    /// Joint island pairs buffer.
+    pub joint_pairs: Vec<(usize, usize)>,
+    /// Merged island pairs buffer (before swap into `prev_pairs`).
+    pub island_pairs: Vec<(usize, usize)>,
+    /// Sleep update: linear speeds.
+    pub sleep_lin: Vec<f64>,
+    /// Sleep update: angular speeds.
+    pub sleep_ang: Vec<f64>,
+    /// Sleep update: has-contact flags.
+    pub sleep_has_c: Vec<bool>,
+    /// Speculative / TOI contact accumulation (avoids Shape clones when empty).
+    pub toi_contacts: Vec<ContactPoint>,
 }
 
 impl StepScratch {
@@ -44,6 +62,10 @@ impl StepScratch {
         self.aabbs.clear();
         self.pairs.clear();
         self.contacts.clear();
+        self.active_contacts.clear();
+        self.toi_contacts.clear();
+        self.joint_pairs.clear();
+        self.island_pairs.clear();
     }
 
     /// Clear solver working sets (keeps detect buffers).

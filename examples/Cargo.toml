@@ -27,6 +27,10 @@ path = "falling_aircraft.rs"
 name = "bake_scene"
 path = "bake_scene.rs"
 
+[[bin]]
+name = "ci_bench"
+path = "ci_bench.rs"
+
 [dependencies]
 pe-math = { workspace = true }
 pe-core = { workspace = true }
@@ -34,3 +38,5 @@ pe-collision = { workspace = true }
 pe-space = { workspace = true }
 pe-aero = { workspace = true }
 pe-scene = { workspace = true }
+pe-soft = { workspace = true }
+pe-fluid = { workspace = true }

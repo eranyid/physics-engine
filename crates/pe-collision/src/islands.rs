@@ -39,6 +39,16 @@ pub struct SleepState {
     pub island_count: usize,
     /// Whether each island is sleeping (length `island_count`).
     pub island_sleeping: Vec<bool>,
+    /// Union-find parent scratch (reused across rebuilds).
+    uf_parent: Vec<usize>,
+    /// Union-find rank scratch.
+    uf_rank: Vec<u8>,
+    /// Per-body root after find.
+    uf_root_of: Vec<usize>,
+    /// Collected roots (sorted for dense ids).
+    uf_roots: Vec<usize>,
+    /// Root → dense island id.
+    uf_id_of: Vec<i32>,
 }
 
 impl SleepState {
@@ -57,6 +67,11 @@ impl SleepState {
             island: vec![-1; n],
             island_count: 0,
             island_sleeping: Vec::new(),
+            uf_parent: Vec::new(),
+            uf_rank: Vec::new(),
+            uf_root_of: Vec::new(),
+            uf_roots: Vec::new(),
+            uf_id_of: Vec::new(),
         }
     }
 
@@ -106,8 +121,10 @@ impl SleepState {
     /// only ensure the dynamic endpoint is present in some island.
     pub fn rebuild_islands(&mut self, n: usize, pairs: &[(usize, usize)]) {
         self.resize(n);
-        let mut parent: Vec<usize> = (0..n).collect();
-        let mut rank = vec![0u8; n];
+        self.uf_parent.clear();
+        self.uf_parent.extend(0..n);
+        self.uf_rank.clear();
+        self.uf_rank.resize(n, 0u8);
 
         let find = |parent: &mut [usize], mut x: usize| -> usize {
             while parent[x] != x {
@@ -133,30 +150,33 @@ impl SleepState {
 
         for &(a, b) in pairs {
             if a < n && b < n {
-                union(&mut parent, &mut rank, a, b);
+                union(&mut self.uf_parent, &mut self.uf_rank, a, b);
             }
         }
 
         // Assign dense island ids in ascending root order for determinism.
-        let mut root_of = vec![0usize; n];
-        let mut roots: Vec<usize> = Vec::new();
+        self.uf_root_of.clear();
+        self.uf_root_of.resize(n, 0);
+        self.uf_roots.clear();
         for i in 0..n {
-            let r = find(&mut parent, i);
-            root_of[i] = r;
+            let r = find(&mut self.uf_parent, i);
+            self.uf_root_of[i] = r;
             if r == i {
-                roots.push(i);
+                self.uf_roots.push(i);
             }
         }
-        roots.sort_unstable();
-        let mut id_of = vec![-1i32; n];
-        for (k, &r) in roots.iter().enumerate() {
-            id_of[r] = k as i32;
+        self.uf_roots.sort_unstable();
+        self.uf_id_of.clear();
+        self.uf_id_of.resize(n, -1i32);
+        for (k, &r) in self.uf_roots.iter().enumerate() {
+            self.uf_id_of[r] = k as i32;
         }
         for i in 0..n {
-            self.island[i] = id_of[root_of[i]];
+            self.island[i] = self.uf_id_of[self.uf_root_of[i]];
         }
-        self.island_count = roots.len();
-        self.island_sleeping = vec![false; self.island_count];
+        self.island_count = self.uf_roots.len();
+        self.island_sleeping.clear();
+        self.island_sleeping.resize(self.island_count, false);
     }
 
     /// After solving: update sleep timers for awake bodies; put quiet islands to sleep.

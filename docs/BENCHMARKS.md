@@ -4,8 +4,14 @@ Measured on the Cloud Agent host (Linux x86_64, release, Rust 1.99.1,
 4× Intel Xeon). Numbers are wall time for the named workload; re-run locally
 after numerical changes.
 
+**M26:** CI wall-time regression gates and the latest before/after table live in
+[`PERFORMANCE.md`](PERFORMANCE.md) (`pe-examples ci_bench` +
+`docs/baselines/ci_bench.json`, fail on ≥2×). This file remains the broader
+Criterion history.
+
 Default CI does **not** run Criterion (`cargo test` omits harness benches). The
-`perf-smoke` CI job checks **hashes only** (no timing assertions). Use
+`perf-smoke` CI job checks **hashes only** (no timing assertions); `perf-bench`
+runs the fast `ci_bench` suite. Use
 `cargo bench -p pe-core --bench integrators`,
 `cargo bench -p pe-collision --bench contact_pyramids`,
 `cargo bench -p pe-collision --bench scaling`,
@@ -13,7 +19,8 @@ Default CI does **not** run Criterion (`cargo test` omits harness benches). The
 `cargo bench -p pe-hydro --bench hydrostatics`, and
 `cargo bench -p pe-space --bench space`,
 `cargo bench -p pe-blast --bench blast`,
-`cargo bench -p pe-ballistics --bench ballistics`, and
+`cargo bench -p pe-ballistics --bench ballistics`,
+`cargo bench -p pe-soft --bench soft`, and
 `cargo bench -p pe-fluid --bench fluid`.
 
 Manual phase profile: `cargo run -p pe-collision --example perf_profile --release`.

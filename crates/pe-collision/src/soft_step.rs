@@ -258,6 +258,23 @@ fn solve_rows(
     }
 }
 
+/// Reused soft-step working sets (kept on [`crate::ContactWorld`]).
+#[derive(Clone, Debug, Default)]
+pub(crate) struct SoftStepScratch {
+    im: Vec<f64>,
+    iinv: Vec<[[f64; 3]; 3]>,
+    x: Vec<pe_math::Vec3>,
+    q: Vec<pe_math::Quat>,
+    rmat: Vec<[[f64; 3]; 3]>,
+    v: Vec<pe_math::Vec3>,
+    l: Vec<pe_math::Vec3>,
+    rows: Vec<SoftRow>,
+    warm_used: Vec<bool>,
+    joint_rows: Vec<JointRow>,
+    q_drift: Vec<pe_math::Quat>,
+    l_drift: Vec<pe_math::Vec3>,
+}
+
 /// Result of a soft-step solve: refreshed contacts plus warm-start impulses.
 pub(crate) struct SoftStepResult {
     /// Contact points with updated world positions / depths.
@@ -284,6 +301,7 @@ pub(crate) fn solve_soft_step(
     forces: &[Vec3],
     torques: &[Vec3],
     joints: &mut [Joint],
+    scratch: &mut SoftStepScratch,
 ) -> SoftStepResult {
     let n = world.n;
     let n_static = static_x.len();
@@ -300,28 +318,52 @@ pub(crate) fn solve_soft_step(
     let soft_iters = 1usize;
     let relax_iters = 2usize;
 
-    let mut im = vec![0.0; n_total];
+    let mut im = std::mem::take(&mut scratch.im);
+    let mut iinv = std::mem::take(&mut scratch.iinv);
+    let mut x = std::mem::take(&mut scratch.x);
+    let mut q = std::mem::take(&mut scratch.q);
+    let mut rmat = std::mem::take(&mut scratch.rmat);
+    let mut v = std::mem::take(&mut scratch.v);
+    let mut l = std::mem::take(&mut scratch.l);
+    let mut rows = std::mem::take(&mut scratch.rows);
+    let mut warm_used = std::mem::take(&mut scratch.warm_used);
+    let mut joint_rows = std::mem::take(&mut scratch.joint_rows);
+    let mut q_drift = std::mem::take(&mut scratch.q_drift);
+    let mut l_drift = std::mem::take(&mut scratch.l_drift);
+
+    im.clear();
+    im.resize(n_total, 0.0);
     for i in 0..n {
         im[i] = 1.0 / world.mass[i];
     }
-    let mut iinv = vec![[[0.0; 3]; 3]; n_total];
+    iinv.clear();
+    iinv.resize(n_total, [[0.0; 3]; 3]);
     for i in 0..n {
         iinv[i] = world.inv_inertia_world(st.q[i], i);
     }
 
-    let mut x = Vec::with_capacity(n_total);
+    x.clear();
+    x.reserve(n_total);
     x.extend_from_slice(&st.x);
     x.extend_from_slice(static_x);
-    let mut q = st.q.clone();
-    let mut rmat: Vec<[[f64; 3]; 3]> = q.iter().map(|qq| qq.to_matrix()).collect();
+    q.clear();
+    q.extend_from_slice(&st.q);
+    rmat.clear();
+    rmat.reserve(n_total);
+    for qq in &q {
+        rmat.push(qq.to_matrix());
+    }
     rmat.extend_from_slice(static_r);
 
-    let mut v = vec![Vec3::zero(); n_total];
+    v.clear();
+    v.resize(n_total, Vec3::zero());
     v[..n].copy_from_slice(&st.v);
-    let mut l = vec![Vec3::zero(); n_total];
+    l.clear();
+    l.resize(n_total, Vec3::zero());
     l[..n].copy_from_slice(&st.l);
 
-    let mut rows: Vec<SoftRow> = Vec::with_capacity(contacts.len());
+    rows.clear();
+    rows.reserve(contacts.len());
     for (ci, c) in contacts.iter().enumerate() {
         let _ = ci;
         if c.a < n && c.b < n && !is_awake(awake, n, c.a) && !is_awake(awake, n, c.b) {
@@ -386,13 +428,14 @@ pub(crate) fn solve_soft_step(
 
     // Seed impulses from previous-frame warm cache (stable pair order).
     {
-        let mut used = vec![false; warm_cache.len()];
-        for r in &mut rows {
+        warm_used.clear();
+        warm_used.resize(warm_cache.len(), false);
+        for r in rows.iter_mut() {
             for (k, &(ca, cb, lam, jt)) in warm_cache.iter().enumerate() {
-                if used[k] || ca != r.a || cb != r.b {
+                if warm_used[k] || ca != r.a || cb != r.b {
                     continue;
                 }
-                used[k] = true;
+                warm_used[k] = true;
                 r.lam = lam;
                 r.jt = [jt.dot(r.t1), jt.dot(r.t2)];
                 break;
@@ -430,7 +473,7 @@ pub(crate) fn solve_soft_step(
         }
 
         // Joint rows (rebuilt each sub-step from current poses).
-        let mut joint_rows: Vec<JointRow> = joints::build_joint_rows(
+        joint_rows = joints::build_joint_rows(
             joints, n, &x, &rmat, static_x, static_r, &im, &iinv, h, true,
         );
         joints::warm_start_joints(&mut joint_rows, joints, n, awake, &mut v, &mut l, &im);
@@ -459,9 +502,11 @@ pub(crate) fn solve_soft_step(
             }
         }
         {
-            let q_state = q.clone();
-            let l_dyn = l[..n].to_vec();
-            let q_new = drift_rotation(world, &q_state, &l_dyn, h);
+            q_drift.clear();
+            q_drift.extend_from_slice(&q);
+            l_drift.clear();
+            l_drift.extend_from_slice(&l[..n]);
+            let q_new = drift_rotation(world, &q_drift, &l_drift, h);
             for i in 0..n {
                 if is_awake(awake, n, i) {
                     q[i] = q_new[i].normalize();
@@ -532,7 +577,7 @@ pub(crate) fn solve_soft_step(
     st.x.copy_from_slice(&x[..n]);
     st.v.copy_from_slice(&v[..n]);
     st.l.copy_from_slice(&l[..n]);
-    st.q = q;
+    st.q = q.clone();
 
     let warm = rows
         .iter()
@@ -549,5 +594,20 @@ pub(crate) fn solve_soft_step(
             feature: crate::manifold::FeatureId(0),
         })
         .collect();
+
+    // Return buffers to scratch for the next step.
+    scratch.im = im;
+    scratch.iinv = iinv;
+    scratch.x = x;
+    scratch.q = q;
+    scratch.rmat = rmat;
+    scratch.v = v;
+    scratch.l = l;
+    scratch.rows = rows;
+    scratch.warm_used = warm_used;
+    scratch.joint_rows = joint_rows;
+    scratch.q_drift = q_drift;
+    scratch.l_drift = l_drift;
+
     SoftStepResult { contacts, warm }
 }

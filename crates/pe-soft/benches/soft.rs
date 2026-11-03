@@ -1,6 +1,6 @@
 //! Criterion baselines for pe-soft XPBD workloads.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use pe_math::Vec3;
 use pe_soft::builders::{make_cloth, make_rope, make_soft_cube};
 use pe_soft::material::material_by_name;
@@ -81,11 +81,42 @@ fn canonical_world_build(c: &mut Criterion) {
     });
 }
 
+fn cloth_selfcol_scaling(c: &mut Criterion) {
+    let mut group = c.benchmark_group("soft_cloth_selfcol");
+    group.sample_size(12);
+    for n in [4usize, 8, 16] {
+        group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, &n| {
+            b.iter(|| {
+                let mut w = make_cloth(
+                    Vec3::new(0.0, 0.0, 1.0),
+                    n,
+                    n,
+                    0.08,
+                    0.08,
+                    0.3,
+                    1e-6,
+                    1e-4,
+                    true,
+                );
+                w.params.substeps = 10;
+                w.self_collision.enabled = true;
+                w.self_collision.radius = 0.05;
+                for _ in 0..30 {
+                    w.step(1.0 / 60.0);
+                }
+                black_box(w.pack());
+            });
+        });
+    }
+    group.finish();
+}
+
 criterion_group!(
     soft_benches,
     rope_hang_1s,
     cloth_4x4_2s,
     jelly_cube_drop,
+    cloth_selfcol_scaling,
     canonical_hash_bench,
     materials_hash_bench,
     canonical_world_build

@@ -53,8 +53,19 @@ fn yz_overlap(a: &Aabb, b: &Aabb) -> bool {
 
 /// All overlapping pairs via O(N²). Returns sorted `(i, j)` with `i < j`.
 pub fn brute_force_pairs(aabbs: &[Aabb], skip_static: Option<&[bool]>) -> Vec<(usize, usize)> {
-    let n = aabbs.len();
     let mut pairs = Vec::new();
+    brute_force_pairs_into(aabbs, skip_static, &mut pairs);
+    pairs
+}
+
+/// Write-into variant of [`brute_force_pairs`] (clears `out`, reuses capacity).
+pub fn brute_force_pairs_into(
+    aabbs: &[Aabb],
+    skip_static: Option<&[bool]>,
+    out: &mut Vec<(usize, usize)>,
+) {
+    out.clear();
+    let n = aabbs.len();
     for i in 0..n {
         for j in (i + 1)..n {
             if let Some(skip) = skip_static {
@@ -63,19 +74,39 @@ pub fn brute_force_pairs(aabbs: &[Aabb], skip_static: Option<&[bool]>) -> Vec<(u
                 }
             }
             if aabb_overlap(&aabbs[i], &aabbs[j]) {
-                pairs.push((i, j));
+                out.push((i, j));
             }
         }
     }
-    pairs
 }
 
 /// Sweep-and-prune on x. Returns sorted `(i, j)` with `i < j` (same set as brute force).
 ///
 /// Uses a **stable** sort of lower bounds (matches NumPy `argsort(..., kind="stable")`).
 pub fn sweep_and_prune(aabbs: &[Aabb], skip_static: Option<&[bool]>) -> Vec<(usize, usize)> {
+    let mut pairs = Vec::new();
+    sweep_and_prune_into(
+        aabbs,
+        skip_static,
+        &mut pairs,
+        &mut Vec::new(),
+        &mut Vec::new(),
+    );
+    pairs
+}
+
+/// Write-into SAP. `order` / `active` are reused scratch (cleared each call).
+pub fn sweep_and_prune_into(
+    aabbs: &[Aabb],
+    skip_static: Option<&[bool]>,
+    out: &mut Vec<(usize, usize)>,
+    order: &mut Vec<usize>,
+    active: &mut Vec<usize>,
+) {
+    out.clear();
     let n = aabbs.len();
-    let mut order: Vec<usize> = (0..n).collect();
+    order.clear();
+    order.extend(0..n);
     // Stable sort by lo.x
     order.sort_by(|&i, &j| {
         aabbs[i]
@@ -85,12 +116,11 @@ pub fn sweep_and_prune(aabbs: &[Aabb], skip_static: Option<&[bool]>) -> Vec<(usi
             .unwrap_or(core::cmp::Ordering::Equal)
     });
 
-    let mut active: Vec<usize> = Vec::new();
-    let mut pairs = Vec::new();
-    for &i in &order {
+    active.clear();
+    for &i in order.iter() {
         let xi = aabbs[i].lo.x;
         active.retain(|&j| aabbs[j].hi.x >= xi);
-        for &j in &active {
+        for &j in active.iter() {
             if let Some(skip) = skip_static {
                 if skip[i] && skip[j] {
                     continue;
@@ -99,14 +129,13 @@ pub fn sweep_and_prune(aabbs: &[Aabb], skip_static: Option<&[bool]>) -> Vec<(usi
             if yz_overlap(&aabbs[i], &aabbs[j]) {
                 let a = i.min(j);
                 let b = i.max(j);
-                pairs.push((a, b));
+                out.push((a, b));
             }
         }
         active.push(i);
     }
-    pairs.sort_unstable();
-    pairs.dedup();
-    pairs
+    out.sort_unstable();
+    out.dedup();
 }
 
 /// Convenience: build AABBs from parallel lo/hi arrays (tests / Python parity helpers).

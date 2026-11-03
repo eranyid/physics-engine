@@ -2,7 +2,10 @@
 
 use pe_math::Vec3;
 
-use crate::collision::{collide_self, collide_statics, SelfCollisionParams, StaticColliders};
+use crate::collision::{
+    collide_self_with_scratch, collide_statics, SelfCollisionParams, SelfCollisionScratch,
+    StaticColliders,
+};
 use crate::constraint::{project_all, ConstraintSet};
 use crate::particle::Particle;
 
@@ -45,6 +48,8 @@ pub struct SoftWorld {
     pub params: SoftParams,
     /// Simulation time [s].
     pub t: f64,
+    /// Reused self-collision spatial-hash buffers.
+    self_collision_scratch: SelfCollisionScratch,
 }
 
 impl SoftWorld {
@@ -57,6 +62,7 @@ impl SoftWorld {
             self_collision: SelfCollisionParams::default(),
             params: SoftParams::default(),
             t: 0.0,
+            self_collision_scratch: SelfCollisionScratch::default(),
         }
     }
 
@@ -128,7 +134,11 @@ impl SoftWorld {
         for _ in 0..iters {
             project_all(&mut self.particles, &mut self.constraints, h);
             collide_statics(&mut self.particles, &self.colliders);
-            collide_self(&mut self.particles, &self.self_collision);
+            collide_self_with_scratch(
+                &mut self.particles,
+                &self.self_collision,
+                &mut self.self_collision_scratch,
+            );
         }
 
         // Update velocities from positions
