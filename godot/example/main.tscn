@@ -1,12 +1,22 @@
-[gd_scene format=3]
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://example_demo.gd" id="1"]
 
 [node name="Main" type="Node3D"]
+script = ExtResource("1")
 
 [node name="PePhysicsWorld" type="PePhysicsWorld" parent="."]
 fixed_dt = 0.016666666666666666
+interpolate = true
+allow_sleep = false
 
 [node name="Camera3D" type="Camera3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 0.866025, 0.5, 0, -0.5, 0.866025, 0, 4, 8)
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 0.707107, 0.707107, 0, -0.707107, 0.707107, 0, 5, 0)
+
+[node name="RayLabel" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.5, 0)
+text = "ray…"
+font_size = 32

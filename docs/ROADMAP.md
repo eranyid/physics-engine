@@ -233,7 +233,7 @@ ported early because the Python oracle already exists.
 | **M11** | Fluids / blast v1 *or* deferred aero/hydro | Particle hydrostatic + blast scaling; Morison/seakeeping/BEM | **partial+** (blast earlier; **`pe-fluid` SPH/PBF/DFSPH + Akinci two-way rigid coupling shipped**; Morison/seakeeping/BEM done) |
 | **M22** | Hardening / safety | Property+fuzz tests; invariants (NaN, energy, momentum, determinism); long-run stability suite + `docs/STABILITY.md`; typed boundary errors; rustdoc; `.pyi`; `examples/` | **done** |
 | **M24** | Simulation baking | Offline scene → per-body Hermite/slerp transform curves; bake JSON schema; keyframe reduction; C/Python/CLI; locked hash; analytic oracles | **done** |
-| **M25** | Godot usable | Headless GDExtension drop + docs; concurrent track | **in progress** (other PR) |
+| **M25** | Godot usable for games | Authored bodies/shapes/joints; raycast + sphere cast + overlap; contact signals; fixed-step + interpolation; Linux headless suite (drop hash locked); Win/macOS `pe-godot` build-only | **done** |
 | **M26** | Game perf | Criterion/CI hot-path benches + scaling; alloc reuse / layout; optional `parallel` (off by default); CI regression vs baseline; `docs/PERFORMANCE.md`; hashes unchanged | **this PR** |
 
 ### M1–M2 as built (summary)
@@ -320,7 +320,7 @@ ported early because the Python oracle already exists.
 - Measured alloc-reuse speedups: write-into broadphase, detect/step scratch,
   island UF + sleep buffers, soft-step scratch, soft self-collision scratch,
   DFSPH pressure scratch. Default features stay bit-identical to locked hashes.
-- No Godot crate edits (M25 concurrent).
+- Does not change Godot / M25 semantics; locked hashes unchanged.
 
 ### M8 as built (summary)
 
@@ -336,6 +336,17 @@ ported early because the Python oracle already exists.
   (`docs/GODOT.md`).
 - Docs: [`SCENE.md`](SCENE.md), [`FFI.md`](FFI.md), [`GODOT.md`](GODOT.md).
 - Determinism: scene save/load/continue hashes locked (pyramid + convex + Godot).
+
+### M25 as built (summary)
+
+- Godot authoring: `PeRigidBody3D` / `PeStaticBody3D` / `PeCollisionShape3D` with
+  sphere/box/capsule/convex, materials, dynamic/static/kinematic, forces,
+  impulses, sleep helpers; joint nodes for all maximal-coordinate kinds.
+- Queries in `pe_collision::queries` (raycast, AABB overlap, sphere cast) +
+  GDScript dictionaries; contact begin/end signals; fixed-step accumulator +
+  visual interpolation (hash path unchanged).
+- CI: Linux headless suite (drop hash locked + shapes/joint/raycast/contact);
+  Windows/macOS `cargo build -p pe-godot` only. See [`GODOT.md`](GODOT.md).
 
 ### M7 as built (summary)
 
