@@ -1,7 +1,9 @@
-# Seakeeping & Morison (M11 hydro)
+# Seakeeping, Morison & ships/sea (M11 + M21)
 
-Clean-room strip theory and slender-member wave loads in `pe-hydro`.
-SI units; portable `libm` only; no FMA. Sources cited in [`THIRD_PARTY.md`](../THIRD_PARTY.md).
+Clean-room strip theory, slender-member wave loads, 6-DOF Cummins memory,
+forward-speed STF terms, ITTC-57 resistance, and Nomoto/MMG maneuvering in
+`pe-hydro`. SI units; portable `libm` only; no FMA. Sources cited in
+[`THIRD_PARTY.md`](../THIRD_PARTY.md).
 
 ## Morison equation (`pe_hydro::morison`)
 
@@ -63,6 +65,8 @@ Frequency-domain \(2\times 2\) system
 \((-\omega^2(M+A)+i\omega B+C)\boldsymbol{\xi}=\mathbf{F}\) with Froude–Krylov
 plus STF Haskind diffraction from sectional \(b_{33}\).
 
+**Diffraction class:** STF strip Haskind approximation (not 3-D panel).
+
 **Long-wave heave RAO → 1.** Residual at finite \(\lambda/L\) comes from:
 
 1. \(-\omega^2(M+A)\) inertia still nonzero,
@@ -114,7 +118,7 @@ Free-decay uses RK4 + multi-cycle log-decrement on positive peaks
 
 ---
 
-## Cummins retardation (`pe_hydro::cummins`)
+## Cummins retardation — heave (`pe_hydro::cummins`)
 
 Impulse-response memory for heave (Cummins 1962 / Ogilvie 1964):
 
@@ -149,8 +153,135 @@ time-domain solution carries the full retardation spectrum and the Ogilvie
 `(m+A_∞)λ² + λ K̂(λ) + C = 0` of the **same** kernel (plus the sine-transform
 `A−A_∞` check). CI tolerances are ~2× the measured dual-path residual.
 
-### Deferred
+---
 
-Forward speed \(U\neq 0\); roll/sway/yaw; tabulated Vugts /
-Frank close-fit sections; 3-D panel diffraction; viscous roll damping;
-multi-DOF Cummins coupling matrix.
+## M21 — 6-DOF Cummins (`pe_hydro::cummins6`)
+
+Coupled Cummins equation for surge, sway, heave, roll, pitch, yaw:
+
+\[
+(M+A_\infty)\ddot{\boldsymbol{\xi}}
+  +\int_0^t K(t-\tau)\,\dot{\boldsymbol{\xi}}(\tau)\,d\tau
+  +C\boldsymbol{\xi}
+  =\mathbf{F}(t)
+\]
+
+DOF order: `|0 surge|1 sway|2 heave|3 roll|4 pitch|5 yaw|`.
+
+| Operator | Source |
+| --- | --- |
+| \(A_\infty\) | Strip Lewis-circle \(a_{33}^\infty\), \(a_{22}^\infty\); surge \(C_x\rho\nabla\) with **nominal** \(C_x=0.5\) (**unverified**) |
+| \(K_{ij}(t)\) | Cosine transform of strip \(B_{ij}(\omega)\); active P–S / F–A symmetry channels only |
+| \(C\) | Waterplane heave–pitch from strips; roll \(C_{44}=\rho g\nabla\mathrm{GM}_T\) |
+| \(\mathbf{F}\) | Froude–Krylov + **STF strip Haskind diffraction** (head seas → heave/pitch) |
+
+### Bounded memory / truncation
+
+Kernels truncate at horizon \(T=(n-1)\Delta t\). Engineering L1 tail estimate
+`truncation_tail_l1` assumes late-time exponential decay from the last two
+samples: \(\int_T^\infty |K|\approx |K(T)|\,\tau\). Convolution history is
+fixed-length (deterministic, no `HashMap`).
+
+### Validation (measured)
+
+| Check | Tolerance | Measured |
+| --- | --- | --- |
+| Roll decay RK4 vs analytic (\(\dot\phi(0)=0\)) | **0.05%** | **~1e-14** |
+| Heave natural \(\omega_3\) (coupled \(M+A_\infty,C\)) vs strip | **0.5%** | **~0.078%** |
+| Long-wave head-seas heave RAO \|RAO−1\| (strip FD) | **2%** | **~0.0038%** |
+| Undamped (\(K\equiv0\)) energy envelope drift, dt=0.01, ~40 s | **3%** | **~1.3%** |
+| Kernel truncation L1 tail: longer horizon ≤ shorter | monotone | passes |
+| Step-size: mid closer to fine than coarse (or tiny) | qualitative | passes |
+| Cross-OS `cummins6_hash` | locked | `b72a60e18efd983d` |
+
+---
+
+## Forward speed (`pe_hydro::forward_speed`)
+
+Encounter frequency:
+
+\[
+\omega_e = \omega - U k \cos\chi
+\]
+
+(\(\chi=0\) head seas). Deep-water shortcut \(k=\omega^2/g\).
+
+STF (1970) forward-speed strip corrections to heave–pitch radiation damping
+(end-station + \(\int a_{33}\,dx\) terms). At \(U=0\) matrices match zero-speed
+strip bit-for-bit. For a uniform box, \(B_{33}/B_{55}\) end-difference terms
+cancel; \(B_{35}/B_{53}\) pick up \(\pm U\int a_{33}\).
+
+---
+
+## Resistance (`pe_hydro::resistance`)
+
+### ITTC-1957 friction line (exact)
+
+\[
+C_f = \frac{0.075}{(\log_{10} R_n - 2)^2},\qquad R_n = VL/\nu
+\]
+
+| Check | Tolerance | Measured |
+| --- | --- | --- |
+| \(C_f(R_n=10^9)=0.075/49\) | **1e-14 rel** | bit-exact algebra |
+
+`HullDrag::ittc57` evaluates \(C_f(R_n)\) each step. Residual \(C_r\) remains
+caller-supplied. **Holtrop–Mennen** full coefficient tables are **not**
+implemented (not verified against a primary citation in-tree). Linear-Froude
+residual surrogate is marked **unverified**.
+
+Nominal \(\nu\) defaults (`NU_FRESHWATER_20C_NOMINAL`, …) are **unverified**
+handbook order — override for exact oracle work.
+
+---
+
+## Maneuvering (`pe_hydro::maneuvering`)
+
+### Nomoto first-order K–T (validated)
+
+\[
+T\dot r + r = K\delta
+\]
+
+Analytic step (\(r(0)=0\)): \(r(t)=K\delta(1-e^{-t/T})\),
+\(\psi(t)=K\delta\bigl(t-T(1-e^{-t/T})\bigr)\). Steady turning radius
+\(R=U/|r_\infty|\).
+
+| Check | Tolerance | Measured |
+| --- | --- | --- |
+| Numerical Nomoto step vs analytic (\(dt=10^{-3}\), 40 s) | **0.2%** | **~2e-4% / 0.003%** |
+| Zig-zag 10°/10° rudder switch | qualitative | passes |
+
+KVLCC2 / SIMMAN hydrodynamic derivatives are **not** transcribed (would need a
+verified primary table). Validation oracle is **analytic Nomoto**, not a
+published turning-circle table.
+
+### Linear MMG-style 3-DOF (unverified derivatives)
+
+Surge–sway–yaw with rudder and propeller thrust. Bundled
+`nominal_linear_mmg_unverified` coefficients are **unverified**. Quasi-steady
+sway reduction yields equivalent Nomoto \((K,T)\) when stable.
+
+Propeller / rudder force helpers are marked **unverified** unless the caller
+supplies a cited \(K_T\) / \(C_{L\alpha}\).
+
+---
+
+## Scene / Python wiring
+
+- **Python (`physics_engine_rs`):** `canonical_cummins6_hash`, `ittc57_friction_cf`,
+  `nomoto_r_step` / `nomoto_psi_step`, `encounter_frequency_py`, plus existing
+  Morison / strip / Cummins heave helpers. Tests: `tests/test_m21_seakeeping_rust.py`.
+- **Scene (`pe-scene`):** ContactWorld schema still carries stage-1 forces only
+  (see [`SCENE.md`](SCENE.md)). M21 ship models are constructed via the Rust /
+  Python API (`Cummins6Dof`, `NomotoState`, `HullDrag::ittc57`) and can sit
+  beside a scene-loaded rigid body; full hydro `ForceDesc` variants remain
+  deferred to avoid schema churn on locked scene hashes.
+
+---
+
+## Deferred
+
+Tabulated Vugts / Frank close-fit sections; 3-D panel diffraction;
+MacCamy–Fuchs; verified Holtrop–Mennen tables; KVLCC2/SIMMAN derivative sets;
+viscous roll damping maps; certified propeller open-water curves.

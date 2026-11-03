@@ -171,6 +171,18 @@ impl WaveDrag {
     }
 }
 
+/// How frictional `C_f` is obtained for [`HullDrag`].
+#[derive(Clone, Debug)]
+pub enum FrictionModel {
+    /// Constant frictional coefficient [dimensionless].
+    Constant(f64),
+    /// ITTC-1957 line `C_f(R_n)` with kinematic viscosity `ν` [m²/s].
+    Ittc57 {
+        /// Kinematic viscosity [m²/s].
+        nu: f64,
+    },
+}
+
 /// Quadratic hull resistance `R = ½ ρ V² S (C_f + C_w)` opposing velocity [N].
 #[derive(Clone, Debug)]
 pub struct HullDrag {
@@ -178,10 +190,10 @@ pub struct HullDrag {
     pub body: usize,
     /// Wetted reference area [m²].
     pub s: f64,
-    /// Reference length [m] for Froude number.
+    /// Reference length [m] for Froude number / Reynolds number.
     pub length: f64,
-    /// Frictional coefficient [dimensionless].
-    pub c_f: f64,
+    /// Frictional model (constant or ITTC-57).
+    pub friction: FrictionModel,
     /// Residual / wave coefficient.
     pub c_w: WaveDrag,
     /// Fluid density [kg/m³].
@@ -195,7 +207,7 @@ pub struct HullDrag {
 }
 
 impl HullDrag {
-    /// Build hull drag. `S` [m²], `L` [m], coefficients dimensionless.
+    /// Build hull drag with a constant `C_f`. `S` [m²], `L` [m].
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         body: usize,
@@ -212,7 +224,33 @@ impl HullDrag {
             body,
             s,
             length,
-            c_f,
+            friction: FrictionModel::Constant(c_f),
+            c_w,
+            rho,
+            g,
+            wind,
+            include_heave,
+        }
+    }
+
+    /// Build hull drag using the ITTC-1957 friction line for `C_f(R_n)`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn ittc57(
+        body: usize,
+        s: f64,
+        length: f64,
+        nu: f64,
+        c_w: WaveDrag,
+        rho: f64,
+        g: f64,
+        wind: Vec3,
+        include_heave: bool,
+    ) -> Self {
+        Self {
+            body,
+            s,
+            length,
+            friction: FrictionModel::Ittc57 { nu },
             c_w,
             rho,
             g,
@@ -235,6 +273,12 @@ impl ForceGenerator for HullDrag {
         }
         let fr = v / libm_ops::sqrt(self.g * self.length);
         let cw = self.c_w.eval(fr);
-        f[i] -= u * (0.5 * self.rho * (self.c_f + cw) * self.s * v);
+        let cf = match &self.friction {
+            FrictionModel::Constant(c) => *c,
+            FrictionModel::Ittc57 { nu } => {
+                crate::resistance::ittc57_cf_from_speed(v, self.length, *nu)
+            }
+        };
+        f[i] -= u * (0.5 * self.rho * (cf + cw) * self.s * v);
     }
 }

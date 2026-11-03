@@ -178,10 +178,12 @@ Sizes are relative engineering scope, not calendar schedules.
 
 - **Models:** linear Airy / Stokes II / Gerstner + spectral (PM/JONSWAP) in
   `pe-hydro` (**shipped**); Morison forces (**shipped** M11); STF strip heave/pitch
-  (**shipped** M11). Cummins retardation memory shipped.
+  (**shipped** M11); heave Cummins (**shipped**); **M21** 6-DOF Cummins + STF
+  forward speed + ITTC-57 + Nomoto/MMG (**shipped**).
 - **Validation:** Airy elevation/kinematics + dispersion oracles; spectral `H_s`;
-  wave-coupled buoyancy heave; Morison closed-form pile force; long-wave heave RAO→1.
-- **Effort:** L (v1 waves + M11 Morison/seakeeping done).
+  wave-coupled buoyancy heave; Morison closed-form pile force; long-wave heave RAO→1;
+  roll decay analytic; Nomoto K–T analytic; ITTC-57 `C_f` identity.
+- **Effort:** L (v1 waves + M11 + M21 seakeeping done).
 
 ### D8 — Materials (elasticity, plasticity, friction, thermal)
 
@@ -335,8 +337,12 @@ ported early because the Python oracle already exists.
 - Docs: [`SEAKEEPING.md`](SEAKEEPING.md), [`ROTOR.md`](ROTOR.md). Determinism:
   cross-OS `m11_hash` (`83aebe96f5cb8e4c`). PyO3 + pytest; Criterion hooks in
   [`BENCHMARKS.md`](BENCHMARKS.md).
-- **Deferred:** 6-DOF seakeeping / multi-DOF Cummins; MacCamy–Fuchs; Vugts tables;
-  swirl induction `a'`; certified airfoil polars.
+- **M21 ships/sea (shipped):** `cummins6` matrix Cummins (6-DOF), STF forward-speed
+  / encounter frequency, ITTC-57 `C_f` (exact), Nomoto K–T + linear MMG-style
+  3-DOF (MMG derivatives **unverified**); cross-OS `cummins6_hash`
+  (`b72a60e18efd983d`). Heave `cummins_hash` unchanged.
+- **Deferred:** MacCamy–Fuchs; Vugts tables; verified Holtrop–Mennen /
+  KVLCC2–SIMMAN tables; swirl induction `a'`; certified airfoil polars.
 
 ### Blast / ballistics track
 
