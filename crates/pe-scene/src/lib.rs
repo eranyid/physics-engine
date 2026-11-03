@@ -9,6 +9,8 @@
 
 #![deny(missing_docs)]
 
+/// Simulation baking (offline transform curves for animation / DCC tools).
+pub mod bake;
 pub mod binary;
 /// Blast / fracture descriptor conversions (schema v3).
 pub mod blast_convert;
@@ -19,6 +21,11 @@ pub mod error;
 pub mod migrate;
 pub mod types;
 
+pub use bake::{
+    bake_json_hash64, bake_scene, canonical_bake_document, canonical_bake_json_hash,
+    canonical_bake_scene, hermite_position, BakeBodyCurve, BakeDocument, BakeInterpolation,
+    BakeOptions, BakeReduceParams, BAKE_SCHEMA_VERSION, CANONICAL_BAKE_JSON_HASH,
+};
 pub use blast_convert::{
     apply_blast_loading_desc, blast_params_from_desc, blast_source_from_desc,
     exposed_face_from_desc,

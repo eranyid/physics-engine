@@ -23,9 +23,14 @@ path = "orbit.rs"
 name = "falling_aircraft"
 path = "falling_aircraft.rs"
 
+[[bin]]
+name = "bake_scene"
+path = "bake_scene.rs"
+
 [dependencies]
 pe-math = { workspace = true }
 pe-core = { workspace = true }
 pe-collision = { workspace = true }
 pe-space = { workspace = true }
 pe-aero = { workspace = true }
+pe-scene = { workspace = true }
