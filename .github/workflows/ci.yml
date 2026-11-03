@@ -69,7 +69,11 @@ jobs:
       - name: cargo test
         # Omit --all-targets so Criterion benches are not executed in default CI.
         # Skip pe-godot in default test (cdylib / no unit tests); build checked separately.
-        run: cargo test --workspace --exclude pe-godot
+        # Skip pe-examples (bins only; built in the next step).
+        run: cargo test --workspace --exclude pe-godot --exclude pe-examples
+
+      - name: cargo build examples
+        run: cargo build -p pe-examples --bins
 
   pe-ffi-c:
     name: pe-ffi C smoke + header drift
@@ -457,6 +461,36 @@ jobs:
             echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
             exit 1
           fi
+
+  # M22 long-run stability + larger proptest profile (opt-in / weekly).
+  rust-stability:
+    name: rust stability + proptest (slow)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    env:
+      PROPTEST_CASES: "256"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.99.1"
+
+      - name: Larger property suites
+        run: |
+          set -euo pipefail
+          cargo test -p pe-core --test properties --release
+          cargo test -p pe-collision --test properties --release
+          cargo test -p pe-scene --test roundtrip --release
+          cargo test -p pe-ffi --test boundary --release
+
+      - name: Long-run stability (ignored)
+        run: |
+          set -euo pipefail
+          cargo test -p pe-collision --test stability --release -- --ignored --nocapture
+          cargo test -p pe-space --test stability --release -- --ignored --nocapture
+          cargo test -p pe-aero --test stability --release -- --ignored --nocapture
 
   # Hash-only smoke for the rigid-body pipeline. Never asserts on wall time
   # (timing flakes); locked hashes and parallel island bit-identity only.

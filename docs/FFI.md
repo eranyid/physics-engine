@@ -26,6 +26,14 @@ Stable C surface for engines and the Godot GDExtension. Header:
 Every `extern "C"` entry uses `catch_unwind`. Panics become `PE_ERR_PANIC` and
 **never** unwind across the FFI boundary.
 
+## Input validation (M22)
+
+`pe_world_add_body` / `pe_world_add_static` / `pe_world_set_transforms` /
+`pe_world_step` reject non-finite inputs and non-positive shape sizes with
+`PE_ERR_ARG` (including NaN/Inf pose, zero quaternions, non-PD inertia, and
+`dt ≤ 0`). Oversized SoA counts return `PE_ERR_BOUNDS`. Null required pointers
+return `PE_ERR_NULL`. Rust regression coverage: `crates/pe-ffi/tests/boundary.rs`.
+
 ## Quick C usage
 
 ```c

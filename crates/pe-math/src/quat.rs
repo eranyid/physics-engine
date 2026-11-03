@@ -47,12 +47,33 @@ impl Quat {
         libm_ops::sqrt(self.w * self.w + self.x * self.x + self.y * self.y + self.z * self.z)
     }
 
-    /// Renormalize to unit length. Panics if the quaternion is near-zero.
+    /// True when every component is finite (not NaN / ±∞).
+    #[inline]
+    pub fn is_finite(self) -> bool {
+        self.w.is_finite() && self.x.is_finite() && self.y.is_finite() && self.z.is_finite()
+    }
+
+    /// Renormalize to unit length.
+    ///
+    /// Non-finite or near-zero inputs return [`identity`](Self::identity) so the
+    /// integrator hot path never emits NaN; use [`try_normalize`](Self::try_normalize)
+    /// at crate boundaries when rejection is preferred.
     #[inline]
     pub fn normalize(self) -> Self {
+        self.try_normalize().unwrap_or_else(Self::identity)
+    }
+
+    /// Renormalize to unit length, or `None` if near-zero / non-finite.
+    #[inline]
+    pub fn try_normalize(self) -> Option<Self> {
+        if !self.is_finite() {
+            return None;
+        }
         let n = self.norm();
-        debug_assert!(n > 0.0, "cannot normalize zero quaternion");
-        Self::new(self.w / n, self.x / n, self.y / n, self.z / n)
+        if n <= 0.0 {
+            return None;
+        }
+        Some(Self::new(self.w / n, self.x / n, self.y / n, self.z / n))
     }
 
     /// Hamilton product `self ⊗ other` (compose rotations: apply `other` then `self`).

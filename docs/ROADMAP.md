@@ -227,6 +227,7 @@ ported early because the Python oracle already exists.
 | **M9** | Waves / hydrodynamics v1 | Airy + Stokes/Gerstner/spectra + buoyancy coupling (Morison later) | **done** (Morison shipped in M11 hydro follow-on) |
 | **M10** | Materials + soft v1 | Elastic validation; one soft demo with analytic check | **done** (shipped as M8 soft / `pe-soft`) |
 | **M11** | Fluids / blast v1 *or* deferred aero/hydro | Particle hydrostatic + blast scaling; Morison/seakeeping/BEM | **partial+** (blast earlier; **`pe-fluid` SPH/PBF/DFSPH + Akinci two-way rigid coupling shipped**; Morison/seakeeping/BEM done) |
+| **M22** | Hardening / safety | Property+fuzz tests; invariants (NaN, energy, momentum, determinism); long-run stability suite + `docs/STABILITY.md`; typed boundary errors; rustdoc; `.pyi`; `examples/` | **this PR** |
 
 ### M1–M2 as built (summary)
 
