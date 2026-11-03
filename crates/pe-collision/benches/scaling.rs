@@ -211,7 +211,7 @@ fn bench_pyramids(c: &mut Criterion) {
 fn bench_falling(c: &mut Criterion) {
     let mut group = c.benchmark_group("scaling_falling");
     group.sample_size(12);
-    for n in [1_000usize, 5_000, 10_000] {
+    for n in [100usize, 1_000, 5_000, 10_000] {
         let steps = if n >= 10_000 { 10 } else { 20 };
         group.throughput(Throughput::Elements(steps as u64));
         group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, &n| {
@@ -222,6 +222,26 @@ fn bench_falling(c: &mut Criterion) {
                     cw.step(1.0 / 240.0);
                 }
                 std::hint::black_box((cw.world.state.pack(), cw.last_phase_times))
+            });
+        });
+    }
+    group.finish();
+}
+
+fn bench_island_sleep(c: &mut Criterion) {
+    let mut group = c.benchmark_group("scaling_island_sleep");
+    group.sample_size(15);
+    for rows in [10usize, 20] {
+        let steps = 240usize;
+        group.throughput(Throughput::Elements(steps as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(rows), &rows, |b, &rows| {
+            b.iter(|| {
+                let mut cw = pyramid_world(rows);
+                cw.set_allow_sleep(true);
+                for _ in 0..steps {
+                    cw.step(1.0 / 240.0);
+                }
+                std::hint::black_box((cw.world.state.pack(), cw.sleep.island_count))
             });
         });
     }
@@ -289,6 +309,7 @@ criterion_group!(
     benches,
     bench_pyramids,
     bench_falling,
+    bench_island_sleep,
     bench_sparse,
     bench_ragdoll,
     bench_joints_stack

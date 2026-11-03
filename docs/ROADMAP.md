@@ -232,7 +232,9 @@ ported early because the Python oracle already exists.
 | **M10** | Materials + soft v1 | Elastic validation; one soft demo with analytic check | **done** (shipped as M8 soft / `pe-soft`) |
 | **M11** | Fluids / blast v1 *or* deferred aero/hydro | Particle hydrostatic + blast scaling; Morison/seakeeping/BEM | **partial+** (blast earlier; **`pe-fluid` SPH/PBF/DFSPH + Akinci two-way rigid coupling shipped**; Morison/seakeeping/BEM done) |
 | **M22** | Hardening / safety | Property+fuzz tests; invariants (NaN, energy, momentum, determinism); long-run stability suite + `docs/STABILITY.md`; typed boundary errors; rustdoc; `.pyi`; `examples/` | **done** |
-| **M24** | Simulation baking | Offline scene → per-body Hermite/slerp transform curves; bake JSON schema; keyframe reduction; C/Python/CLI; locked hash; analytic oracles | **this PR** |
+| **M24** | Simulation baking | Offline scene → per-body Hermite/slerp transform curves; bake JSON schema; keyframe reduction; C/Python/CLI; locked hash; analytic oracles | **done** |
+| **M25** | Godot usable | Headless GDExtension drop + docs; concurrent track | **in progress** (other PR) |
+| **M26** | Game perf | Criterion/CI hot-path benches + scaling; alloc reuse / layout; optional `parallel` (off by default); CI regression vs baseline; `docs/PERFORMANCE.md`; hashes unchanged | **this PR** |
 
 ### M1–M2 as built (summary)
 
@@ -308,6 +310,17 @@ ported early because the Python oracle already exists.
   slerp, small-angle pendulum period, reduction bound, bit-identical + locked
   cross-OS JSON hash `3e9a97a85da0cbc6`, coincident-time resampling exact.
 - Does **not** touch `pe-blast` / `pe-hydro` / `pe-aero` / `pe-fluid` internals.
+
+### M26 as built (summary)
+
+- Hot-path Criterion coverage expanded (falling 100/1k/10k, island/sleep,
+  soft self-collision scaling, fluid scaling) plus `pe-examples ci_bench` fast
+  JSON suite and CI job `perf-bench` vs `docs/baselines/ci_bench.json`
+  (fail on ≥2× slowdown; margin documented in `docs/PERFORMANCE.md`).
+- Measured alloc-reuse speedups: write-into broadphase, detect/step scratch,
+  island UF + sleep buffers, soft-step scratch, soft self-collision scratch,
+  DFSPH pressure scratch. Default features stay bit-identical to locked hashes.
+- No Godot crate edits (M25 concurrent).
 
 ### M8 as built (summary)
 

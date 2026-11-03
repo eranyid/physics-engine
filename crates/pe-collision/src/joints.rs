@@ -1174,6 +1174,13 @@ pub fn finalize_joints(joints: &mut [Joint], rows: &[JointRow], h: f64) {
 /// Collect sorted unique dynamic–dynamic pairs connected by active joints.
 pub fn joint_island_pairs(joints: &[Joint], n: usize) -> Vec<(usize, usize)> {
     let mut pairs = Vec::new();
+    joint_island_pairs_into(joints, n, &mut pairs);
+    pairs
+}
+
+/// Write-into [`joint_island_pairs`].
+pub fn joint_island_pairs_into(joints: &[Joint], n: usize, pairs: &mut Vec<(usize, usize)>) {
+    pairs.clear();
     for j in joints {
         if j.broken {
             continue;
@@ -1187,7 +1194,6 @@ pub fn joint_island_pairs(joints: &[Joint], n: usize) -> Vec<(usize, usize)> {
     }
     pairs.sort_unstable();
     pairs.dedup();
-    pairs
 }
 
 /// Merge contact pairs with joint pairs (sorted).
@@ -1196,11 +1202,22 @@ pub fn merge_island_pairs(
     joint_pairs: &[(usize, usize)],
 ) -> Vec<(usize, usize)> {
     let mut out = Vec::with_capacity(contact_pairs.len() + joint_pairs.len());
+    merge_island_pairs_into(contact_pairs, joint_pairs, &mut out);
+    out
+}
+
+/// Write-into [`merge_island_pairs`].
+pub fn merge_island_pairs_into(
+    contact_pairs: &[(usize, usize)],
+    joint_pairs: &[(usize, usize)],
+    out: &mut Vec<(usize, usize)>,
+) {
+    out.clear();
+    out.reserve(contact_pairs.len() + joint_pairs.len());
     out.extend_from_slice(contact_pairs);
     out.extend_from_slice(joint_pairs);
     out.sort_unstable();
     out.dedup();
-    out
 }
 
 /// Relative hinge angle [rad] for a revolute joint (0 at construction refs).

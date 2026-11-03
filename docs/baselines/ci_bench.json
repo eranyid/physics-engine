@@ -1,0 +1,19 @@
+{
+  "host": "ci-vm",
+  "unit": "ms_median",
+  "notes": "Measured on Cloud Agent VM (Linux x86_64, release, rustc from rust-toolchain.toml, RUSTFLAGS=-C target-cpu=generic). Medians from pe-examples ci_bench. CI fails if any metric exceeds baseline \u00d7 (1+margin); default margin=1.0 (100%).",
+  "recorded_at": "M26",
+  "dfsph_216_10_steps": 226.566827,
+  "epa_box_box_1k": 5.901051,
+  "falling_10000_tree_10": 60.928419,
+  "falling_1000_tree_20": 9.565061,
+  "falling_100_tree_20": 0.920135,
+  "gjk_sphere_sphere_1k": 0.148915,
+  "pbf_512_10_steps": 86.640081,
+  "pyramid_10_pgs_60": 30.34112,
+  "pyramid_10_pgs_sleep_240": 98.542626,
+  "pyramid_10_softstep_60": 33.805615,
+  "ragdoll_16_120": 2.339953,
+  "soft_cloth_8x8_selfcol_60": 26.647763,
+  "soft_rope_hang_1s": 0.657366
+}

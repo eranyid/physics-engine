@@ -30,7 +30,7 @@ use crate::manifold::{ContactPoint, FeatureId};
 use crate::narrowphase::{collide as narrow_collide, NarrowPhase};
 use crate::scratch::{StepPhaseTimes, StepScratch};
 use crate::shapes::{Material, Shape};
-use crate::soft_step::solve_soft_step;
+use crate::soft_step::{solve_soft_step, SoftStepScratch};
 use crate::softness::{SoftStepParams, SolverMode};
 use crate::solver_soa::ContactRowsSoa;
 
@@ -203,6 +203,8 @@ pub struct ContactWorld {
     pub last_phase_times: StepPhaseTimes,
     /// When true, fill [`Self::last_phase_times`] with wall-clock phase costs.
     pub profile_phases: bool,
+    /// Soft-step working buffers (allocation reuse).
+    soft_step_scratch: SoftStepScratch,
     /// When true, solve contacts per island in ascending island-id order.
     /// Required for bit-identical `parallel`-feature island solves. Default
     /// `false` keeps global PGS (locked oracle hashes).
@@ -257,6 +259,7 @@ impl ContactWorld {
             aabb_tree: DynamicAabbTree::default(),
             last_phase_times: StepPhaseTimes::default(),
             profile_phases: false,
+            soft_step_scratch: SoftStepScratch::default(),
             island_ordered_solve: false,
         }
     }
@@ -342,10 +345,8 @@ impl ContactWorld {
         sc.r.extend_from_slice(&self.static_r);
     }
 
-    fn detect_pairs_and_contacts(
-        &mut self,
-        st: &State,
-    ) -> (Vec<(usize, usize)>, Vec<ContactPoint>) {
+    /// Broad + narrow into [`Self::scratch`] (no pair/contact clones).
+    fn detect_pairs_and_contacts(&mut self, st: &State) {
         let profile = self.profile_phases;
         let t_detect0 = if profile { Some(Instant::now()) } else { None };
 
@@ -369,20 +370,39 @@ impl ContactWorld {
         }
 
         let t_broad0 = if profile { Some(Instant::now()) } else { None };
-        self.scratch.pairs.clear();
+        // Write-into pair buffers so capacity is retained across steps.
         match self.broad_phase {
             BroadPhaseKind::Sap => {
-                // SAP already returns sorted unique pairs — skip a second sort.
-                self.scratch.pairs = SweepAndPrune.pairs(&self.scratch.aabbs, &self.is_static);
+                let mut pairs = std::mem::take(&mut self.scratch.pairs);
+                let mut order = std::mem::take(&mut self.scratch.sap_order);
+                let mut active = std::mem::take(&mut self.scratch.sap_active);
+                crate::broadphase::sweep_and_prune_into(
+                    &self.scratch.aabbs,
+                    Some(&self.is_static),
+                    &mut pairs,
+                    &mut order,
+                    &mut active,
+                );
+                self.scratch.pairs = pairs;
+                self.scratch.sap_order = order;
+                self.scratch.sap_active = active;
             }
             BroadPhaseKind::Brute => {
-                self.scratch.pairs = BruteForce.pairs(&self.scratch.aabbs, &self.is_static);
+                crate::broadphase::brute_force_pairs_into(
+                    &self.scratch.aabbs,
+                    Some(&self.is_static),
+                    &mut self.scratch.pairs,
+                );
             }
             BroadPhaseKind::DynamicTree => {
                 // Incremental fat-AABB update + tight filter (≡ rebuild pair set).
-                self.scratch.pairs = self
-                    .aabb_tree
-                    .pairs_incremental(&self.scratch.aabbs, &self.is_static);
+                let mut pairs = std::mem::take(&mut self.scratch.pairs);
+                self.aabb_tree.pairs_incremental_into(
+                    &self.scratch.aabbs,
+                    &self.is_static,
+                    &mut pairs,
+                );
+                self.scratch.pairs = pairs;
             }
         }
         // Brute is already sorted; SAP/tree sort internally. Cheap check avoids work
@@ -453,8 +473,6 @@ impl ContactWorld {
         if let Some(t0) = t_detect0 {
             let _ = t0; // broad+narrow accounted separately; total set in step
         }
-
-        (self.scratch.pairs.clone(), self.scratch.contacts.clone())
     }
 
     /// Simulation time [s].
@@ -600,7 +618,8 @@ impl ContactWorld {
 
     /// Default detect path (selected broad phase + dedicated pairs) — used by correction.
     fn detect_default(&mut self, st: &State) -> Vec<ContactPoint> {
-        self.detect_pairs_and_contacts(st).1
+        self.detect_pairs_and_contacts(st);
+        self.scratch.contacts.clone()
     }
 
     /// Soft / hard PGS joint solve (maximal coordinates) for the PGS path.
@@ -1310,9 +1329,10 @@ impl ContactWorld {
 
         // Bullet TOI vs statics: advance fast bodies to first impact, shrink dt.
         let mut step_dt = dt;
-        let mut toi_contacts: Vec<ContactPoint> = Vec::new();
+        self.scratch.toi_contacts.clear();
         if self.ccd.toi && self.bullet.iter().any(|&b| b) {
             self.bullet.resize(n, false);
+            // Only clone static poses when TOI CCD is actually active.
             let statics: Vec<_> = self
                 .statics
                 .iter()
@@ -1329,14 +1349,14 @@ impl ContactWorld {
                 &self.ccd,
             );
             if !hits.is_empty() {
-                toi_contacts = hits;
+                self.scratch.toi_contacts = hits;
                 step_dt = (dt - t_hit).max(0.0);
             }
         }
 
-        let (pairs, mut contacts) = self.detect_pairs_and_contacts(&st);
+        self.detect_pairs_and_contacts(&st);
         // Speculative contacts for fast approaches (skip pairs already discrete).
-        {
+        if self.ccd.speculative {
             let statics: Vec<_> = self
                 .statics
                 .iter()
@@ -1348,49 +1368,66 @@ impl ContactWorld {
                 &st.q,
                 &st.v,
                 &statics,
-                &contacts,
+                &self.scratch.contacts,
                 &self.ccd,
             );
-            contacts.extend(spec);
-            contacts.extend(toi_contacts);
+            self.scratch.contacts.extend(spec);
+        }
+        if !self.scratch.toi_contacts.is_empty() {
+            let toi = std::mem::take(&mut self.scratch.toi_contacts);
+            self.scratch.contacts.extend(toi);
         }
 
-        let joint_pairs = joints::joint_island_pairs(&self.joints, n);
-        let island_pairs = joints::merge_island_pairs(&pairs, &joint_pairs);
+        joints::joint_island_pairs_into(&self.joints, n, &mut self.scratch.joint_pairs);
+        joints::merge_island_pairs_into(
+            &self.scratch.pairs,
+            &self.scratch.joint_pairs,
+            &mut self.scratch.island_pairs,
+        );
         self.sleep
-            .wake_from_new_contacts(n, &self.prev_pairs, &island_pairs);
-        self.sleep.rebuild_islands(n, &island_pairs);
+            .wake_from_new_contacts(n, &self.prev_pairs, &self.scratch.island_pairs);
+        self.sleep.rebuild_islands(n, &self.scratch.island_pairs);
         // Re-apply awake flags after rebuild (islands rebuilt; keep awake vector).
-        self.prev_pairs = island_pairs;
+        std::mem::swap(&mut self.prev_pairs, &mut self.scratch.island_pairs);
 
         match self.solver_mode {
             SolverMode::Pgs => {
-                // Filter contacts involving only sleeping dynamics.
-                let awake = self.sleep.awake.clone();
-                let active: Vec<ContactPoint> = contacts
-                    .iter()
-                    .cloned()
-                    .filter(|c| {
-                        let a_ok = c.a >= n || awake[c.a];
-                        let b_ok = c.b >= n || awake[c.b];
-                        a_ok && b_ok && (c.a >= n || c.b >= n || awake[c.a] || awake[c.b])
-                    })
-                    .collect();
+                // Filter contacts involving only sleeping dynamics into scratch
+                // (no `awake.clone()`, no intermediate filtered Vec alloc).
+                self.scratch.active_contacts.clear();
+                {
+                    let awake = &self.sleep.awake;
+                    let enabled = self.sleep.enabled;
+                    for c in &self.scratch.contacts {
+                        let a_awake = !enabled || c.a >= n || awake[c.a];
+                        let b_awake = !enabled || c.b >= n || awake[c.b];
+                        let a_ok = c.a >= n || a_awake;
+                        let b_ok = c.b >= n || b_awake;
+                        if a_ok && b_ok && (c.a >= n || c.b >= n || a_awake || b_awake) {
+                            self.scratch.active_contacts.push(*c);
+                        }
+                    }
+                }
                 let t_sol0 = if self.profile_phases {
                     Some(Instant::now())
                 } else {
                     None
                 };
+                // Take active contacts so solve can borrow &mut self.
+                let active = std::mem::take(&mut self.scratch.active_contacts);
                 if self.island_ordered_solve {
                     self.solve_velocities_island_ordered(&mut st, &active, step_dt);
                 } else {
                     self.solve_velocities(&mut st, &active, step_dt);
                 }
+                self.scratch.active_contacts = active;
                 self.solve_joints_pgs(&mut st, step_dt);
                 if let Some(t0) = t_sol0 {
                     self.last_phase_times.solver = t0.elapsed().as_secs_f64();
                 }
-                self.contacts = contacts;
+                // Move detect contacts into public buffer (capacity retained on scratch via swap).
+                std::mem::swap(&mut self.contacts, &mut self.scratch.contacts);
+                self.scratch.contacts.clear();
                 for i in 0..n {
                     if !self.sleep.is_awake(i) {
                         continue;
@@ -1421,12 +1458,13 @@ impl ContactWorld {
                     &self.soft_params,
                     step_dt,
                     &mut st,
-                    &contacts,
+                    &self.scratch.contacts,
                     awake_slice,
                     &self.soft_warm,
                     &f,
                     &tau,
                     &mut self.joints,
+                    &mut self.soft_step_scratch,
                 );
                 self.soft_warm = result.warm;
                 self.contacts = result.contacts;
@@ -1438,25 +1476,33 @@ impl ContactWorld {
             }
         }
 
-        // Sleep update.
+        // Sleep update (reused speed / contact-flag buffers).
         if self.sleep.enabled {
-            let mut lin = vec![0.0; n];
-            let mut ang = vec![0.0; n];
-            let mut has_c = vec![false; n];
+            self.scratch.sleep_lin.clear();
+            self.scratch.sleep_ang.clear();
+            self.scratch.sleep_has_c.clear();
+            self.scratch.sleep_lin.resize(n, 0.0);
+            self.scratch.sleep_ang.resize(n, 0.0);
+            self.scratch.sleep_has_c.resize(n, false);
             for i in 0..n {
-                lin[i] = st.v[i].norm();
+                self.scratch.sleep_lin[i] = st.v[i].norm();
                 let iinv = self.world.inv_inertia_world(st.q[i], i);
-                ang[i] = angular_speed(st.l[i], &iinv);
+                self.scratch.sleep_ang[i] = angular_speed(st.l[i], &iinv);
             }
             for c in &self.contacts {
                 if c.a < n {
-                    has_c[c.a] = true;
+                    self.scratch.sleep_has_c[c.a] = true;
                 }
                 if c.b < n {
-                    has_c[c.b] = true;
+                    self.scratch.sleep_has_c[c.b] = true;
                 }
             }
-            self.sleep.update_sleep(dt, &lin, &ang, &has_c);
+            self.sleep.update_sleep(
+                dt,
+                &self.scratch.sleep_lin,
+                &self.scratch.sleep_ang,
+                &self.scratch.sleep_has_c,
+            );
             for i in 0..n {
                 if !self.sleep.awake[i] {
                     st.v[i] = Vec3::zero();

@@ -11,6 +11,7 @@ GDExtension (`godot/`) ship as M8. Python remains the oracle for cross-checks.
 - Roadmap: [docs/ROADMAP.md](docs/ROADMAP.md)
 - Determinism: [docs/DETERMINISM.md](docs/DETERMINISM.md)
 - Benchmarks: [docs/BENCHMARKS.md](docs/BENCHMARKS.md)
+- Performance (M26): [docs/PERFORMANCE.md](docs/PERFORMANCE.md)
 - Seakeeping / Morison: [docs/SEAKEEPING.md](docs/SEAKEEPING.md)
 - Rotor BEM: [docs/ROTOR.md](docs/ROTOR.md)
 - Scene I/O: [docs/SCENE.md](docs/SCENE.md)

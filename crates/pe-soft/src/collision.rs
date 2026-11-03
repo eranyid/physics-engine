@@ -180,8 +180,27 @@ fn cell_hash(ix: i32, iy: i32, iz: i32, n_buckets: usize) -> usize {
     (h as usize) % n_buckets
 }
 
+/// Reused spatial-hash buffers for [`collide_self`].
+#[derive(Clone, Debug, Default)]
+pub struct SelfCollisionScratch {
+    /// Hash buckets (cleared each call; capacity retained).
+    pub buckets: Vec<Vec<usize>>,
+    /// Candidate pairs before sort/dedup.
+    pub pairs: Vec<(usize, usize)>,
+}
+
 /// Self-collision via spatial hash; pairs sorted by `(min,max)` before resolve.
 pub fn collide_self(particles: &mut [Particle], params: &SelfCollisionParams) {
+    let mut scratch = SelfCollisionScratch::default();
+    collide_self_with_scratch(particles, params, &mut scratch);
+}
+
+/// [`collide_self`] with reusable bucket/pair buffers.
+pub fn collide_self_with_scratch(
+    particles: &mut [Particle],
+    params: &SelfCollisionParams,
+    scratch: &mut SelfCollisionScratch,
+) {
     if !params.enabled || particles.len() < 2 {
         return;
     }
@@ -193,7 +212,14 @@ pub fn collide_self(particles: &mut [Particle], params: &SelfCollisionParams) {
     let inv_cell = 1.0 / diam;
     let n = particles.len();
     let n_buckets = (n * 2).next_power_of_two().max(16);
-    let mut buckets: Vec<Vec<usize>> = vec![Vec::new(); n_buckets];
+    if scratch.buckets.len() != n_buckets {
+        scratch.buckets.clear();
+        scratch.buckets.resize_with(n_buckets, Vec::new);
+    } else {
+        for b in &mut scratch.buckets {
+            b.clear();
+        }
+    }
 
     for i in 0..n {
         let p = particles[i].x;
@@ -201,10 +227,10 @@ pub fn collide_self(particles: &mut [Particle], params: &SelfCollisionParams) {
         let iy = libm_ops::floor(p.y * inv_cell) as i32;
         let iz = libm_ops::floor(p.z * inv_cell) as i32;
         let h = cell_hash(ix, iy, iz, n_buckets);
-        buckets[h].push(i);
+        scratch.buckets[h].push(i);
     }
 
-    let mut pairs: Vec<(usize, usize)> = Vec::new();
+    scratch.pairs.clear();
     for i in 0..n {
         if particles[i].inv_mass == 0.0 {
             // Still collide against dynamic neighbors.
@@ -217,22 +243,22 @@ pub fn collide_self(particles: &mut [Particle], params: &SelfCollisionParams) {
             for dy in -1..=1 {
                 for dz in -1..=1 {
                     let h = cell_hash(ix + dx, iy + dy, iz + dz, n_buckets);
-                    for &j in &buckets[h] {
+                    for &j in &scratch.buckets[h] {
                         if j <= i {
                             continue;
                         }
-                        pairs.push((i, j));
+                        scratch.pairs.push((i, j));
                     }
                 }
             }
         }
     }
     // Deterministic order
-    pairs.sort_unstable();
-    pairs.dedup();
+    scratch.pairs.sort_unstable();
+    scratch.pairs.dedup();
 
     let min_dist = diam;
-    for (i, j) in pairs {
+    for &(i, j) in &scratch.pairs {
         let wi = particles[i].inv_mass;
         let wj = particles[j].inv_mass;
         if wi == 0.0 && wj == 0.0 {

@@ -64,6 +64,11 @@ pub struct DynamicAabbTree {
     root: i32,
     free_list: i32,
     proxy_leaf: Vec<i32>,
+    /// Reused pair-query stacks (allocation reuse; not part of tree topology).
+    query_stack: Vec<(i32, i32)>,
+    query_self_stack: Vec<i32>,
+    /// Intermediate fat-pair buffer for incremental tight filtering.
+    fat_pair_buf: Vec<(usize, usize)>,
 }
 
 impl Default for DynamicAabbTree {
@@ -81,6 +86,9 @@ impl DynamicAabbTree {
             root: NULL,
             free_list: NULL,
             proxy_leaf: Vec::new(),
+            query_stack: Vec::new(),
+            query_self_stack: Vec::new(),
+            fat_pair_buf: Vec::new(),
         }
     }
 
@@ -244,15 +252,29 @@ impl DynamicAabbTree {
         aabbs: &[Aabb],
         skip_static: &[bool],
     ) -> Vec<(usize, usize)> {
+        let mut out = Vec::new();
+        self.pairs_incremental_into(aabbs, skip_static, &mut out);
+        out
+    }
+
+    /// Write-into variant of [`Self::pairs_incremental`] (clears `out`, reuses capacity).
+    pub fn pairs_incremental_into(
+        &mut self,
+        aabbs: &[Aabb],
+        skip_static: &[bool],
+        out: &mut Vec<(usize, usize)>,
+    ) {
         self.update_all(aabbs);
-        let fat_pairs = self.query_pairs(Some(skip_static));
-        let mut out = Vec::with_capacity(fat_pairs.len());
-        for (i, j) in fat_pairs {
+        let mut fat = std::mem::take(&mut self.fat_pair_buf);
+        self.query_pairs_into(Some(skip_static), &mut fat);
+        out.clear();
+        out.reserve(fat.len());
+        for &(i, j) in &fat {
             if Self::overlaps(&aabbs[i], &aabbs[j]) {
                 out.push((i, j));
             }
         }
-        out
+        self.fat_pair_buf = fat;
     }
 
     fn insert_leaf(&mut self, proxy_id: i32, aabb: Aabb) {
@@ -473,37 +495,47 @@ impl DynamicAabbTree {
     }
 
     /// Collect overlapping proxy pairs from the current tree.
-    pub fn query_pairs(&self, skip_static: Option<&[bool]>) -> Vec<(usize, usize)> {
+    pub fn query_pairs(&mut self, skip_static: Option<&[bool]>) -> Vec<(usize, usize)> {
         let mut pairs = Vec::new();
+        self.query_pairs_into(skip_static, &mut pairs);
+        pairs
+    }
+
+    /// Write-into [`Self::query_pairs`] using reused internal stacks.
+    pub fn query_pairs_into(
+        &mut self,
+        skip_static: Option<&[bool]>,
+        pairs: &mut Vec<(usize, usize)>,
+    ) {
+        pairs.clear();
         if self.root == NULL {
-            return pairs;
+            return;
         }
-        // Stack of (node_a, node_b) with node_a <= node_b for internal traversal.
-        let mut stack: Vec<(i32, i32)> = Vec::new();
-        // Self-overlap query starting from root children.
         let root = self.root;
         if self.nodes[root as usize].is_leaf() {
-            return pairs;
+            return;
         }
-        stack.push((
+        self.query_stack.clear();
+        self.query_self_stack.clear();
+        self.query_stack.push((
             self.nodes[root as usize].child1,
             self.nodes[root as usize].child2,
         ));
         // Also need all sibling pairs under each internal node — classic tree pair walk:
         // push (child1, child2) and recurse into each child with itself via a second stack.
-        let mut self_stack = vec![root];
-        while let Some(node) = self_stack.pop() {
+        self.query_self_stack.push(root);
+        while let Some(node) = self.query_self_stack.pop() {
             if self.nodes[node as usize].is_leaf() {
                 continue;
             }
             let c1 = self.nodes[node as usize].child1;
             let c2 = self.nodes[node as usize].child2;
-            stack.push((c1, c2));
-            self_stack.push(c1);
-            self_stack.push(c2);
+            self.query_stack.push((c1, c2));
+            self.query_self_stack.push(c1);
+            self.query_self_stack.push(c2);
         }
 
-        while let Some((a, b)) = stack.pop() {
+        while let Some((a, b)) = self.query_stack.pop() {
             let na = &self.nodes[a as usize];
             let nb = &self.nodes[b as usize];
             if !Self::overlaps(&na.aabb, &nb.aabb) {
@@ -525,21 +557,20 @@ impl DynamicAabbTree {
                 // For BroadPhase equivalence tests we filter with the input AABBs outside.
                 pairs.push((i, j));
             } else if na.is_leaf() {
-                stack.push((a, nb.child1));
-                stack.push((a, nb.child2));
+                self.query_stack.push((a, nb.child1));
+                self.query_stack.push((a, nb.child2));
             } else if nb.is_leaf() {
-                stack.push((na.child1, b));
-                stack.push((na.child2, b));
+                self.query_stack.push((na.child1, b));
+                self.query_stack.push((na.child2, b));
             } else {
-                stack.push((na.child1, nb.child1));
-                stack.push((na.child1, nb.child2));
-                stack.push((na.child2, nb.child1));
-                stack.push((na.child2, nb.child2));
+                self.query_stack.push((na.child1, nb.child1));
+                self.query_stack.push((na.child1, nb.child2));
+                self.query_stack.push((na.child2, nb.child1));
+                self.query_stack.push((na.child2, nb.child2));
             }
         }
         pairs.sort_unstable();
         pairs.dedup();
-        pairs
     }
 
     /// Validate: every leaf AABB is contained by all ancestors.

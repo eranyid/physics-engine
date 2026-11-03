@@ -95,6 +95,43 @@ fn bench_fluid(c: &mut Criterion) {
         })
     });
 
+    group.bench_function("pbf_100_particles_20_steps", |b| {
+        b.iter(|| {
+            let dim = Dim::D3;
+            let dx = 0.05;
+            let h = 2.2 * dx;
+            let rho0 = 1000.0;
+            let mass = mass_from_spacing(rho0, dx, dim);
+            let mut parts = Particles::new(dim, rho0, mass, h);
+            fill_box(
+                &mut parts,
+                Vec3::new(0.1, 0.1, 0.1),
+                5,
+                5,
+                4,
+                dx,
+                Vec3::zero(),
+            );
+            fill_box_boundary(
+                &mut parts,
+                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::new(0.45, 0.45, 0.4),
+                dx,
+                1,
+            );
+            let params = PbfParams {
+                gravity: Vec3::new(0.0, 0.0, -STANDARD_GRAVITY),
+                iterations: 2,
+                ..PbfParams::default()
+            };
+            let mut world = PbfWorld::new(parts, params);
+            for _ in 0..20 {
+                world.step(1.0 / 120.0);
+            }
+            std::hint::black_box(world.particles.len())
+        })
+    });
+
     group.finish();
 }
 

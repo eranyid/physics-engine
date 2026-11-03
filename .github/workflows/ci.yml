@@ -563,3 +563,32 @@ jobs:
         run: |
           set -euo pipefail
           cargo test -p pe-collision --test perf_determinism --release --features parallel -- --nocapture
+
+  # M26: fast wall-clock microbench vs committed baseline. Fail on large
+  # regressions only (default margin 100% / 2×). See docs/PERFORMANCE.md.
+  perf-bench:
+    name: ci_bench vs baseline (2× margin)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.99.1"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run ci_bench (release, generic CPU)
+        run: |
+          set -euo pipefail
+          cargo run -p pe-examples --bin ci_bench --release > /tmp/ci_bench.json
+          cat /tmp/ci_bench.json
+
+      - name: Compare to docs/baselines/ci_bench.json
+        run: |
+          set -euo pipefail
+          python3 scripts/check_ci_bench.py --measured /tmp/ci_bench.json --margin 1.0
