@@ -89,6 +89,38 @@ def test_canonical_soft_coupling_hash_stable():
     assert a == 0x3DFD4CF670923310
 
 
+def test_canonical_thermal_hash_stable():
+    a = pe.canonical_thermal_hash()
+    b = pe.canonical_thermal_hash()
+    assert a == b
+    assert a == 0xBECDA3E8805B5B90
+
+
+def test_thermal_rod_backward_euler_numpy():
+    rod = pe.ThermalRod(
+        33, 1.0, 0.01, 8960.0, 385.0, 400.0, 16.5e-6, t_ref=0.0
+    )
+    rod.init_sine_mode(50.0)
+    fixed = [False] * rod.n
+    fixed[0] = True
+    fixed[-1] = True
+    rod.set_fixed(fixed)
+    t = np.array(rod.temperatures(), copy=True)
+    t[0] = 0.0
+    t[-1] = 0.0
+    rod.set_temperatures(t.tolist())
+    assert rod.step(25.0, "be")
+    out = np.array(rod.temperatures())
+    assert out.shape == (33,)
+    assert np.all(np.isfinite(out))
+    # Mode-1 amplitude decays under BE.
+    assert abs(out[rod.n // 2]) < 50.0
+    erfc0 = pe.soft_semi_infinite_erfc(0.0, 1.0, 0.0, 100.0, 1e-4)
+    assert abs(erfc0 - 100.0) < 1e-12
+    cool = pe.soft_robin_lumped_exp(1.0, 400.0, 300.0, 1.0)
+    assert abs(cool - (300.0 + 100.0 * math.exp(-1.0))) < 1e-12
+
+
 def test_soft_rigid_rope_freefall_com():
     w = pe.SoftRigidWorld.rope_on_free_body(m_rope=1.0, m_body=3.0, segments=6)
     z0 = w.combined_com()[2]

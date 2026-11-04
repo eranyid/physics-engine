@@ -9,9 +9,12 @@ use pe_soft::material::{
 };
 use pe_soft::particle::Particle;
 use pe_soft::plasticity::{return_map_uniaxial, J2Params, UniaxialPlasticState};
-use pe_soft::scenarios::{materials_canonical_hash, soft_canonical_hash};
+use pe_soft::scenarios::{materials_canonical_hash, soft_canonical_hash, thermal_canonical_hash};
 use pe_soft::solver::{SoftParams, SoftWorld};
-use pe_soft::thermal::{free_expansion_delta_l, rod_fourier_mode1};
+use pe_soft::thermal::{
+    free_expansion_delta_l, init_rod_sine_mode, robin_lumped_exp, rod_fourier_mode1,
+    semi_infinite_erfc, ThermalMesh, ThermalProps, ThermalScheme,
+};
 use pe_soft::{
     kinetic_energy, make_momentum_exchange_scene, make_pendulum_bob, make_rope_on_free_body,
     make_soft_on_box_on_ground, soft_coupling_canonical_hash, total_energy, SoftRigidWorld,
@@ -136,6 +139,154 @@ fn soft_free_expansion_delta_l(l0: f64, alpha: f64, d_t: f64) -> f64 {
 #[pyfunction]
 fn soft_rod_fourier_mode1(x: f64, t: f64, length: f64, t0: f64, diffusivity: f64) -> f64 {
     rod_fourier_mode1(x, t, length, t0, diffusivity)
+}
+
+/// Semi-infinite solid erfc solution `T_i + (T_s−T_i) erfc(x/(2√(κt)))`.
+#[pyfunction]
+fn soft_semi_infinite_erfc(x: f64, t: f64, t_i: f64, t_s: f64, diffusivity: f64) -> f64 {
+    semi_infinite_erfc(x, t, t_i, t_s, diffusivity)
+}
+
+/// Lumped Robin cooling `T_∞ + (T₀−T_∞) exp(−t/τ)`.
+#[pyfunction]
+fn soft_robin_lumped_exp(t: f64, t0: f64, t_inf: f64, tau: f64) -> f64 {
+    robin_lumped_exp(t, t0, t_inf, tau)
+}
+
+/// Canonical M29 implicit-thermal determinism hash.
+#[pyfunction]
+fn canonical_thermal_hash() -> u64 {
+    thermal_canonical_hash()
+}
+
+/// Implicit / explicit 1-D thermal rod exposed to Python (NumPy temperatures).
+#[pyclass(name = "ThermalRod")]
+struct PyThermalRod {
+    mesh: ThermalMesh,
+    fixed: Vec<bool>,
+    length: f64,
+}
+
+#[pymethods]
+impl PyThermalRod {
+    /// Uniform rod with `n` nodes on `[0, length]`, cross-section `area`.
+    #[new]
+    #[pyo3(signature = (n, length, area, density, specific_heat, conductivity, expansion, t_ref=0.0))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        n: usize,
+        length: f64,
+        area: f64,
+        density: f64,
+        specific_heat: f64,
+        conductivity: f64,
+        expansion: f64,
+        t_ref: f64,
+    ) -> PyResult<Self> {
+        if n < 2 || length <= 0.0 || area <= 0.0 {
+            return Err(PyValueError::new_err(
+                "need n>=2, length>0, area>0 for ThermalRod",
+            ));
+        }
+        let props = ThermalProps {
+            density,
+            specific_heat,
+            conductivity,
+            expansion,
+        };
+        let mesh = ThermalMesh::rod_1d(n, length, area, props, t_ref);
+        let fixed = vec![false; n];
+        Ok(Self {
+            mesh,
+            fixed,
+            length,
+        })
+    }
+
+    /// Number of nodes.
+    #[getter]
+    fn n(&self) -> usize {
+        self.mesh.len()
+    }
+
+    /// Explicit CFL-safe dt suggestion.
+    fn max_stable_dt(&self) -> f64 {
+        self.mesh.max_stable_dt()
+    }
+
+    /// Diffusivity κ = k/(ρ c).
+    fn diffusivity(&self) -> f64 {
+        self.mesh.props.diffusivity()
+    }
+
+    /// Total thermal energy Σ C_i T_i.
+    fn total_energy(&self) -> f64 {
+        self.mesh.total_energy()
+    }
+
+    /// Copy temperatures into a NumPy length-`n` array.
+    fn temperatures<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        PyArray1::from_slice(py, &self.mesh.temperature)
+    }
+
+    /// Set Dirichlet flags (length `n` bool array / sequence).
+    fn set_fixed(&mut self, fixed: Vec<bool>) -> PyResult<()> {
+        if fixed.len() != self.mesh.len() {
+            return Err(PyValueError::new_err("fixed length must equal n"));
+        }
+        self.fixed = fixed;
+        Ok(())
+    }
+
+    /// Set temperatures from a length-`n` sequence.
+    fn set_temperatures(&mut self, t: Vec<f64>) -> PyResult<()> {
+        if t.len() != self.mesh.len() {
+            return Err(PyValueError::new_err("temperature length must equal n"));
+        }
+        self.mesh.temperature = t;
+        Ok(())
+    }
+
+    /// Set Robin `h*A` and `T_inf` at node `i`.
+    fn set_robin(&mut self, i: usize, h_a: f64, t_inf: f64) -> PyResult<()> {
+        if i >= self.mesh.len() {
+            return Err(PyValueError::new_err("node index out of range"));
+        }
+        self.mesh.robin_ha[i] = h_a;
+        self.mesh.robin_tinf[i] = t_inf;
+        Ok(())
+    }
+
+    /// Set Neumann nodal power [W] into node `i`.
+    fn set_neumann_power(&mut self, i: usize, power: f64) -> PyResult<()> {
+        if i >= self.mesh.len() {
+            return Err(PyValueError::new_err("node index out of range"));
+        }
+        self.mesh.neumann_power[i] = power;
+        Ok(())
+    }
+
+    /// Initialize first Fourier sine mode (Dirichlet ends ≈ 0).
+    fn init_sine_mode(&mut self, t0: f64) {
+        init_rod_sine_mode(&mut self.mesh, self.length, t0);
+    }
+
+    /// Advance one step. `scheme`: `"explicit"`, `"be"` / `"backward_euler"`, or
+    /// `"cn"` / `"crank_nicolson"`.
+    fn step(&mut self, py: Python<'_>, dt: f64, scheme: &str) -> PyResult<bool> {
+        let sch = match scheme {
+            "explicit" => ThermalScheme::Explicit,
+            "be" | "backward_euler" => ThermalScheme::BackwardEuler,
+            "cn" | "crank_nicolson" => ThermalScheme::CrankNicolson,
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown thermal scheme {other:?}; use explicit|be|cn"
+                )));
+            }
+        };
+        let fixed = self.fixed.clone();
+        Ok(py.allow_threads(|| self.mesh.step_scheme(dt, sch, &fixed)))
+    }
 }
 
 /// XPBD soft world exposed to Python.
@@ -499,9 +650,11 @@ impl PySoftRigidWorld {
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySoftWorld>()?;
     m.add_class::<PySoftRigidWorld>()?;
+    m.add_class::<PyThermalRod>()?;
     m.add_function(wrap_pyfunction!(canonical_soft_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_materials_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_soft_coupling_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(canonical_thermal_hash, m)?)?;
     m.add_function(wrap_pyfunction!(soft_material_names, m)?)?;
     m.add_function(wrap_pyfunction!(soft_material_dict, m)?)?;
     m.add_function(wrap_pyfunction!(soft_lame_parameters, m)?)?;
@@ -509,5 +662,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(soft_j2_uniaxial_step, m)?)?;
     m.add_function(wrap_pyfunction!(soft_free_expansion_delta_l, m)?)?;
     m.add_function(wrap_pyfunction!(soft_rod_fourier_mode1, m)?)?;
+    m.add_function(wrap_pyfunction!(soft_semi_infinite_erfc, m)?)?;
+    m.add_function(wrap_pyfunction!(soft_robin_lumped_exp, m)?)?;
     Ok(())
 }

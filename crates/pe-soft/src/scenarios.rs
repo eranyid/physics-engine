@@ -1,4 +1,4 @@
-//! Canonical soft-body and materials-track determinism scenarios (cross-OS hash).
+//! Canonical soft-body, materials-track, and implicit-thermal determinism scenarios.
 
 use pe_math::Vec3;
 
@@ -10,7 +10,9 @@ use crate::material::material_by_name;
 use crate::particle::Particle;
 use crate::plasticity::{return_map_uniaxial, J2Params, UniaxialPlasticState};
 use crate::solver::{soft_state_hash64, SoftWorld};
-use crate::thermal::{init_rod_sine_mode, ThermalMesh, ThermalProps};
+use crate::thermal::{
+    apply_thermal_expansion_from_cold, init_rod_sine_mode, ThermalMesh, ThermalProps,
+};
 
 /// Outer steps in the canonical hash scenario.
 pub const SOFT_HASH_STEPS: usize = 120;
@@ -217,6 +219,87 @@ pub fn materials_canonical_hash() -> u64 {
     } else {
         0.0
     });
+
+    hash
+}
+
+/// Outer steps in the M29 implicit-thermal hash scenario.
+pub const THERMAL_HASH_STEPS: usize = 64;
+/// Outer timestep [s] for the M29 thermal hash (≫ explicit CFL).
+pub const THERMAL_HASH_DT: f64 = 5.0;
+
+/// FNV-1a over an implicit conduction + thermo-elastic expansion scenario.
+///
+/// Packed payload (little-endian IEEE bits, fixed order):
+/// 1. Cu-like rod (33 nodes) after 64 backward-Euler steps at `dt = 5 s`
+///    (Dirichlet ends, sine IC) — temperatures + total energy.
+/// 2. Same rod after 64 Crank–Nicolson steps at `dt = 2 s` — temperatures.
+/// 3. Free-expansion rest length after uniform ΔT on a 2-node distance bar.
+pub fn thermal_canonical_hash() -> u64 {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+    let mut hash = FNV_OFFSET;
+    let mut feed = |x: f64| {
+        for b in x.to_bits().to_le_bytes() {
+            hash ^= u64::from(b);
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+    };
+
+    let props = ThermalProps {
+        density: 8960.0,
+        specific_heat: 385.0,
+        conductivity: 400.0,
+        expansion: 16.5e-6,
+    };
+
+    // --- backward Euler rod ---
+    let mut mesh_be = ThermalMesh::rod_1d(33, 1.0, 0.01, props, 0.0);
+    init_rod_sine_mode(&mut mesh_be, 1.0, 50.0);
+    let mut fixed = vec![false; mesh_be.len()];
+    fixed[0] = true;
+    fixed[mesh_be.len() - 1] = true;
+    let n_be = mesh_be.len();
+    mesh_be.temperature[0] = 0.0;
+    mesh_be.temperature[n_be - 1] = 0.0;
+    for _ in 0..THERMAL_HASH_STEPS {
+        let _ = mesh_be.step_backward_euler(THERMAL_HASH_DT, &fixed);
+    }
+    for &t in &mesh_be.temperature {
+        feed(t);
+    }
+    feed(mesh_be.total_energy());
+
+    // --- Crank–Nicolson rod ---
+    let mut mesh_cn = ThermalMesh::rod_1d(33, 1.0, 0.01, props, 0.0);
+    init_rod_sine_mode(&mut mesh_cn, 1.0, 50.0);
+    let n_cn = mesh_cn.len();
+    mesh_cn.temperature[0] = 0.0;
+    mesh_cn.temperature[n_cn - 1] = 0.0;
+    let dt_cn = 2.0;
+    for _ in 0..THERMAL_HASH_STEPS {
+        let _ = mesh_cn.step_crank_nicolson(dt_cn, &fixed);
+    }
+    for &t in &mesh_cn.temperature {
+        feed(t);
+    }
+    feed(mesh_cn.total_energy());
+
+    // --- thermo-elastic free expansion rest length ---
+    let mut mesh_ex = ThermalMesh::rod_1d(2, 1.0, 0.01, props, 300.0);
+    mesh_ex.temperature[0] = 380.0;
+    mesh_ex.temperature[1] = 380.0;
+    let mut cs = [DistanceConstraint {
+        i: 0,
+        j: 1,
+        rest_length: 1.0,
+        compliance: 1e-6,
+        lambda: Multiplier::default(),
+        broken: false,
+    }];
+    let cold = [1.0];
+    apply_thermal_expansion_from_cold(&mut cs, &cold, &mesh_ex);
+    feed(cs[0].rest_length);
 
     hash
 }

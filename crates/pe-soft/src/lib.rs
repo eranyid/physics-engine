@@ -14,7 +14,8 @@
 //!
 //! Materials track: J2 von Mises plasticity with linear isotropic hardening,
 //! max-principal stress/strain fracture (distance + tet) with deterministic
-//! ordering and island labels, and lumped heat conduction + thermal expansion.
+//! ordering and island labels, and lumped / **implicit** heat conduction +
+//! thermal expansion (M29).
 //!
 //! # Determinism
 //!
@@ -89,12 +90,15 @@ pub use plasticity::{
     J2Return3, SymTensor3, UniaxialPlasticState, UniaxialReturn,
 };
 pub use scenarios::{
-    materials_canonical_hash, soft_canonical_hash, soft_canonical_world, MATERIALS_HASH_DT,
-    MATERIALS_HASH_STEPS, SOFT_HASH_DT, SOFT_HASH_STEPS,
+    materials_canonical_hash, soft_canonical_hash, soft_canonical_world, thermal_canonical_hash,
+    MATERIALS_HASH_DT, MATERIALS_HASH_STEPS, SOFT_HASH_DT, SOFT_HASH_STEPS, THERMAL_HASH_DT,
+    THERMAL_HASH_STEPS,
 };
 pub use solver::{soft_state_hash64, SoftParams, SoftWorld};
 pub use thermal::{
-    apply_thermal_expansion_from_cold, expanded_rest_length, free_expansion_delta_l,
-    init_rod_sine_mode, rod_fourier_mode1, steady_linear_profile, ThermalEdge, ThermalMesh,
-    ThermalProps,
+    apply_thermal_expansion_from_cold, apply_thermal_expansion_tets_from_cold,
+    apply_thermal_expansion_volumes_from_cold, clamped_thermal_stress, expanded_rest_length,
+    free_expansion_delta_l, init_rod_sine_mode, robin_lumped_exp, rod_fourier_mode1,
+    semi_infinite_erfc, steady_linear_profile, ThermalEdge, ThermalMesh, ThermalProps,
+    ThermalScheme,
 };

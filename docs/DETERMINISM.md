@@ -8,7 +8,7 @@ N-body / Kepler / perturbation paths, and `pe-soft` XPBD):
 
 1. **f64 only**; no `target-cpu=native`, no explicit FMA (`mul_add` unused).
 2. Elementary functions go through the pure-Rust [`libm`](https://crates.io/crates/libm) crate
-   (`pe_math::libm_ops`: `sin`/`cos`/`tan`/`sqrt`/`cbrt`/`exp`/`log`/`tanh`/`fabs`/`hypot`/`atan2`/`atan`/`copysign`/`pow`/`asin`/`acos`/`sinh`/`cosh`/`floor`).
+   (`pe_math::libm_ops`: `sin`/`cos`/`tan`/`sqrt`/`cbrt`/`exp`/`log`/`tanh`/`fabs`/`hypot`/`atan2`/`atan`/`copysign`/`pow`/`asin`/`acos`/`sinh`/`cosh`/`floor`/`erf`/`erfc`).
 3. Fixed body and generator order (`Vec`, never `HashMap` iteration).
 4. Contact pairs sorted by `(min_id, max_id)` before narrow phase; warm-start cache is a
    `BTreeMap` keyed by `(a, b, feature)` (lookups only — never unordered iteration).
@@ -55,6 +55,8 @@ Cross-check helpers:
   `physics_engine_rs.canonical_materials_hash()`
 - M28 soft↔rigid coupling: `cargo run -p pe-soft --bin soft_coupling_hash --release` /
   `physics_engine_rs.canonical_soft_coupling_hash()`
+- M29 implicit thermal: `cargo run -p pe-soft --bin thermal_hash --release` /
+  `physics_engine_rs.canonical_thermal_hash()`
 - M11 Morison+BEM: `cargo run -p pe-hydro --bin m11_hash --release` /
   `physics_engine_rs.canonical_m11_hash()`
 - M21 6-DOF Cummins: `cargo run -p pe-hydro --bin cummins6_hash --release` /
@@ -460,6 +462,29 @@ scene, and fluid coupling hashes are **unchanged** when soft↔rigid coupling is
 unused.
 
 Helper: `cargo run -p pe-soft --bin soft_coupling_hash --release`.
+
+### Canonical M29 implicit-thermal hash (locked)
+
+Scenario (`pe_soft::thermal_canonical_hash`, `thermal_hash` binary,
+`physics_engine_rs.canonical_thermal_hash()`):
+
+- Cu-like rod (33 nodes): 64 backward-Euler steps at `dt = 5 s` (≫ explicit CFL),
+  Dirichlet ends, sine IC; pack temperatures + total energy.
+- Same rod: 64 Crank–Nicolson steps at `dt = 2 s`; pack temperatures + energy.
+- Free-expansion rest length on a 2-node distance bar (ΔT = 80 K).
+- Hash: FNV-1a 64 over little-endian IEEE bits (Thomas path; no HashMap).
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `becda3e8805b5b90` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+Existing soft (`adfc0a4c1209e5dc`), materials (`19498ab91f6febdc`), soft_coupling
+(`3dfd4cf670923310`), bake, Godot, blast, cummins, scene, and ballistics hashes
+are **unchanged**.
+
+Helper: `cargo run -p pe-soft --bin thermal_hash --release`.
 
 ### Canonical fluid-tank hash (locked)
 

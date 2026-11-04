@@ -35,6 +35,10 @@ path = "ci_bench.rs"
 name = "soft_rigid_hang"
 path = "soft_rigid_hang.rs"
 
+[[bin]]
+name = "soft_thermal_rod"
+path = "soft_thermal_rod.rs"
+
 [dependencies]
 pe-math = { workspace = true }
 pe-core = { workspace = true }
