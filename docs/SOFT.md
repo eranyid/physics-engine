@@ -90,9 +90,11 @@ Conversions (unit-tested):
 - Volume compliance (helper): `α ≈ 1 / (K V₀)` with `K = λ + 2μ/3`
 
 Plasticity (J2), fracture (max principal), and thermal conduction/expansion are
-implemented as modules used by materials-track tests and optional callers; the
-default XPBD `SoftWorld::step` remains elastic XPBD (fracture/thermal applied
-when the caller invokes them).
+implemented as modules used by materials-track / M29 tests and optional callers;
+the default XPBD `SoftWorld::step` remains elastic XPBD (fracture/thermal applied
+when the caller invokes them). M29 adds unconditionally stable **backward Euler**
+and **Crank–Nicolson** conduction (Thomas / CG), Robin/Neumann BCs, tet assembly,
+and thermo-elastic rest updates (`α ΔT` on distances / tet volumes).
 
 ## Analytic validation (measured)
 
@@ -149,6 +151,9 @@ Soft↔rigid coupling hash: `cargo run -p pe-soft --bin soft_coupling_hash --rel
 locked in [`DETERMINISM.md`](DETERMINISM.md). Existing soft / materials /
 Godot / bake hashes are **unchanged** by M28.
 
+M29 implicit thermal hash: `cargo run -p pe-soft --bin thermal_hash --release`
+(`becda3e8805b5b90`). Soft / materials / soft_coupling hashes **unchanged**.
+
 ## Python
 
 ```python
@@ -162,19 +167,27 @@ print(w.x().shape)  # (n, 3) NumPy
 c = pe.SoftRigidWorld.rope_on_free_body(m_rope=1.0, m_body=3.0)
 c.run(0.5, 1/240)
 print(c.combined_com(), hex(pe.canonical_soft_coupling_hash()))
+
+# M29 implicit thermal rod
+rod = pe.ThermalRod(33, 1.0, 0.01, 8960.0, 385.0, 400.0, 16.5e-6)
+rod.init_sine_mode(50.0)
+rod.set_fixed([True] + [False]*31 + [True])
+rod.step(25.0, "be")
+print(rod.temperatures().shape, hex(pe.canonical_thermal_hash()))
 ```
 
 ## Materials track
 
 See [`MATERIALS.md`](MATERIALS.md): J2 plasticity (&lt;1% uniaxial), fracture
-(&lt;2% threshold), thermal Fourier (&lt;2%), material table additions, locked
-`materials_hash`.
+(&lt;2% threshold), explicit thermal Fourier (&lt;2%), **M29 implicit** Fourier
+(~5e-4), erfc / Robin / clamped-stress oracles, locked `materials_hash` +
+`thermal_hash`.
 
 ## Deferred
 
 - Full per-step FEM plastic coupling inside XPBD (constitutive map shipped)
 - Cohesive fracture / crack paths; tearing UI
-- Implicit thermal; radiation/convection BCs
+- Radiation BCs; `k(T)` / `c_p(T)`
 - Capsule/hull soft↔rigid contacts; soft scene-schema I/O
 - Anisotropic cloth (warp/weft), wet cloth, continuous collision for thin sheets
 - GPU / SIMD particle loops

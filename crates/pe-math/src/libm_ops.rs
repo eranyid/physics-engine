@@ -28,6 +28,18 @@ pub fn exp(x: f64) -> f64 {
     libm::exp(x)
 }
 
+/// Complementary error function erfc(x) = 1 − erf(x).
+#[inline]
+pub fn erfc(x: f64) -> f64 {
+    libm::erfc(x)
+}
+
+/// Error function erf(x).
+#[inline]
+pub fn erf(x: f64) -> f64 {
+    libm::erf(x)
+}
+
 /// tanh(x) (analytic closed forms / tests; also available for force models).
 #[inline]
 pub fn tanh(x: f64) -> f64 {

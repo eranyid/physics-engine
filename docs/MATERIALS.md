@@ -47,18 +47,30 @@ distance + tet edges.
 
 API: `apply_fracture`, `constraint_islands`, `FractureCriterion`.
 
-## Thermal — lumped conduction + expansion
+## Thermal — lumped / implicit conduction + expansion
 
-Graph Laplacian / lumped FEM on undirected edges:
-`C_i Ṫ_i = Σ_j κ_ij (T_j − T_i)`, `κ_ij = k A / L` on a 1-D rod.
-Explicit Euler with CFL `dt ≤ 0.4 C_i/Σκ` (oracle uses `0.5×` that bound).
+Graph Laplacian / lumped FEM on undirected edges (1-D rods) and linear-tet
+conductivity assembly (`ThermalMesh::from_tets`):
+`C_i Ṫ_i = Σ_j κ_ij (T_j − T_i) + Q_i + h A_i (T_∞ − T_i)`,
+`κ_ij = k A / L` on a rod (or `−K_ij` from tet `K_ij = k |V| ∇N_i·∇N_j`).
+
+**Time schemes:** explicit Euler (CFL `dt ≤ 0.4 C_i/(Σκ+hA)`); **backward Euler**
+(θ=1, unconditionally stable); **Crank–Nicolson** (θ=½, 2nd-order). Implicit
+solves use Thomas on 1-D paths or deterministic CG (fixed iteration order; no
+`HashMap`; no `mul_add`).
+
+**Boundaries:** Dirichlet (`fixed`), Neumann nodal power `Q`, insulated
+(default), Robin / convection `h A`, `T_∞`.
 
 Analytic Fourier mode (Dirichlet ends):
 `T(x,t) = T₀ sin(πx/L) exp(−κ (π/L)² t)`, `κ = k/(ρ c)`.
 
-Free expansion: `ΔL = α L₀ ΔT`.
+Semi-infinite surface step (Incropera / Carslaw & Jaeger):
+`T = T_i + (T_s − T_i) erfc(x/(2√(κ t)))`.
 
-### Oracle — measured
+Free expansion: `ΔL = α L₀ ΔT`. Clamped bar: `σ = −E α ΔT`.
+
+### Oracle — measured (explicit, materials track)
 
 | Check | Setup | Measured | CI lock |
 | --- | --- | --- | --- |
@@ -67,7 +79,25 @@ Free expansion: `ΔL = α L₀ ΔT`.
 | Insulated energy `Σ C T` | 400 steps | **&lt; 1e-12** rel | **&lt; 1e-11** |
 | Free expansion `ΔL=α L ΔT` | exact | **0** | **&lt; 1%** coupling |
 
-API: `ThermalMesh`, `rod_fourier_mode1`, `apply_thermal_expansion_from_cold`.
+### Oracle — measured (M29 implicit)
+
+| Check | Setup | Measured | CI lock |
+| --- | --- | --- | --- |
+| BE Fourier mode-1 | n=65, dt=25 s ≫ CFL, t=500 s | **~5.4e-4** max rel | **&lt; 0.5%** |
+| Semi-infinite erfc | n=257, L=4 m, dt=0.25 s, t=20 s | **~0.21 K** max abs | **&lt; 2 K** |
+| Steady linear (BE) | 17 nodes, long settle | **~5e-12** abs | **&lt; 1e-9 K** |
+| Insulated energy (BE) | dt ≫ CFL | **&lt; 1e-12** rel | **&lt; 1e-11** |
+| BE stability | dt = 100× CFL | bounded, monotone | — |
+| CN order in dt | self-conv. vs dt=1, ratio e(8)/e(4) | **~4.20** | **∈ [3, 5.5]** |
+| Robin lumped Bi≪1 | single node, BE | **~0.67%** rel | **&lt; 2%** |
+| Free expansion coupling | XPBD rest from cold | **0** | **&lt; 1%** |
+| Clamped stress `E α ΔT` | pinned–pinned distance bar | **~7e-14** rel | **&lt; 2%** |
+
+API: `ThermalMesh`, `ThermalScheme`, `step_backward_euler` /
+`step_crank_nicolson`, `rod_fourier_mode1`, `semi_infinite_erfc`,
+`robin_lumped_exp`, `apply_thermal_expansion_from_cold`,
+`apply_thermal_expansion_tets_from_cold`, `clamped_thermal_stress`.
+Python: `ThermalRod`, `canonical_thermal_hash()`.
 
 ## Material table
 
@@ -98,10 +128,14 @@ fracture_strain, verified, source_note`.
 [`DETERMINISM.md`](DETERMINISM.md) (`materials_canonical_hash`). Packs J2 stress
 history + rod temperatures + fractured bar state.
 
+M29 implicit thermal: `cargo run -p pe-soft --bin thermal_hash --release` →
+`thermal_canonical_hash` (`becda3e8805b5b90`). Existing `materials_hash` /
+`soft_hash` / `soft_coupling_hash` unchanged.
+
 ## Deferred
 
 - Coupled XPBD + J2 on tet deformation gradients each step (constitutive return
   map is shipped; full FEM plastic soft-step integration deferred)
 - Cohesive fracture / crack-path tracking
-- Implicit / Crank–Nicolson thermal; radiation / convection BCs
-- Sourced / verified handbook rows (`verified: true`)
+- Radiation BCs; temperature-dependent `k(T)` / `c_p(T)`
+- Additional sourced / verified handbook rows

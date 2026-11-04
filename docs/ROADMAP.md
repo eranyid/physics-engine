@@ -190,9 +190,10 @@ Sizes are relative engineering scope, not calendar schedules.
 ### D8 — Materials (elasticity, plasticity, friction, thermal)
 
 - **Models:** Hookean / neo-Hookean continuum hooks; Mohr–Coulomb / von Mises
-  yield; frictional contact already in D2; heat capacity + conduction later.
+  yield; frictional contact already in D2; heat capacity + **implicit conduction
+  (M29)** with thermo-elastic expansion.
 - **Validation:** uniaxial stress–strain; elastic wave speed \(\sqrt{E/\rho}\);
-  plastic limit loads on simple geometries; Stefan / 1-D heat solutions.
+  plastic limit loads on simple geometries; Stefan / 1-D heat / erfc solutions.
 - **Effort:** L (start M for rigid material params only).
 
 ### D9 — Soft bodies
@@ -236,7 +237,8 @@ ported early because the Python oracle already exists.
 | **M25** | Godot usable for games | Authored bodies/shapes/joints; raycast + sphere cast + overlap; contact signals; fixed-step + interpolation; Linux headless suite (drop hash locked); Win/macOS `pe-godot` build-only | **done** |
 | **M26** | Game perf | Criterion/CI hot-path benches + scaling; alloc reuse / layout; optional `parallel` (off by default); CI regression vs baseline; `docs/PERFORMANCE.md`; hashes unchanged | **done** |
 | **M27** | Hardening + Holtrop | Typed blast/hydro errors; Holtrop–Mennen 1982; hashes unchanged | **done** |
-| **M28** | Soft↔rigid two-way coupling | XPBD attachment + particle↔rigid convex contact; momentum / support / freefall CoM / pendulum / energy oracles; locked coupling hash; Python + example; existing hashes unchanged | **this PR** |
+| **M28** | Soft↔rigid two-way coupling | XPBD attachment + particle↔rigid convex contact; momentum / support / freefall CoM / pendulum / energy oracles; locked coupling hash; Python + example; existing hashes unchanged | **done** |
+| **M29** | Implicit thermal + thermo-elastic | BE/CN conduction on rods/tets; Dirichlet/Neumann/Robin; Fourier/erfc/steady/energy/stability/CN-order/Robin/expansion oracles; locked `thermal_hash`; Python + example; existing hashes unchanged | **this PR** |
 
 ### M1–M2 as built (summary)
 
@@ -435,7 +437,7 @@ ported early because the Python oracle already exists.
 - PyO3 `SoftWorld` returning NumPy `(n,3)` arrays; pytest in
   `tests/test_soft_rust.py`. Criterion benches in [`BENCHMARKS.md`](BENCHMARKS.md).
 - **Deferred:** corotational FEM; full per-step FEM plastic XPBD coupling;
-  cohesive fracture; implicit thermal; more handbook species cells
+  cohesive fracture; radiation / `k(T)`; more handbook species cells
   (wood/elastomer); soft scene-schema I/O; capsule/hull soft↔rigid contacts.
 
 ### M28 as built (summary)
@@ -451,6 +453,24 @@ ported early because the Python oracle already exists.
   materials / bake / Godot / blast / cummins / scene hashes **unchanged**.
 - PyO3 `SoftRigidWorld` + pytest; example `soft_rigid_hang`; scene soft I/O
   deferred (backward compatible).
+
+### M29 as built (summary)
+
+- Implicit heat conduction on `ThermalMesh` (1-D rods + linear-tet assembly):
+  backward Euler + Crank–Nicolson θ-method; Dirichlet / Neumann / insulated /
+  Robin (`h A`); Thomas (tridiagonal) or deterministic CG; portable `libm`
+  (`erfc`); no `HashMap` / no `mul_add`. Thermo-elastic coupling:
+  `α ΔT` rest updates on distance / volume / tet XPBD constraints.
+- Oracles (measured → CI lock): BE Fourier ~5.4e-4 (&lt;0.5%); semi-infinite
+  erfc ~0.21 K (&lt;2 K); steady ~5e-12; insulated energy &lt;1e-11; BE at
+  100×CFL monotone; CN self-conv ratio ~4.20; Robin lumped ~0.67% (&lt;2%);
+  free expansion + clamped `E α ΔT` ~7e-14 (&lt;2%).
+- Determinism: cross-OS `thermal_hash` (`becda3e8805b5b90`); soft /
+  materials (`19498ab91f6febdc`) / soft_coupling (`3dfd4cf670923310`) / bake /
+  Godot / blast / cummins / scene / ballistics hashes **unchanged**.
+- PyO3 `ThermalRod` + NumPy temperatures + pytest; example `soft_thermal_rod`;
+  docs [`MATERIALS.md`](MATERIALS.md) / [`SOFT.md`](SOFT.md). Clean-room from
+  Incropera / Carslaw & Jaeger (formulas only).
 
 **Rule.** No milestone merges without: (1) analytic or published benchmark tests,
 (2) oracle or cross-impl diff where a Python reference exists, (3) CI green.

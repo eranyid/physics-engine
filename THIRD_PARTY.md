@@ -235,6 +235,24 @@ PositionBasedDynamics source copied):
   `verified: true` only with MatWeb / ASM MatWeb / CRC–IAPWS citations in
   `source_note` (retrieved 2026-11-01). See [`docs/MATERIALS.md`](docs/MATERIALS.md).
 
+### M29 note (`pe-soft` implicit thermal)
+
+Clean-room formulas only — **no** third-party FEM / heat-transfer source copied:
+
+- Incropera, F. P. & DeWitt, D. P., *Fundamentals of Heat and Mass Transfer* —
+  1-D conduction, semi-infinite erfc surface-step solution, lumped Robin
+  (Bi ≪ 1) exponential cooling, Fourier-number / Biot definitions.
+- Carslaw, H. S. & Jaeger, J. C., *Conduction of Heat in Solids* — slab
+  Fourier-series solutions; semi-infinite solid.
+- Standard θ-method (backward Euler / Crank–Nicolson) + Thomas tridiagonal /
+  conjugate-gradient SPD solve (textbook numerical linear algebra).
+- Linear isotropic thermal expansion `ε_th = α ΔT` / clamped stress `σ = −E α ΔT`
+  (continuum thermoelasticity identities).
+
+See [`docs/MATERIALS.md`](docs/MATERIALS.md). Measured oracle numbers in that
+doc are from this codebase’s runs — not copied from tables as “verified”
+handbook data.
+
 ### M28 note (`pe-soft` soft↔rigid two-way coupling)
 
 Clean-room algorithms only — **no** NVIDIA FleX / PhysX / Soft Body /
