@@ -307,7 +307,6 @@ fn thermoelastic_free_and_clamped() {
         iterations: 2,
         damping: 1.0,
         gravity: Vec3::zero(),
-        ..SoftParams::default()
     };
     let i0 = w.add_particle(Particle::pinned(Vec3::zero()));
     let i1 = w.add_particle(Particle::pinned(Vec3::new(l0, 0.0, 0.0)));
@@ -379,9 +378,11 @@ fn tet_mesh_conduction_steps() {
 
 #[test]
 fn thermal_hash_bit_stable() {
+    const {
+        assert!(THERMAL_HASH_STEPS > 0);
+        assert!(THERMAL_HASH_DT > 0.0);
+    }
     let a = thermal_canonical_hash();
     let b = thermal_canonical_hash();
     assert_eq!(a, b);
-    // Ensure scenario actually advanced (dt ≫ 0).
-    assert!(THERMAL_HASH_STEPS > 0 && THERMAL_HASH_DT > 0.0);
 }
