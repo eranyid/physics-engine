@@ -478,6 +478,19 @@ jobs:
             exit 1
           fi
 
+      - name: Compute canonical soft↔rigid coupling hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-soft --bin soft_coupling_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical soft↔rigid coupling hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=3dfd4cf670923310
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::Soft↔rigid coupling determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+
       - name: Compute canonical fluid-tank hash
         shell: bash
         run: |

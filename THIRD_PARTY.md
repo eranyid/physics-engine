@@ -235,6 +235,20 @@ PositionBasedDynamics source copied):
   `verified: true` only with MatWeb / ASM MatWeb / CRC–IAPWS citations in
   `source_note` (retrieved 2026-11-01). See [`docs/MATERIALS.md`](docs/MATERIALS.md).
 
+### M28 note (`pe-soft` soft↔rigid two-way coupling)
+
+Clean-room algorithms only — **no** NVIDIA FleX / PhysX / Soft Body /
+PositionBasedDynamics / Bullet soft-body source copied:
+
+- Macklin XPBD (2016) + Small Steps (2019) — shared soft/rigid substep loop,
+  compliance `α̃ = α/h²`, force estimate `f ≈ λ/h²`.
+- Müller et al. (2007) Position Based Dynamics — rigid generalized inverse mass
+  at a point `W = m⁻¹I − [r×] I⁻¹ [r×]` for attachment / contact projections.
+- Deul, Charrier, Bender (position-based rigid–soft coupling literature) —
+  structural ideas only (attachment + unilateral contacts inside PBD/XPBD).
+
+See [`docs/SOFT.md`](docs/SOFT.md).
+
 ### Particle fluids note (`pe-fluid`)
 
 Clean-room formulas only — **no** third-party SPH/PBF source translated

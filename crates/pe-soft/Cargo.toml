@@ -8,6 +8,7 @@ description = "XPBD soft bodies, cloth, ropes, and basic continuum material mode
 
 [dependencies]
 pe-math = { workspace = true }
+pe-core = { workspace = true }
 
 [dev-dependencies]
 approx = { workspace = true }
@@ -26,3 +27,7 @@ path = "src/bin/soft_hash.rs"
 [[bin]]
 name = "materials_hash"
 path = "src/bin/materials_hash.rs"
+
+[[bin]]
+name = "soft_coupling_hash"
+path = "src/bin/soft_coupling_hash.rs"

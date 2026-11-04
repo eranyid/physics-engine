@@ -12,7 +12,10 @@ use pe_soft::plasticity::{return_map_uniaxial, J2Params, UniaxialPlasticState};
 use pe_soft::scenarios::{materials_canonical_hash, soft_canonical_hash};
 use pe_soft::solver::{SoftParams, SoftWorld};
 use pe_soft::thermal::{free_expansion_delta_l, rod_fourier_mode1};
-use pe_soft::{kinetic_energy, total_energy};
+use pe_soft::{
+    kinetic_energy, make_momentum_exchange_scene, make_pendulum_bob, make_rope_on_free_body,
+    make_soft_on_box_on_ground, soft_coupling_canonical_hash, total_energy, SoftRigidWorld,
+};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyModule;
@@ -343,11 +346,162 @@ impl PySoftWorld {
     }
 }
 
+/// Canonical soft↔rigid coupling determinism hash (M28).
+#[pyfunction]
+fn canonical_soft_coupling_hash() -> u64 {
+    soft_coupling_canonical_hash()
+}
+
+/// Two-way soft XPBD ↔ dynamic rigid coupling world.
+#[pyclass(name = "SoftRigidWorld")]
+struct PySoftRigidWorld {
+    inner: SoftRigidWorld,
+}
+
+#[pymethods]
+impl PySoftRigidWorld {
+    /// Rope of mass `m_rope` attached to a free rigid sphere of mass `m_body`.
+    #[staticmethod]
+    #[pyo3(signature = (m_rope=1.0, m_body=3.0, segments=6, compliance=1e-6))]
+    fn rope_on_free_body(m_rope: f64, m_body: f64, segments: usize, compliance: f64) -> Self {
+        Self {
+            inner: make_rope_on_free_body(m_rope, m_body, segments, compliance),
+        }
+    }
+
+    /// Soft jelly cube resting on a dynamic box on a ground plane.
+    #[staticmethod]
+    fn soft_on_box_on_ground() -> Self {
+        Self {
+            inner: make_soft_on_box_on_ground(),
+        }
+    }
+
+    /// Heavy rigid bob on a stiff rope (top pinned). Returns world; length is 1 m.
+    #[staticmethod]
+    #[pyo3(signature = (m_bob=5.0, m_rope=0.05, length=1.0, segments=8, compliance=1e-8))]
+    fn pendulum_bob(
+        m_bob: f64,
+        m_rope: f64,
+        length: f64,
+        segments: usize,
+        compliance: f64,
+    ) -> Self {
+        let (world, _l) = make_pendulum_bob(m_bob, m_rope, length, segments, compliance);
+        Self { inner: world }
+    }
+
+    /// Isolated soft-particle cluster vs free box (no gravity) for momentum checks.
+    #[staticmethod]
+    fn momentum_exchange() -> Self {
+        Self {
+            inner: make_momentum_exchange_scene(),
+        }
+    }
+
+    /// Soft particle count.
+    #[getter]
+    fn n_soft(&self) -> usize {
+        self.inner.soft.len()
+    }
+
+    /// Rigid body count.
+    #[getter]
+    fn n_rigid(&self) -> usize {
+        self.inner.rigid.n
+    }
+
+    /// Simulation time [s] (soft clock).
+    #[getter]
+    fn t(&self) -> f64 {
+        self.inner.soft.t
+    }
+
+    /// Soft positions `(n, 3)`.
+    fn soft_x<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
+        let n = self.inner.soft.len();
+        let flat = self.inner.soft.positions_flat();
+        let arr = PyArray1::from_vec(py, flat);
+        arr.reshape([n, 3]).expect("reshape soft_x")
+    }
+
+    /// Rigid COM positions `(n_rigid, 3)`.
+    fn rigid_x<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
+        let n = self.inner.rigid.n;
+        let mut flat = Vec::with_capacity(n * 3);
+        for i in 0..n {
+            flat.extend_from_slice(&self.inner.rigid.state.x[i].to_array());
+        }
+        let arr = PyArray1::from_vec(py, flat);
+        arr.reshape([n, 3]).expect("reshape rigid_x")
+    }
+
+    /// Combined centre of mass `[x,y,z]`.
+    fn combined_com(&self) -> [f64; 3] {
+        self.inner.combined_com().to_array()
+    }
+
+    /// Total linear momentum `[px,py,pz]` [kg m/s].
+    fn total_linear_momentum(&self) -> [f64; 3] {
+        self.inner.total_linear_momentum().to_array()
+    }
+
+    /// Total mechanical energy estimate [J].
+    fn total_energy(&self) -> f64 {
+        self.inner.total_energy()
+    }
+
+    /// Last outer-step ground support force `[Fx,Fy,Fz]` [N].
+    fn ground_force(&self) -> [f64; 3] {
+        self.inner.diagnostics.ground_force.to_array()
+    }
+
+    /// Configure soft substeps / damping / gravity (also drives rigid gravity).
+    #[pyo3(signature = (substeps=None, iterations=None, damping=None, gravity=None))]
+    fn set_params(
+        &mut self,
+        substeps: Option<usize>,
+        iterations: Option<usize>,
+        damping: Option<f64>,
+        gravity: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<()> {
+        if let Some(s) = substeps {
+            self.inner.soft.params.substeps = s;
+        }
+        if let Some(i) = iterations {
+            self.inner.soft.params.iterations = i;
+        }
+        if let Some(d) = damping {
+            self.inner.soft.params.damping = d;
+        }
+        if let Some(g) = gravity {
+            self.inner.soft.params.gravity = vec3_from_seq(g)?;
+        }
+        Ok(())
+    }
+
+    /// One outer coupled step; **releases the GIL**.
+    fn step(&mut self, py: Python<'_>, dt: f64) {
+        py.allow_threads(|| {
+            self.inner.step(dt);
+        });
+    }
+
+    /// Run to `t_end` with fixed `dt`; **releases the GIL**.
+    fn run(&mut self, py: Python<'_>, t_end: f64, dt: f64) {
+        py.allow_threads(|| {
+            self.inner.run_for(t_end, dt);
+        });
+    }
+}
+
 /// Register soft-body bindings.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySoftWorld>()?;
+    m.add_class::<PySoftRigidWorld>()?;
     m.add_function(wrap_pyfunction!(canonical_soft_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_materials_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(canonical_soft_coupling_hash, m)?)?;
     m.add_function(wrap_pyfunction!(soft_material_names, m)?)?;
     m.add_function(wrap_pyfunction!(soft_material_dict, m)?)?;
     m.add_function(wrap_pyfunction!(soft_lame_parameters, m)?)?;
