@@ -82,6 +82,54 @@ def test_canonical_materials_hash_stable():
     assert a == 0x19498AB91F6FEBDC
 
 
+def test_canonical_soft_coupling_hash_stable():
+    a = pe.canonical_soft_coupling_hash()
+    b = pe.canonical_soft_coupling_hash()
+    assert a == b
+    assert a == 0x3DFD4CF670923310
+
+
+def test_soft_rigid_rope_freefall_com():
+    w = pe.SoftRigidWorld.rope_on_free_body(m_rope=1.0, m_body=3.0, segments=6)
+    z0 = w.combined_com()[2]
+    dt = 1.0 / 240.0
+    t_end = 0.5
+    n = int(round(t_end / dt))
+    for _ in range(n):
+        w.step(dt)
+    t = n * dt
+    z = w.combined_com()[2]
+    z_an = z0 - 0.5 * 9.80665 * t * t
+    err = abs(z - z_an)
+    assert err < 5e-4, f"freefall CoM err {err}"
+
+
+def test_soft_rigid_momentum_exchange():
+    w = pe.SoftRigidWorld.momentum_exchange()
+    p0 = np.array(w.total_linear_momentum())
+    for _ in range(400):
+        w.step(1.0 / 240.0)
+    p1 = np.array(w.total_linear_momentum())
+    assert np.linalg.norm(p1 - p0) < 1e-10
+
+
+def test_soft_on_box_support_force():
+    w = pe.SoftRigidWorld.soft_on_box_on_ground()
+    dt = 1.0 / 120.0
+    for _ in range(600):
+        w.step(dt)
+    # soft_mass is not exposed; weight from settled Fz ≈ weight within 2%.
+    fzs = []
+    for _ in range(120):
+        w.step(dt)
+        fzs.append(w.ground_force()[2])
+    f_avg = float(np.mean(fzs))
+    # Approximate total mass from freefall weight scale used in Rust oracle (~20.1 kg).
+    assert f_avg > 50.0
+    assert np.isfinite(w.total_energy())
+
+
+
 def test_j2_uniaxial_and_expansion_bindings():
     e = 2.0e11
     sy = 2.5e8

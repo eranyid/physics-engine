@@ -40,6 +40,37 @@ quasistatic loads (not cleared automatically).
 - **Self-collision** via spatial hash into `Vec` buckets; pairs sorted by
   `(min_id, max_id)` before resolution (deterministic).
 
+### Two-way rigid coupling (M28)
+
+`SoftRigidWorld` (`pe_soft::coupling`) couples XPBD particles to dynamic
+`pe-core` rigid bodies inside the same substep loop:
+
+| Constraint | Model |
+| --- | --- |
+| **Attachment** | Soft particle pinned to a body-frame point: `C = x_p − (x + R local)` solved as a 3-vector XPBD system with rigid generalized inverse mass `W = m⁻¹I − [r×] I⁻¹ [r×]` at the attach point (Müller PBD / Deul–Bender style). Compliance α [m/N] per axis (`α = 0` hard). |
+| **Contact** | Soft particle vs dynamic **OBB box** or **sphere**: unilateral positional XPBD along the contact normal; equal-and-opposite positional impulse on the rigid. Friction/restitution damp the particle relative velocity. |
+| **Rigid–plane** | Dynamic box/sphere vs static planes (support point / sphere radius) so platforms can rest on the ground while soft bodies land on them. |
+
+Gravity is taken from `SoftParams::gravity` and applied identically to soft
+prediction and rigid prediction (no separate `ForceGenerator` on the hash path).
+Velocities are reconstructed from positions / orientations after each substep.
+Force diagnostics use Macklin XPBD `f ≈ λ / h²`.
+
+**Limits (honest):**
+
+- Convex shapes for coupling contacts: box + sphere only (no capsule/hull yet).
+- Soft self-collision and soft–static paths remain one-way (statics infinite mass).
+- Angular CCD / continuous soft–rigid collision for thin sheets deferred.
+- Scene-schema serialization of soft worlds / attachments is **deferred** (API +
+  Python only in M28; keep scene v3 backward compatible without a soft bump).
+- Energy estimate for contact-rich stacks can chatter; the locked energy oracle
+  uses a contact-free damped attachment oscillator.
+
+**References (algorithms only — clean-room; see `THIRD_PARTY.md`):** Macklin
+XPBD (2016) + Small Steps (2019); Müller et al. PBD (2007) rigid generalized
+mass; Deul / Bender position-based rigid–soft coupling ideas. No FleX / PhysX /
+PositionBasedDynamics source copied.
+
 ## Materials
 
 `Material { density, youngs_modulus, poisson_ratio, friction, restitution,
@@ -78,6 +109,11 @@ when the caller invokes them).
 | Conservative spring energy (long run) | **no growth** (`E_max=E₀`); decay **≈12.7% at t≈21 s**, **≈23.8% at t≈42 s** (`α=0.01`, 64 substeps, `dt=1/240`) | XPBD numerical dissipation — not symplectic. CI locks decay bands. |
 | Substep residual study | more substeps do not worsen loaded distance residual | — |
 | Balloon overpressure | volume increases toward target | — |
+| Soft↔rigid linear momentum (isolated, no g) | abs drift **~2.8e-13**; CI **&lt; 1e-10** | Particle cluster vs free box |
+| Soft on rigid box on ground (support = weight) | rel **~0.36%**; CI **&lt; 2%** | After settle; KE &lt; 0.05 J |
+| Rope + free rigid freefall CoM | abs **~3.2e-4 m** at t=0.5 s; CI **&lt; 5e-4 m** | vs `z₀ − ½ g t²` |
+| Pendulum heavy bob / stiff rope | period rel **~0.03%**; CI **&lt; 1%** | Small-angle `T=2π√(L/g)` |
+| Damped attachment oscillator energy | **E_max = E₀**; decay **~52%** over 2000×1/240 s | No contacts; CI no growth + drop &gt; 1% |
 
 ### Axial / FEM notes
 
@@ -108,6 +144,11 @@ Canonical scene (rope + cloth + jelly above `z=0` plane), 120 steps @ 1/60 s,
 10 substeps: see [`DETERMINISM.md`](DETERMINISM.md) and
 `cargo run -p pe-soft --bin soft_hash --release`.
 
+Soft↔rigid coupling hash: `cargo run -p pe-soft --bin soft_coupling_hash --release`
+(rope on dynamic box + jelly on dynamic platform, 180×1/120, 20 substeps) —
+locked in [`DETERMINISM.md`](DETERMINISM.md). Existing soft / materials /
+Godot / bake hashes are **unchanged** by M28.
+
 ## Python
 
 ```python
@@ -116,9 +157,14 @@ w = pe.SoftWorld.rope([-0.5,0,1], [0.5,0,1], segments=8)
 w.set_params(substeps=20, damping=1.0)
 w.run(1.0, 1/60)
 print(w.x().shape)  # (n, 3) NumPy
+
+# Two-way coupling
+c = pe.SoftRigidWorld.rope_on_free_body(m_rope=1.0, m_body=3.0)
+c.run(0.5, 1/240)
+print(c.combined_com(), hex(pe.canonical_soft_coupling_hash()))
 ```
 
-## Materials track (this PR)
+## Materials track
 
 See [`MATERIALS.md`](MATERIALS.md): J2 plasticity (&lt;1% uniaxial), fracture
 (&lt;2% threshold), thermal Fourier (&lt;2%), material table additions, locked
@@ -129,7 +175,7 @@ See [`MATERIALS.md`](MATERIALS.md): J2 plasticity (&lt;1% uniaxial), fracture
 - Full per-step FEM plastic coupling inside XPBD (constitutive map shipped)
 - Cohesive fracture / crack paths; tearing UI
 - Implicit thermal; radiation/convection BCs
-- Two-way coupling to rigid `ContactWorld` / joints
+- Capsule/hull soft↔rigid contacts; soft scene-schema I/O
 - Anisotropic cloth (warp/weft), wet cloth, continuous collision for thin sheets
 - GPU / SIMD particle loops
 - Additional handbook rows (wood species cells, elastomer compounds) with
@@ -142,5 +188,6 @@ See [`MATERIALS.md`](MATERIALS.md): J2 plasticity (&lt;1% uniaxial), fracture
 - Macklin (2019). Small Steps in Physics Simulation.
 - Macklin & Müller (2021). A Constraint-based Formulation of Stable Neo-Hookean Elasticity.
 - Müller et al. (2005). Meshless deformations based on shape matching.
+- Deul, Charrier, Bender — position-based rigid / soft coupling (algorithms only).
 - Simo & Hughes — J2 return mapping / isotropic hardening (textbook identities).
 - Fourier — 1-D heat equation fundamental mode (textbook).

@@ -31,6 +31,10 @@ path = "bake_scene.rs"
 name = "ci_bench"
 path = "ci_bench.rs"
 
+[[bin]]
+name = "soft_rigid_hang"
+path = "soft_rigid_hang.rs"
+
 [dependencies]
 pe-math = { workspace = true }
 pe-core = { workspace = true }

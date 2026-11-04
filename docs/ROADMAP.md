@@ -234,7 +234,9 @@ ported early because the Python oracle already exists.
 | **M22** | Hardening / safety | Property+fuzz tests; invariants (NaN, energy, momentum, determinism); long-run stability suite + `docs/STABILITY.md`; typed boundary errors; rustdoc; `.pyi`; `examples/` | **done** |
 | **M24** | Simulation baking | Offline scene → per-body Hermite/slerp transform curves; bake JSON schema; keyframe reduction; C/Python/CLI; locked hash; analytic oracles | **done** |
 | **M25** | Godot usable for games | Authored bodies/shapes/joints; raycast + sphere cast + overlap; contact signals; fixed-step + interpolation; Linux headless suite (drop hash locked); Win/macOS `pe-godot` build-only | **done** |
-| **M26** | Game perf | Criterion/CI hot-path benches + scaling; alloc reuse / layout; optional `parallel` (off by default); CI regression vs baseline; `docs/PERFORMANCE.md`; hashes unchanged | **this PR** |
+| **M26** | Game perf | Criterion/CI hot-path benches + scaling; alloc reuse / layout; optional `parallel` (off by default); CI regression vs baseline; `docs/PERFORMANCE.md`; hashes unchanged | **done** |
+| **M27** | Hardening + Holtrop | Typed blast/hydro errors; Holtrop–Mennen 1982; hashes unchanged | **done** |
+| **M28** | Soft↔rigid two-way coupling | XPBD attachment + particle↔rigid convex contact; momentum / support / freefall CoM / pendulum / energy oracles; locked coupling hash; Python + example; existing hashes unchanged | **this PR** |
 
 ### M1–M2 as built (summary)
 
@@ -433,8 +435,22 @@ ported early because the Python oracle already exists.
 - PyO3 `SoftWorld` returning NumPy `(n,3)` arrays; pytest in
   `tests/test_soft_rust.py`. Criterion benches in [`BENCHMARKS.md`](BENCHMARKS.md).
 - **Deferred:** corotational FEM; full per-step FEM plastic XPBD coupling;
-  cohesive fracture; implicit thermal; rigid two-way coupling; more handbook
-  species cells (wood/elastomer).
+  cohesive fracture; implicit thermal; more handbook species cells
+  (wood/elastomer); soft scene-schema I/O; capsule/hull soft↔rigid contacts.
+
+### M28 as built (summary)
+
+- `pe_soft::coupling::SoftRigidWorld`: XPBD substeps shared with dynamic
+  `pe-core` rigid bodies; **attachment** (3-vector XPBD + rigid generalized
+  inverse mass) and **contact** (particle vs dynamic box/sphere) plus
+  rigid–plane support. Docs: [`SOFT.md`](SOFT.md).
+- Oracles (measured → CI lock): momentum abs ~2.8e-13 (&lt;1e-10); support vs
+  weight ~0.36% (&lt;2%); freefall CoM ~3.2e-4 m (&lt;5e-4); pendulum period
+  ~0.03% (&lt;1%); damped attachment energy no growth.
+- Determinism: cross-OS `soft_coupling_hash` (`3dfd4cf670923310`); soft /
+  materials / bake / Godot / blast / cummins / scene hashes **unchanged**.
+- PyO3 `SoftRigidWorld` + pytest; example `soft_rigid_hang`; scene soft I/O
+  deferred (backward compatible).
 
 **Rule.** No milestone merges without: (1) analytic or published benchmark tests,
 (2) oracle or cross-impl diff where a Python reference exists, (3) CI green.

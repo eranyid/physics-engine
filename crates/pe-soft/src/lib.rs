@@ -9,7 +9,8 @@
 //! Constraints: distance, distance-based / dihedral bending, tetra volume,
 //! tetrahedral StVK / stable neo-Hookean FEM (Macklin & Müller 2021), optional
 //! shape matching, pressure/volume balloons, static plane/sphere/box contacts,
-//! and self-collision via a deterministic spatial hash.
+//! self-collision via a deterministic spatial hash, and **two-way coupling** to
+//! dynamic `pe-core` rigid bodies (attachments + particle↔convex contacts).
 //!
 //! Materials track: J2 von Mises plasticity with linear isotropic hardening,
 //! max-principal stress/strain fracture (distance + tet) with deterministic
@@ -30,8 +31,7 @@
 //!
 //! # Deferred
 //!
-//! Corotational FEM, anisotropic cloth, two-way rigid coupling, GPU/SIMD —
-//! see [`docs/SOFT.md`](../../docs/SOFT.md).
+//! Corotational FEM, anisotropic cloth, GPU/SIMD — see [`docs/SOFT.md`](../../docs/SOFT.md).
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
@@ -41,6 +41,7 @@
 pub mod builders;
 pub mod collision;
 pub mod constraint;
+pub mod coupling;
 pub mod energy;
 pub mod fracture;
 pub mod material;
@@ -62,6 +63,13 @@ pub use constraint::{
     mesh_volume, tetra_dm_inv, tetra_volume, ConstraintSet, DihedralBendConstraint,
     DistanceBendConstraint, DistanceConstraint, Multiplier, PressureConstraint,
     ShapeMatchConstraint, TetraFemConstraint, VolumeConstraint,
+};
+pub use coupling::{
+    make_damped_attachment_oscillator, make_momentum_exchange_scene, make_pendulum_bob,
+    make_rope_on_free_body, make_soft_on_box_on_ground, soft_coupling_canonical_hash,
+    soft_coupling_hash_world, soft_coupling_state_hash64, AttachmentConstraint,
+    CouplingDiagnostics, RigidCollider, RigidShape, SoftRigidWorld, COUPLING_HASH_DT,
+    COUPLING_HASH_STEPS,
 };
 pub use energy::{
     gravitational_potential, kinetic_energy, stretch_potential, total_energy, volume_error_sum,

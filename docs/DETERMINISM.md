@@ -53,6 +53,8 @@ Cross-check helpers:
   `physics_engine_rs.canonical_soft_hash()`
 - Materials track: `cargo run -p pe-soft --bin materials_hash --release` /
   `physics_engine_rs.canonical_materials_hash()`
+- M28 soft↔rigid coupling: `cargo run -p pe-soft --bin soft_coupling_hash --release` /
+  `physics_engine_rs.canonical_soft_coupling_hash()`
 - M11 Morison+BEM: `cargo run -p pe-hydro --bin m11_hash --release` /
   `physics_engine_rs.canonical_m11_hash()`
 - M21 6-DOF Cummins: `cargo run -p pe-hydro --bin cummins6_hash --release` /
@@ -435,6 +437,29 @@ Scenario (`pe_soft::materials_canonical_hash`, `materials_hash` binary,
 | Windows (CI) | same expected | CI asserts equality |
 
 Helper: `cargo run -p pe-soft --bin materials_hash --release`.
+
+### Canonical soft↔rigid coupling hash (locked, M28)
+
+Scenario (`pe_soft::soft_coupling_canonical_hash`, `soft_coupling_hash` binary,
+`physics_engine_rs.canonical_soft_coupling_hash()`):
+
+- Rope (8 seg, mass 0.3 kg) attached to a dynamic box; jelly cube (2-div) above a
+  second dynamic box on a `z=0` plane; gravity −z; damping 0.05; 20 XPBD
+  substeps, 2 iterations.
+- 180 outer steps at `dt = 1/120`.
+- Hash: FNV-1a 64 over soft packed `(x‖v)`, then rigid `State::pack()` IEEE bits.
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `3dfd4cf670923310` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+Existing soft (`adfc0a4c1209e5dc`), materials, bake, Godot drop, blast, cummins,
+scene, and fluid coupling hashes are **unchanged** when soft↔rigid coupling is
+unused.
+
+Helper: `cargo run -p pe-soft --bin soft_coupling_hash --release`.
 
 ### Canonical fluid-tank hash (locked)
 
