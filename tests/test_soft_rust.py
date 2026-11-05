@@ -96,6 +96,39 @@ def test_canonical_thermal_hash_stable():
     assert a == 0xBECDA3E8805B5B90
 
 
+def test_canonical_plastic_hash_stable():
+    a = pe.canonical_plastic_hash()
+    b = pe.canonical_plastic_hash()
+    assert a == b
+    assert a == 0x73D9EBDD6677EC8C
+
+
+def test_plastic_bar_permanent_set():
+    e = 2.0e11
+    sy = 2.5e8
+    h = 2.0e9
+    eps_y = sy / e
+    eps = eps_y + 2e-3
+    analytic = pe.soft_analytic_permanent_strain(e, 0.3, sy, h, eps)
+    length, eps_p, analytic2 = pe.soft_quasistatic_stretch_unload(
+        e, 0.3, sy, h, 1.0, 0.01, eps
+    )
+    assert abs(analytic - analytic2) < 1e-15
+    expect = 1.0 * (1.0 + analytic)
+    assert abs(eps_p - analytic) / abs(analytic) < 0.01
+    assert abs(length - expect) / expect < 0.01
+    bar = pe.PlasticBar(e, 0.3, sy, h, l0=1.0, area=0.01)
+    bar.set_damping(2.0)
+    bar.set_free_end_x(1.0 * (1.0 + eps))
+    bar.set_free_end_pinned(True)
+    for _ in range(40):
+        bar.step(1.0 / 240.0)
+        bar.set_free_end_x(1.0 * (1.0 + eps))
+    eps_p_b, alpha, stress = bar.plastic_state()
+    assert eps_p_b > 0.0 and alpha > 0.0 and stress > sy
+    assert bar.x().shape == (2, 3)
+
+
 def test_thermal_rod_backward_euler_numpy():
     rod = pe.ThermalRod(
         33, 1.0, 0.01, 8960.0, 385.0, 400.0, 16.5e-6, t_ref=0.0

@@ -57,6 +57,8 @@ Cross-check helpers:
   `physics_engine_rs.canonical_soft_coupling_hash()`
 - M29 implicit thermal: `cargo run -p pe-soft --bin thermal_hash --release` /
   `physics_engine_rs.canonical_thermal_hash()`
+- M30 plastic XPBD coupling: `cargo run -p pe-soft --bin plastic_hash --release` /
+  `physics_engine_rs.canonical_plastic_hash()`
 - M11 Morison+BEM: `cargo run -p pe-hydro --bin m11_hash --release` /
   `physics_engine_rs.canonical_m11_hash()`
 - M21 6-DOF Cummins: `cargo run -p pe-hydro --bin cummins6_hash --release` /
@@ -485,6 +487,30 @@ Existing soft (`adfc0a4c1209e5dc`), materials (`19498ab91f6febdc`), soft_couplin
 are **unchanged**.
 
 Helper: `cargo run -p pe-soft --bin thermal_hash --release`.
+
+### Canonical M30 plastic XPBD coupling hash (locked)
+
+Scenario (`pe_soft::plastic_canonical_hash`, `plastic_hash` binary,
+`physics_engine_rs.canonical_plastic_hash()`):
+
+- Steel-like J2 params (`E=2e11`, `ν=0.3`, `σ_y=2.5e8`, `H=2e9`); pinned–free
+  distance bar stretched past yield (`ε = ε_y + 1.5e-3`) with damping 0.5;
+  plus a single StVK tet with three verts pinned and apex compressed to 0.85×.
+- 120 outer XPBD+plastic steps at `dt = 1/240`.
+- Hash: FNV-1a 64 over soft packed `(x‖v)`, then bar `(ε_p, α, σ, rest)` and
+  tet `(α, ‖σ‖_F, V₀)` IEEE bits (fixed order; no `HashMap`).
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `73d9ebdd6677ec8c` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+Existing soft (`adfc0a4c1209e5dc`), materials (`19498ab91f6febdc`), soft_coupling
+(`3dfd4cf670923310`), thermal (`becda3e8805b5b90`), bake, Godot, blast, cummins,
+scene, and ballistics hashes are **unchanged**.
+
+Helper: `cargo run -p pe-soft --bin plastic_hash --release`.
 
 ### Canonical fluid-tank hash (locked)
 

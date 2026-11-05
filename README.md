@@ -71,6 +71,7 @@ cargo run -p pe-soft --bin soft_hash --release
 cargo run -p pe-soft --bin materials_hash --release
 cargo run -p pe-soft --bin soft_coupling_hash --release
 cargo run -p pe-soft --bin thermal_hash --release
+cargo run -p pe-soft --bin plastic_hash --release
 cargo run -p pe-hydro --bin m11_hash --release
 cargo run -p pe-hydro --bin cummins6_hash --release
 cargo run -p pe-scene --bin bake_hash --release
