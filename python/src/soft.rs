@@ -19,6 +19,10 @@ use pe_soft::plastic_coupling::{
 use pe_soft::plasticity::{return_map_uniaxial, J2Params, UniaxialPlasticState};
 use pe_soft::scenarios::{materials_canonical_hash, soft_canonical_hash, thermal_canonical_hash};
 use pe_soft::solver::{SoftParams, SoftWorld};
+use pe_soft::spectral_hencky_plastic::{
+    analytic_isochoric_uniaxial_seq, be_plastic_canonical_hash, make_be_plastic_bar,
+    BePlasticSoftWorld,
+};
 use pe_soft::thermal::{
     free_expansion_delta_l, init_rod_sine_mode, robin_lumped_exp, rod_fourier_mode1,
     semi_infinite_erfc, ThermalMesh, ThermalProps, ThermalScheme,
@@ -177,6 +181,19 @@ fn canonical_plastic_hash() -> u64 {
 #[pyfunction]
 fn canonical_fs_plastic_hash() -> u64 {
     fs_plastic_canonical_hash()
+}
+
+/// Canonical M32 spectral Hencky / Kirchhoff (`b_e`) plastic determinism hash.
+#[pyfunction]
+fn canonical_be_plastic_hash() -> u64 {
+    be_plastic_canonical_hash()
+}
+
+/// Analytic elastic-trial von Mises for isochoric uniaxial stretch: `3 μ |ln λ|`.
+#[pyfunction]
+fn soft_analytic_isochoric_uniaxial_seq(e: f64, nu: f64, lambda_stretch: f64) -> f64 {
+    let mu = e / (2.0 * (1.0 + nu));
+    analytic_isochoric_uniaxial_seq(mu, lambda_stretch)
 }
 
 /// Analytic permanent strain `ε_p` after virgin stretch to `eps_peak`.
@@ -962,6 +979,110 @@ impl PyFsPlasticBar {
     }
 }
 
+/// Soft XPBD bar with spectral Hencky world (M32; bars share M31 Hencky rest).
+#[pyclass(name = "BePlasticBar")]
+struct PyBePlasticBar {
+    inner: BePlasticSoftWorld,
+}
+
+#[pymethods]
+impl PyBePlasticBar {
+    /// Single pinned–free Hencky plastic distance bar in a spectral-`b_e` world.
+    #[new]
+    #[pyo3(signature = (e, nu, yield_strength, hardening, l0=1.0, area=0.01, mass=1.0, substeps=32))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        e: f64,
+        nu: f64,
+        yield_strength: f64,
+        hardening: f64,
+        l0: f64,
+        area: f64,
+        mass: f64,
+        substeps: usize,
+    ) -> PyResult<Self> {
+        if l0 <= 0.0 || area <= 0.0 || mass <= 0.0 || e <= 0.0 {
+            return Err(PyValueError::new_err(
+                "need l0>0, area>0, mass>0, E>0 for BePlasticBar",
+            ));
+        }
+        let p = J2Params {
+            youngs_modulus: e,
+            poisson_ratio: nu,
+            yield_strength,
+            hardening_modulus: hardening,
+        };
+        Ok(Self {
+            inner: make_be_plastic_bar(p, l0, area, mass, substeps),
+        })
+    }
+
+    /// Simulation time [s].
+    #[getter]
+    fn t(&self) -> f64 {
+        self.inner.t()
+    }
+
+    /// Number of particles (2 for a single bar).
+    #[getter]
+    fn n(&self) -> usize {
+        self.inner.soft.len()
+    }
+
+    /// Current free-end length [m].
+    fn length(&self) -> f64 {
+        let p = &self.inner.soft.particles;
+        (p[1].x - p[0].x).norm()
+    }
+
+    /// Current XPBD rest length [m] (`L₀ exp(ε_p)`).
+    fn rest_length(&self) -> f64 {
+        self.inner.soft.constraints.distances[0].rest_length
+    }
+
+    /// Plastic Hencky strain / eq plastic / stress `(ε_p, α, σ)`.
+    fn plastic_state(&self) -> (f64, f64, f64) {
+        let s = &self.inner.bars[0].state;
+        (s.plastic_strain, s.eq_plastic_strain, s.stress)
+    }
+
+    /// Set free-end position along x (pinned end stays at origin).
+    fn set_free_end_x(&mut self, x: f64) {
+        self.inner.soft.particles[1].x.x = x;
+        self.inner.soft.particles[1].v = pe_math::Vec3::zero();
+    }
+
+    /// Temporarily pin (`inv_mass=0`) or unpin the free end.
+    fn set_free_end_pinned(&mut self, pinned: bool) {
+        if pinned {
+            self.inner.soft.particles[1].inv_mass = 0.0;
+            self.inner.soft.particles[1].v = pe_math::Vec3::zero();
+        } else {
+            self.inner.soft.particles[1].inv_mass = 1.0;
+        }
+    }
+
+    /// Set damping [1/s].
+    fn set_damping(&mut self, damping: f64) {
+        self.inner.soft.params.damping = damping;
+    }
+
+    /// One XPBD + spectral plastic rest-update step; **releases the GIL**.
+    fn step(&mut self, py: Python<'_>, dt: f64) {
+        py.allow_threads(|| {
+            self.inner.step(dt);
+        });
+    }
+
+    /// Particle positions as NumPy `(n, 3)`.
+    fn x<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
+        let n = self.inner.soft.len();
+        let flat = self.inner.soft.positions_flat();
+        let arr = PyArray1::from_vec(py, flat);
+        arr.reshape([n, 3]).expect("reshape be_plastic_bar_x")
+    }
+}
+
 /// Register soft-body bindings.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySoftWorld>()?;
@@ -969,12 +1090,14 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyThermalRod>()?;
     m.add_class::<PyPlasticBar>()?;
     m.add_class::<PyFsPlasticBar>()?;
+    m.add_class::<PyBePlasticBar>()?;
     m.add_function(wrap_pyfunction!(canonical_soft_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_materials_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_soft_coupling_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_thermal_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_plastic_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_fs_plastic_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(canonical_be_plastic_hash, m)?)?;
     m.add_function(wrap_pyfunction!(soft_material_names, m)?)?;
     m.add_function(wrap_pyfunction!(soft_material_dict, m)?)?;
     m.add_function(wrap_pyfunction!(soft_lame_parameters, m)?)?;
@@ -986,6 +1109,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(soft_robin_lumped_exp, m)?)?;
     m.add_function(wrap_pyfunction!(soft_analytic_permanent_strain, m)?)?;
     m.add_function(wrap_pyfunction!(soft_analytic_log_permanent_strain, m)?)?;
+    m.add_function(wrap_pyfunction!(soft_analytic_isochoric_uniaxial_seq, m)?)?;
     m.add_function(wrap_pyfunction!(soft_quasistatic_stretch_unload, m)?)?;
     m.add_function(wrap_pyfunction!(soft_quasistatic_log_stretch_unload, m)?)?;
     Ok(())

@@ -203,9 +203,47 @@ M31 hash: `cargo run -p pe-soft --bin fs_plastic_hash --release` →
 (`73d9ebdd6677ec8c`) and soft / materials / soft_coupling / thermal hashes
 **unchanged**.
 
+## Spectral Hencky / Kirchhoff on `b_e` (M32)
+
+`BePlasticSoftWorld` upgrades the M31 tet trial from Green-of-`F_e` + Hooke to
+the full isotropic spectral algorithm on the elastic left Cauchy–Green tensor:
+
+1. `F_e^{tr} = F F_p⁻¹`, `b_e^{tr} = F_e^{tr}(F_e^{tr})ᵀ`
+2. Spectral: `b_e^{tr} = Σ λ_a² n_a ⊗ n_a`, Hencky `ε_a = ln(λ_a)`
+3. Kirchhoff `τ_a = λ tr(ε) + 2μ ε_a`; J2 return in principal Kirchhoff space
+4. `b_e ← Σ exp(2 ε_a) n_a ⊗ n_a`; `F_p ← exp(Δε_p) F_p` + isochoric projection
+
+Distance bars reuse the M31 Hencky rest update. At small shear (`γ = 10⁻³`) the
+Kirchhoff Frobenius agrees with the M31 Green+Hooke stress within 2%; at
+`γ = 0.4` they diverge by &gt;5%.
+
+### Oracle — measured (M32)
+
+| Check | Setup | Measured | CI lock |
+| --- | --- | --- | --- |
+| Isochoric uniaxial Kirchhoff | `λ` below yield | **~0** vs `τ₁=2μ ln λ` | **&lt; 1e-12** |
+| Isochoric uniaxial `σ_eq` | same | **~0** vs `3μ\|ln λ\|` | **&lt; 1e-12** |
+| Plastic surface | `λ=1.1` isochoric | **~0** | **&lt; 1e-10** |
+| `det b_e` after return | isochoric plastic | **~0** vs 1 | **&lt; 1e-10** |
+| Hydrostatic `b_e` | uniform stretch | no yield | — |
+| Tet dilatation / shear | unit tet, `γ=0.15` | no yield / surface | **&lt; 1e-10** det; **&lt; 1%** |
+| Small-shear ≡ Green | `γ=1e-3` | **≪ 2%** | **&lt; 2%** |
+| Large-shear divergence | `γ=0.4` | **≫ 5%** | **&gt; 5%** |
+| Hencky bar unload | `λ=1.06` | length vs `L₀ exp(ε_p)` | **&lt; 1%** |
+
+API: `BePlasticSoftWorld`, `return_map_spectral_hencky_be`,
+`update_be_plastic_tets`, `left_cauchy_green`, `sym_spectral_decompose`,
+`analytic_isochoric_uniaxial_kirchhoff`, `analytic_isochoric_uniaxial_seq`,
+`be_plastic_canonical_hash`. Python: `BePlasticBar`,
+`soft_analytic_isochoric_uniaxial_seq`, `canonical_be_plastic_hash()`.
+
+M32 hash: `cargo run -p pe-soft --bin be_plastic_hash --release` →
+`be_plastic_canonical_hash` (`8562bc39f064698e`). M31 `fs_plastic_hash`
+(`7c902cd304aea5ae`), M30 `plastic_hash` (`73d9ebdd6677ec8c`), and soft /
+materials / soft_coupling / thermal hashes **unchanged**.
+
 ## Deferred
 
-- Kirchhoff / spectral Hencky return on `b_e = F_e F_eᵀ` (full Simo 1992)
 - Cohesive fracture / crack-path tracking
 - Radiation BCs; temperature-dependent `k(T)` / `c_p(T)`
 - Additional sourced / verified handbook rows

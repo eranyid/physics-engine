@@ -284,6 +284,24 @@ plasticity source copied:
 
 See [`docs/MATERIALS.md`](docs/MATERIALS.md) / [`docs/SOFT.md`](docs/SOFT.md).
 
+### M32 note (`pe-soft` spectral Hencky / Kirchhoff on `b_e`)
+
+Clean-room formulas only — **no** FleX / PhysX / Soft Body / commercial FEM
+plasticity source copied:
+
+- Simo, J. C. (1992). Algorithms for static and dynamic multiplicative
+  plasticity that preserve the classical return mapping schemes of the
+  infinitesimal theory. *Comput. Methods Appl. Mech. Engrg.* **99** — spectral
+  return on elastic left Cauchy–Green `b_e = F_e F_eᵀ` with principal Hencky
+  strains and Kirchhoff stress (algorithms / textbook identities only).
+- Simo & Hughes *Computational Inelasticity* — isotropic Hencky elasticity
+  `τ = λ tr(ε) I + 2μ ε` in the principal basis of `b_e`; J2 radial return;
+  exponential `F_p` update + isochoric projection (shared with M31 helpers).
+- Closed-form isochoric uniaxial identities `τ₁ = 2μ ln λ`,
+  `σ_eq = 3μ |ln λ|` (continuum textbook).
+
+See [`docs/MATERIALS.md`](docs/MATERIALS.md) / [`docs/SOFT.md`](docs/SOFT.md).
+
 ### M28 note (`pe-soft` soft↔rigid two-way coupling)
 
 Clean-room algorithms only — **no** NVIDIA FleX / PhysX / Soft Body /

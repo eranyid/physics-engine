@@ -110,6 +110,13 @@ def test_canonical_fs_plastic_hash_stable():
     assert a == 0x7C902CD304AEA5AE
 
 
+def test_canonical_be_plastic_hash_stable():
+    a = pe.canonical_be_plastic_hash()
+    b = pe.canonical_be_plastic_hash()
+    assert a == b
+    assert a == 0x8562BC39F064698E
+
+
 def test_plastic_bar_permanent_set():
     e = 2.0e11
     sy = 2.5e8
@@ -164,6 +171,28 @@ def test_fs_plastic_bar_log_permanent_set():
     ep_eng = pe.soft_analytic_permanent_strain(e, 0.3, sy, h, 0.2)
     ep_log = pe.soft_analytic_log_permanent_strain(e, 0.3, sy, h, math.log(1.2))
     assert abs(ep_log - ep_eng) / abs(ep_eng) > 0.05
+
+
+def test_be_plastic_bar_and_isochoric_seq():
+    e = 1.0e7
+    nu = 0.3
+    sy = 5.0e4
+    h = 1.0e5
+    mu = e / (2.0 * (1.0 + nu))
+    # Elastic trial seq = 3 μ |ln λ|
+    lam = 1.01
+    seq = pe.soft_analytic_isochoric_uniaxial_seq(e, nu, lam)
+    assert abs(seq - 3.0 * mu * abs(math.log(lam))) / seq < 1e-12
+    bar = pe.BePlasticBar(e, nu, sy, h, l0=1.0, area=0.01)
+    bar.set_damping(2.0)
+    bar.set_free_end_x(1.06)
+    bar.set_free_end_pinned(True)
+    for _ in range(40):
+        bar.step(1.0 / 240.0)
+        bar.set_free_end_x(1.06)
+    eps_p_b, alpha, stress = bar.plastic_state()
+    assert eps_p_b > 0.0 and alpha > 0.0 and stress > sy
+    assert bar.x().shape == (2, 3)
 
 
 def test_thermal_rod_backward_euler_numpy():

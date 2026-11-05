@@ -61,6 +61,8 @@ Cross-check helpers:
   `physics_engine_rs.canonical_plastic_hash()`
 - M31 finite-strain plastic: `cargo run -p pe-soft --bin fs_plastic_hash --release` /
   `physics_engine_rs.canonical_fs_plastic_hash()`
+- M32 spectral Hencky / `b_e` plastic: `cargo run -p pe-soft --bin be_plastic_hash --release` /
+  `physics_engine_rs.canonical_be_plastic_hash()`
 - M11 Morison+BEM: `cargo run -p pe-hydro --bin m11_hash --release` /
   `physics_engine_rs.canonical_m11_hash()`
 - M21 6-DOF Cummins: `cargo run -p pe-hydro --bin cummins6_hash --release` /
@@ -538,6 +540,33 @@ Existing soft (`adfc0a4c1209e5dc`), materials (`19498ab91f6febdc`), soft_couplin
 are **unchanged**.
 
 Helper: `cargo run -p pe-soft --bin fs_plastic_hash --release`.
+
+### Canonical M32 spectral Hencky / `b_e` plastic hash (locked)
+
+Scenario (`pe_soft::be_plastic_canonical_hash`, `be_plastic_hash` binary,
+`physics_engine_rs.canonical_be_plastic_hash()`):
+
+- Soft-ish J2 params (`E=1e7`, `ν=0.3`, `σ_y=5e4`, `H=1e5`); pinned–free
+  Hencky plastic bar stretched to `λ=1.08` with damping 0.5; plus a single
+  StVK tet with three verts pinned and apex sheared by `+0.06` m in x —
+  tet plasticity uses the Simo spectral Hencky / Kirchhoff return on `b_e`.
+- 120 outer XPBD+spectral-plastic steps at `dt = 1/240`.
+- Hash: FNV-1a 64 over soft packed `(x‖v)`, then bar `(ε_p, α, σ, rest)`, then
+  tet `(α, ‖τ‖_F, det F_p, V₀, F_p[9], b_e[9])` IEEE bits (fixed order; no
+  `HashMap`).
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `8562bc39f064698e` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+Existing soft (`adfc0a4c1209e5dc`), materials (`19498ab91f6febdc`), soft_coupling
+(`3dfd4cf670923310`), thermal (`becda3e8805b5b90`), plastic
+(`73d9ebdd6677ec8c`), fs_plastic (`7c902cd304aea5ae`), bake, Godot, blast,
+cummins, scene, and ballistics hashes are **unchanged**.
+
+Helper: `cargo run -p pe-soft --bin be_plastic_hash --release`.
 
 ### Canonical fluid-tank hash (locked)
 
