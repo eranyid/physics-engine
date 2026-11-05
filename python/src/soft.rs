@@ -4,6 +4,10 @@ use numpy::{PyArray1, PyArray2, PyArrayMethods};
 use pe_math::Vec3;
 use pe_soft::builders::{make_cloth, make_rope, make_soft_cube};
 use pe_soft::collision::{StaticColliders, StaticPlane};
+use pe_soft::finite_strain_plastic::{
+    analytic_log_permanent_strain, fs_plastic_canonical_hash, make_fs_plastic_bar,
+    quasistatic_log_stretch_unload, FsPlasticSoftWorld,
+};
 use pe_soft::material::{
     builtin_materials, lame_lambda, lame_mu, material_by_name, stretch_compliance,
 };
@@ -169,6 +173,12 @@ fn canonical_plastic_hash() -> u64 {
     plastic_canonical_hash()
 }
 
+/// Canonical M31 finite-strain plastic determinism hash.
+#[pyfunction]
+fn canonical_fs_plastic_hash() -> u64 {
+    fs_plastic_canonical_hash()
+}
+
 /// Analytic permanent strain `ε_p` after virgin stretch to `eps_peak`.
 #[pyfunction]
 fn soft_analytic_permanent_strain(
@@ -185,6 +195,24 @@ fn soft_analytic_permanent_strain(
         hardening_modulus: hardening,
     };
     analytic_permanent_strain(&p, eps_peak)
+}
+
+/// Analytic Hencky permanent strain after virgin log stretch to `eps_log`.
+#[pyfunction]
+fn soft_analytic_log_permanent_strain(
+    e: f64,
+    nu: f64,
+    yield_strength: f64,
+    hardening: f64,
+    eps_log: f64,
+) -> f64 {
+    let p = J2Params {
+        youngs_modulus: e,
+        poisson_ratio: nu,
+        yield_strength,
+        hardening_modulus: hardening,
+    };
+    analytic_log_permanent_strain(&p, eps_log)
 }
 
 /// Quasistatic stretch-hold-unload; returns `(final_length, eps_p, analytic_eps_p)`.
@@ -210,6 +238,33 @@ fn soft_quasistatic_stretch_unload(
         hardening_modulus: hardening,
     };
     quasistatic_stretch_unload(p, l0, area, eps_target, hold_steps, settle_steps, dt)
+}
+
+/// Quasistatic log-strain stretch-hold-unload by stretch ratio `lambda`.
+///
+/// Returns `(final_length, eps_p, analytic_eps_p)`.
+#[pyfunction]
+#[pyo3(signature = (e, nu, yield_strength, hardening, l0, area, lambda, hold_steps=80, settle_steps=800, dt=1.0/240.0))]
+#[allow(clippy::too_many_arguments)]
+fn soft_quasistatic_log_stretch_unload(
+    e: f64,
+    nu: f64,
+    yield_strength: f64,
+    hardening: f64,
+    l0: f64,
+    area: f64,
+    lambda: f64,
+    hold_steps: usize,
+    settle_steps: usize,
+    dt: f64,
+) -> (f64, f64, f64) {
+    let p = J2Params {
+        youngs_modulus: e,
+        poisson_ratio: nu,
+        yield_strength,
+        hardening_modulus: hardening,
+    };
+    quasistatic_log_stretch_unload(p, l0, area, lambda, hold_steps, settle_steps, dt)
 }
 
 /// Implicit / explicit 1-D thermal rod exposed to Python (NumPy temperatures).
@@ -803,17 +858,123 @@ impl PyPlasticBar {
     }
 }
 
+/// Soft XPBD bar with finite-strain (Hencky) J2 plastic rest coupling (M31).
+#[pyclass(name = "FsPlasticBar")]
+struct PyFsPlasticBar {
+    inner: FsPlasticSoftWorld,
+}
+
+#[pymethods]
+impl PyFsPlasticBar {
+    /// Single pinned–free finite-strain plastic distance bar.
+    #[new]
+    #[pyo3(signature = (e, nu, yield_strength, hardening, l0=1.0, area=0.01, mass=1.0, substeps=32))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        e: f64,
+        nu: f64,
+        yield_strength: f64,
+        hardening: f64,
+        l0: f64,
+        area: f64,
+        mass: f64,
+        substeps: usize,
+    ) -> PyResult<Self> {
+        if l0 <= 0.0 || area <= 0.0 || mass <= 0.0 || e <= 0.0 {
+            return Err(PyValueError::new_err(
+                "need l0>0, area>0, mass>0, E>0 for FsPlasticBar",
+            ));
+        }
+        let p = J2Params {
+            youngs_modulus: e,
+            poisson_ratio: nu,
+            yield_strength,
+            hardening_modulus: hardening,
+        };
+        Ok(Self {
+            inner: make_fs_plastic_bar(p, l0, area, mass, substeps),
+        })
+    }
+
+    /// Simulation time [s].
+    #[getter]
+    fn t(&self) -> f64 {
+        self.inner.t()
+    }
+
+    /// Number of particles (2 for a single bar).
+    #[getter]
+    fn n(&self) -> usize {
+        self.inner.soft.len()
+    }
+
+    /// Current free-end length [m].
+    fn length(&self) -> f64 {
+        let p = &self.inner.soft.particles;
+        (p[1].x - p[0].x).norm()
+    }
+
+    /// Current XPBD rest length [m] (`L₀ exp(ε_p)`).
+    fn rest_length(&self) -> f64 {
+        self.inner.soft.constraints.distances[0].rest_length
+    }
+
+    /// Plastic Hencky strain / eq plastic / stress `(ε_p, α, σ)`.
+    fn plastic_state(&self) -> (f64, f64, f64) {
+        let s = &self.inner.bars[0].state;
+        (s.plastic_strain, s.eq_plastic_strain, s.stress)
+    }
+
+    /// Set free-end position along x (pinned end stays at origin).
+    fn set_free_end_x(&mut self, x: f64) {
+        self.inner.soft.particles[1].x.x = x;
+        self.inner.soft.particles[1].v = pe_math::Vec3::zero();
+    }
+
+    /// Temporarily pin (`inv_mass=0`) or unpin the free end.
+    fn set_free_end_pinned(&mut self, pinned: bool) {
+        if pinned {
+            self.inner.soft.particles[1].inv_mass = 0.0;
+            self.inner.soft.particles[1].v = pe_math::Vec3::zero();
+        } else {
+            self.inner.soft.particles[1].inv_mass = 1.0;
+        }
+    }
+
+    /// Set damping [1/s].
+    fn set_damping(&mut self, damping: f64) {
+        self.inner.soft.params.damping = damping;
+    }
+
+    /// One XPBD + finite-strain plastic rest-update step; **releases the GIL**.
+    fn step(&mut self, py: Python<'_>, dt: f64) {
+        py.allow_threads(|| {
+            self.inner.step(dt);
+        });
+    }
+
+    /// Particle positions as NumPy `(n, 3)`.
+    fn x<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
+        let n = self.inner.soft.len();
+        let flat = self.inner.soft.positions_flat();
+        let arr = PyArray1::from_vec(py, flat);
+        arr.reshape([n, 3]).expect("reshape fs_plastic_bar_x")
+    }
+}
+
 /// Register soft-body bindings.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySoftWorld>()?;
     m.add_class::<PySoftRigidWorld>()?;
     m.add_class::<PyThermalRod>()?;
     m.add_class::<PyPlasticBar>()?;
+    m.add_class::<PyFsPlasticBar>()?;
     m.add_function(wrap_pyfunction!(canonical_soft_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_materials_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_soft_coupling_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_thermal_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_plastic_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(canonical_fs_plastic_hash, m)?)?;
     m.add_function(wrap_pyfunction!(soft_material_names, m)?)?;
     m.add_function(wrap_pyfunction!(soft_material_dict, m)?)?;
     m.add_function(wrap_pyfunction!(soft_lame_parameters, m)?)?;
@@ -824,6 +985,8 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(soft_semi_infinite_erfc, m)?)?;
     m.add_function(wrap_pyfunction!(soft_robin_lumped_exp, m)?)?;
     m.add_function(wrap_pyfunction!(soft_analytic_permanent_strain, m)?)?;
+    m.add_function(wrap_pyfunction!(soft_analytic_log_permanent_strain, m)?)?;
     m.add_function(wrap_pyfunction!(soft_quasistatic_stretch_unload, m)?)?;
+    m.add_function(wrap_pyfunction!(soft_quasistatic_log_stretch_unload, m)?)?;
     Ok(())
 }

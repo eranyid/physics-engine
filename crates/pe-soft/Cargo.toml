@@ -39,3 +39,7 @@ path = "src/bin/thermal_hash.rs"
 [[bin]]
 name = "plastic_hash"
 path = "src/bin/plastic_hash.rs"
+
+[[bin]]
+name = "fs_plastic_hash"
+path = "src/bin/fs_plastic_hash.rs"

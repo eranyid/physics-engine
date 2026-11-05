@@ -15,7 +15,8 @@
 //! Materials track: J2 von Mises plasticity with linear isotropic hardening,
 //! max-principal stress/strain fracture (distance + tet) with deterministic
 //! ordering and island labels, lumped / **implicit** heat conduction +
-//! thermal expansion (M29), and **XPBD ↔ J2 plastic rest coupling** (M30).
+//! thermal expansion (M29), **XPBD ↔ J2 plastic rest coupling** (M30), and
+//! **finite-strain multiplicative F_p / Hencky bar plasticity** (M31).
 //!
 //! # Determinism
 //!
@@ -45,6 +46,7 @@ pub mod collision;
 pub mod constraint;
 pub mod coupling;
 pub mod energy;
+pub mod finite_strain_plastic;
 pub mod fracture;
 pub mod material;
 pub mod particle;
@@ -76,6 +78,14 @@ pub use coupling::{
 };
 pub use energy::{
     gravitational_potential, kinetic_energy, stretch_potential, total_energy, volume_error_sum,
+};
+pub use finite_strain_plastic::{
+    analytic_log_permanent_strain, analytic_log_uniaxial_stress, bar_log_strain,
+    fs_bar_axial_force, fs_plastic_canonical_hash, fs_plastic_hash_params, fs_plastic_hash_world,
+    isochoric_project, make_fs_plastic_bar, quasistatic_log_stretch_unload, sym_eigenvalues_3,
+    sym_exp3, update_fs_plastic_distances, update_fs_plastic_tets, FsPlasticDistance,
+    FsPlasticSoftWorld, FsPlasticTet, FsPlasticUpdateStats, FS_PLASTIC_HASH_DT,
+    FS_PLASTIC_HASH_STEPS,
 };
 pub use fracture::{
     active_constraint_count, apply_fracture, constraint_islands, distance_axial_strain,
