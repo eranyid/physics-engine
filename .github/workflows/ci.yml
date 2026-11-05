@@ -543,6 +543,19 @@ jobs:
             exit 1
           fi
 
+      - name: Compute canonical M33 cohesive-zone fracture hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-soft --bin cohesive_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical cohesive hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=28e662bfee66bfd0
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::Cohesive fracture determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+
       - name: Compute canonical fluid-tank hash
         shell: bash
         run: |

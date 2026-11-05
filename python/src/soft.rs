@@ -3,6 +3,10 @@
 use numpy::{PyArray1, PyArray2, PyArrayMethods};
 use pe_math::Vec3;
 use pe_soft::builders::{make_cloth, make_rope, make_soft_cube};
+use pe_soft::cohesive_fracture::{
+    analytic_gc, cohesive_canonical_hash, damage_from_delta_max, make_cohesive_bar,
+    quasistatic_cohesive_open, traction_virgin_envelope, BilinearCzmParams, CohesiveSoftWorld,
+};
 use pe_soft::collision::{StaticColliders, StaticPlane};
 use pe_soft::finite_strain_plastic::{
     analytic_log_permanent_strain, fs_plastic_canonical_hash, make_fs_plastic_bar,
@@ -979,6 +983,94 @@ impl PyFsPlasticBar {
     }
 }
 
+/// Canonical M33 cohesive-zone fracture determinism hash.
+#[pyfunction]
+fn canonical_cohesive_hash() -> u64 {
+    cohesive_canonical_hash()
+}
+
+/// Analytic bilinear CZM fracture energy `G_c = ½ σ_c δ_f` [J/m²].
+#[pyfunction]
+fn soft_analytic_gc(sigma_c: f64, delta_c: f64, delta_f: f64) -> PyResult<f64> {
+    let p = BilinearCzmParams {
+        sigma_c,
+        delta_c,
+        delta_f,
+    };
+    if !p.is_valid() {
+        return Err(PyValueError::new_err(
+            "need sigma_c>0 and 0<delta_c<delta_f for soft_analytic_gc",
+        ));
+    }
+    Ok(analytic_gc(&p))
+}
+
+/// Virgin-envelope traction at opening `delta` [Pa].
+#[pyfunction]
+fn soft_czm_virgin_traction(sigma_c: f64, delta_c: f64, delta_f: f64, delta: f64) -> PyResult<f64> {
+    let p = BilinearCzmParams {
+        sigma_c,
+        delta_c,
+        delta_f,
+    };
+    if !p.is_valid() {
+        return Err(PyValueError::new_err(
+            "need sigma_c>0 and 0<delta_c<delta_f for soft_czm_virgin_traction",
+        ));
+    }
+    Ok(traction_virgin_envelope(&p, delta))
+}
+
+/// Irreversible bilinear CZM damage from historical max opening.
+#[pyfunction]
+fn soft_czm_damage(sigma_c: f64, delta_c: f64, delta_f: f64, delta_max: f64) -> PyResult<f64> {
+    let p = BilinearCzmParams {
+        sigma_c,
+        delta_c,
+        delta_f,
+    };
+    if !p.is_valid() {
+        return Err(PyValueError::new_err(
+            "need sigma_c>0 and 0<delta_c<delta_f for soft_czm_damage",
+        ));
+    }
+    Ok(damage_from_delta_max(&p, delta_max))
+}
+
+/// Quasistatic cohesive open: `(opening, damage, traction, failed)`.
+#[pyfunction]
+#[pyo3(signature = (sigma_c, delta_c, delta_f, l0, area, target_opening, settle_steps=80, dt=1.0/240.0))]
+#[allow(clippy::too_many_arguments)]
+fn soft_quasistatic_cohesive_open(
+    sigma_c: f64,
+    delta_c: f64,
+    delta_f: f64,
+    l0: f64,
+    area: f64,
+    target_opening: f64,
+    settle_steps: usize,
+    dt: f64,
+) -> PyResult<(f64, f64, f64, bool)> {
+    let p = BilinearCzmParams {
+        sigma_c,
+        delta_c,
+        delta_f,
+    };
+    if !p.is_valid() || l0 <= 0.0 || area <= 0.0 {
+        return Err(PyValueError::new_err(
+            "need valid CZM params, l0>0, area>0 for soft_quasistatic_cohesive_open",
+        ));
+    }
+    Ok(quasistatic_cohesive_open(
+        p,
+        l0,
+        area,
+        target_opening,
+        settle_steps,
+        dt,
+    ))
+}
+
 /// Soft XPBD bar with spectral Hencky world (M32; bars share M31 Hencky rest).
 #[pyclass(name = "BePlasticBar")]
 struct PyBePlasticBar {
@@ -1083,6 +1175,113 @@ impl PyBePlasticBar {
     }
 }
 
+/// Soft XPBD bar with bilinear cohesive-zone bond (M33).
+#[pyclass(name = "CohesiveBar")]
+struct PyCohesiveBar {
+    inner: CohesiveSoftWorld,
+}
+
+#[pymethods]
+impl PyCohesiveBar {
+    /// Single pinned–free cohesive distance bar.
+    #[new]
+    #[pyo3(signature = (sigma_c, delta_c, delta_f, l0=1.0, area=0.01, mass=1.0, substeps=32))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        sigma_c: f64,
+        delta_c: f64,
+        delta_f: f64,
+        l0: f64,
+        area: f64,
+        mass: f64,
+        substeps: usize,
+    ) -> PyResult<Self> {
+        let p = BilinearCzmParams {
+            sigma_c,
+            delta_c,
+            delta_f,
+        };
+        if !p.is_valid() || l0 <= 0.0 || area <= 0.0 || mass <= 0.0 {
+            return Err(PyValueError::new_err(
+                "need valid CZM (sigma_c>0, 0<delta_c<delta_f), l0>0, area>0, mass>0",
+            ));
+        }
+        Ok(Self {
+            inner: make_cohesive_bar(p, l0, area, mass, substeps),
+        })
+    }
+
+    /// Simulation time [s].
+    #[getter]
+    fn t(&self) -> f64 {
+        self.inner.time()
+    }
+
+    /// Number of particles (2 for a single bar).
+    #[getter]
+    fn n(&self) -> usize {
+        self.inner.soft.len()
+    }
+
+    /// Current free-end length [m].
+    fn length(&self) -> f64 {
+        let p = &self.inner.soft.particles;
+        (p[1].x - p[0].x).norm()
+    }
+
+    /// Cold rest length [m].
+    fn rest_length(&self) -> f64 {
+        self.inner.bonds[0].cold_rest
+    }
+
+    /// Cohesive state `(opening, damage, traction, failed)`.
+    fn cohesive_state(&self) -> (f64, f64, f64, bool) {
+        let b = &self.inner.bonds[0];
+        (b.opening, b.damage, b.traction, b.failed)
+    }
+
+    /// Crack-path bond indices in failure order.
+    fn crack_path(&self) -> Vec<usize> {
+        self.inner.crack_path.iter().map(|e| e.bond_index).collect()
+    }
+
+    /// Set free-end position along x (pinned end stays at origin).
+    fn set_free_end_x(&mut self, x: f64) {
+        self.inner.soft.particles[1].x.x = x;
+        self.inner.soft.particles[1].v = pe_math::Vec3::zero();
+    }
+
+    /// Temporarily pin (`inv_mass=0`) or unpin the free end.
+    fn set_free_end_pinned(&mut self, pinned: bool) {
+        if pinned {
+            self.inner.soft.particles[1].inv_mass = 0.0;
+            self.inner.soft.particles[1].v = pe_math::Vec3::zero();
+        } else {
+            self.inner.soft.particles[1].inv_mass = 1.0;
+        }
+    }
+
+    /// Set damping [1/s].
+    fn set_damping(&mut self, damping: f64) {
+        self.inner.soft.params.damping = damping;
+    }
+
+    /// One XPBD + cohesive update step; **releases the GIL**.
+    fn step(&mut self, py: Python<'_>, dt: f64) {
+        py.allow_threads(|| {
+            self.inner.step(dt);
+        });
+    }
+
+    /// Particle positions as NumPy `(n, 3)`.
+    fn x<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
+        let n = self.inner.soft.len();
+        let flat = self.inner.soft.positions_flat();
+        let arr = PyArray1::from_vec(py, flat);
+        arr.reshape([n, 3]).expect("reshape cohesive_bar_x")
+    }
+}
+
 /// Register soft-body bindings.
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySoftWorld>()?;
@@ -1091,6 +1290,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyPlasticBar>()?;
     m.add_class::<PyFsPlasticBar>()?;
     m.add_class::<PyBePlasticBar>()?;
+    m.add_class::<PyCohesiveBar>()?;
     m.add_function(wrap_pyfunction!(canonical_soft_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_materials_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_soft_coupling_hash, m)?)?;
@@ -1098,6 +1298,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(canonical_plastic_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_fs_plastic_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_be_plastic_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(canonical_cohesive_hash, m)?)?;
     m.add_function(wrap_pyfunction!(soft_material_names, m)?)?;
     m.add_function(wrap_pyfunction!(soft_material_dict, m)?)?;
     m.add_function(wrap_pyfunction!(soft_lame_parameters, m)?)?;
@@ -1112,5 +1313,9 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(soft_analytic_isochoric_uniaxial_seq, m)?)?;
     m.add_function(wrap_pyfunction!(soft_quasistatic_stretch_unload, m)?)?;
     m.add_function(wrap_pyfunction!(soft_quasistatic_log_stretch_unload, m)?)?;
+    m.add_function(wrap_pyfunction!(soft_analytic_gc, m)?)?;
+    m.add_function(wrap_pyfunction!(soft_czm_virgin_traction, m)?)?;
+    m.add_function(wrap_pyfunction!(soft_czm_damage, m)?)?;
+    m.add_function(wrap_pyfunction!(soft_quasistatic_cohesive_open, m)?)?;
     Ok(())
 }
