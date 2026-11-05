@@ -253,6 +253,20 @@ See [`docs/MATERIALS.md`](docs/MATERIALS.md). Measured oracle numbers in that
 doc are from this codebase’s runs — not copied from tables as “verified”
 handbook data.
 
+### M30 note (`pe-soft` XPBD ↔ J2 plastic coupling)
+
+Clean-room formulas / rest-update pattern only — **no** NVIDIA FleX / PhysX /
+Soft Body / PositionBasedDynamics plastic source copied:
+
+- Simo, J. C. & Hughes, T. J. R. — J2 radial return with linear isotropic
+  hardening (same constitutive helpers as the materials track).
+- Macklin XPBD + common PBD/XPBD “update rest from plastic flow” structural
+  idea (algorithms only): distance `rest ← L₀(1+ε_p)`; tet small-strain
+  `F_p ≈ I+ε_p` rest-shape update.
+- Green–Lagrange strain from deformation gradient (continuum textbook).
+
+See [`docs/MATERIALS.md`](docs/MATERIALS.md) / [`docs/SOFT.md`](docs/SOFT.md).
+
 ### M28 note (`pe-soft` soft↔rigid two-way coupling)
 
 Clean-room algorithms only — **no** NVIDIA FleX / PhysX / Soft Body /

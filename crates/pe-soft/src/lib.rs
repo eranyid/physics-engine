@@ -14,8 +14,8 @@
 //!
 //! Materials track: J2 von Mises plasticity with linear isotropic hardening,
 //! max-principal stress/strain fracture (distance + tet) with deterministic
-//! ordering and island labels, and lumped / **implicit** heat conduction +
-//! thermal expansion (M29).
+//! ordering and island labels, lumped / **implicit** heat conduction +
+//! thermal expansion (M29), and **XPBD ↔ J2 plastic rest coupling** (M30).
 //!
 //! # Determinism
 //!
@@ -32,7 +32,8 @@
 //!
 //! # Deferred
 //!
-//! Corotational FEM, anisotropic cloth, GPU/SIMD — see [`docs/SOFT.md`](../../docs/SOFT.md).
+//! Corotational FEM, cohesive fracture, anisotropic cloth, GPU/SIMD — see
+//! [`docs/SOFT.md`](../../docs/SOFT.md).
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
@@ -47,6 +48,7 @@ pub mod energy;
 pub mod fracture;
 pub mod material;
 pub mod particle;
+pub mod plastic_coupling;
 pub mod plasticity;
 pub mod scenarios;
 pub mod solver;
@@ -85,6 +87,12 @@ pub use material::{
     material_by_name, stiffness_from_compliance, stretch_compliance, stretch_stiffness, Material,
 };
 pub use particle::Particle;
+pub use plastic_coupling::{
+    analytic_permanent_strain, analytic_uniaxial_stress, bar_axial_force, bar_engineering_strain,
+    make_plastic_bar, plastic_canonical_hash, plastic_hash_params, plastic_hash_world,
+    quasistatic_stretch_unload, update_plastic_distances, update_plastic_tets, PlasticDistance,
+    PlasticSoftWorld, PlasticTet, PlasticUpdateStats, PLASTIC_HASH_DT, PLASTIC_HASH_STEPS,
+};
 pub use plasticity::{
     return_map_j2_3d, return_map_uniaxial, uniaxial_tension_curve, J2Params, J2PlasticState3,
     J2Return3, SymTensor3, UniaxialPlasticState, UniaxialReturn,

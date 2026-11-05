@@ -180,12 +180,38 @@ print(rod.temperatures().shape, hex(pe.canonical_thermal_hash()))
 
 See [`MATERIALS.md`](MATERIALS.md): J2 plasticity (&lt;1% uniaxial), fracture
 (&lt;2% threshold), explicit thermal Fourier (&lt;2%), **M29 implicit** Fourier
-(~5e-4), erfc / Robin / clamped-stress oracles, locked `materials_hash` +
-`thermal_hash`.
+(~5e-4), erfc / Robin / clamped-stress oracles, **M30 plastic XPBD** permanent
+set (~0), locked `materials_hash` + `thermal_hash` + `plastic_hash`.
+
+### Soft XPBD ↔ J2 plastic coupling (M30)
+
+`PlasticSoftWorld` wraps `SoftWorld` and tracks selected distance / tet
+constraints. Each `step(dt)` runs XPBD then a rest-update pass from the cold
+geometry through the J2 return map (see [`MATERIALS.md`](MATERIALS.md)).
+
+| Oracle | Measured | CI lock |
+| --- | --- | --- |
+| Plastic unload length vs `L₀(1+ε_p)` | **0** | **&lt; 1%** |
+| Elastic springback | **0** | **&lt; 0.5%** |
+| Hardening slope vs `E_t` | **~0** | **&lt; 1%** |
+| Tet shear return-to-surface | **&lt; 1%** | **&lt; 1%** |
+
+Locked `plastic_hash` = `73d9ebdd6677ec8c`
+(`cargo run -p pe-soft --bin plastic_hash --release`). Soft / materials /
+soft_coupling / thermal hashes unchanged.
+
+```python
+import physics_engine_rs as pe
+bar = pe.PlasticBar(2e11, 0.3, 2.5e8, 2e9, l0=1.0, area=0.01)
+length, eps_p, analytic = pe.soft_quasistatic_stretch_unload(
+    2e11, 0.3, 2.5e8, 2e9, 1.0, 0.01, 3.25e-3
+)
+print(length, eps_p, analytic, hex(pe.canonical_plastic_hash()))
+```
 
 ## Deferred
 
-- Full per-step FEM plastic coupling inside XPBD (constitutive map shipped)
+- Finite-strain multiplicative `F_p` beyond small-strain `I+ε_p` tet update
 - Cohesive fracture / crack paths; tearing UI
 - Radiation BCs; `k(T)` / `c_p(T)`
 - Capsule/hull soft↔rigid contacts; soft scene-schema I/O
@@ -204,3 +230,5 @@ See [`MATERIALS.md`](MATERIALS.md): J2 plasticity (&lt;1% uniaxial), fracture
 - Deul, Charrier, Bender — position-based rigid / soft coupling (algorithms only).
 - Simo & Hughes — J2 return mapping / isotropic hardening (textbook identities).
 - Fourier — 1-D heat equation fundamental mode (textbook).
+- M30 plastic rest-update: Simo–Hughes + XPBD rest-from-plastic-flow pattern
+  (algorithms only; see `THIRD_PARTY.md`).

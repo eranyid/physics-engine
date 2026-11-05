@@ -35,3 +35,7 @@ path = "src/bin/soft_coupling_hash.rs"
 [[bin]]
 name = "thermal_hash"
 path = "src/bin/thermal_hash.rs"
+
+[[bin]]
+name = "plastic_hash"
+path = "src/bin/plastic_hash.rs"

@@ -132,10 +132,43 @@ M29 implicit thermal: `cargo run -p pe-soft --bin thermal_hash --release` →
 `thermal_canonical_hash` (`becda3e8805b5b90`). Existing `materials_hash` /
 `soft_hash` / `soft_coupling_hash` unchanged.
 
+## Soft XPBD ↔ J2 plastic coupling (M30)
+
+After each XPBD outer step, `PlasticSoftWorld` measures total strain from the
+**cold** rest configuration, applies the constitutive return map, and updates
+XPBD rests so only the elastic residual remains:
+
+| Kind | Strain | Rest update |
+| --- | --- | --- |
+| Distance bar | `ε = (L − L₀)/L₀` | `rest ← L₀ (1 + ε_p)` |
+| Tet FEM | Green–Lagrange from `F = Ds Dm_cold⁻¹` | `F_p ≈ I+ε_p`; `Dm_inv ← Dm_cold⁻¹ F_p⁻¹`; `V₀ ← V₀ det(F_p)` |
+
+Compliance stays elastic (`α = L₀/(E A)` / Lamé). Plastic flow lives in the rest.
+
+### Oracle — measured (M30)
+
+| Check | Setup | Measured | CI lock |
+| --- | --- | --- | --- |
+| Fixed-stretch rest ≡ return map | hold `ε = ε_y+2e-3` | **~0** (same fn) | **&lt; 1e-12** rel |
+| Elastic springback | hold `0.5 ε_y`, release | **0** | **&lt; 0.5%** |
+| Plastic permanent set | hold `ε_y+2e-3`, release | length rel **0**; map **~1e-14** | **&lt; 1%** |
+| Hardening slope `Δσ/Δε` vs `E_t` | two holds past yield | **~0** | **&lt; 1%** |
+| Unloaded stretch energy | after plastic settle | ≪ 2% of `½ E A L ε_y²` | **&lt; 2%** of scale |
+| Multi-seg mean `ε_p` | 4-seg uniform stretch | **&lt; 1%** | **&lt; 1%** |
+| Tet dilatation / shear | unit tet | no yield / surface **&lt; 1%** | **&lt; 1%** |
+
+API: `PlasticSoftWorld`, `make_plastic_bar`, `update_plastic_distances`,
+`update_plastic_tets`, `quasistatic_stretch_unload`, `plastic_canonical_hash`.
+Python: `PlasticBar`, `soft_quasistatic_stretch_unload`,
+`canonical_plastic_hash()`.
+
+M30 plastic hash: `cargo run -p pe-soft --bin plastic_hash --release` →
+`plastic_canonical_hash` (`73d9ebdd6677ec8c`). Existing soft / materials /
+soft_coupling / thermal hashes **unchanged**.
+
 ## Deferred
 
-- Coupled XPBD + J2 on tet deformation gradients each step (constitutive return
-  map is shipped; full FEM plastic soft-step integration deferred)
+- Finite-strain multiplicative `F_p` integration beyond small-strain `I+ε_p`
 - Cohesive fracture / crack-path tracking
 - Radiation BCs; temperature-dependent `k(T)` / `c_p(T)`
 - Additional sourced / verified handbook rows

@@ -39,6 +39,10 @@ path = "soft_rigid_hang.rs"
 name = "soft_thermal_rod"
 path = "soft_thermal_rod.rs"
 
+[[bin]]
+name = "soft_plastic_bar"
+path = "soft_plastic_bar.rs"
+
 [dependencies]
 pe-math = { workspace = true }
 pe-core = { workspace = true }

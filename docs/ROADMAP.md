@@ -191,7 +191,8 @@ Sizes are relative engineering scope, not calendar schedules.
 
 - **Models:** Hookean / neo-Hookean continuum hooks; Mohr–Coulomb / von Mises
   yield; frictional contact already in D2; heat capacity + **implicit conduction
-  (M29)** with thermo-elastic expansion.
+  (M29)** with thermo-elastic expansion; **XPBD ↔ J2 plastic rest coupling
+  (M30)**.
 - **Validation:** uniaxial stress–strain; elastic wave speed \(\sqrt{E/\rho}\);
   plastic limit loads on simple geometries; Stefan / 1-D heat / erfc solutions.
 - **Effort:** L (start M for rigid material params only).
@@ -238,7 +239,8 @@ ported early because the Python oracle already exists.
 | **M26** | Game perf | Criterion/CI hot-path benches + scaling; alloc reuse / layout; optional `parallel` (off by default); CI regression vs baseline; `docs/PERFORMANCE.md`; hashes unchanged | **done** |
 | **M27** | Hardening + Holtrop | Typed blast/hydro errors; Holtrop–Mennen 1982; hashes unchanged | **done** |
 | **M28** | Soft↔rigid two-way coupling | XPBD attachment + particle↔rigid convex contact; momentum / support / freefall CoM / pendulum / energy oracles; locked coupling hash; Python + example; existing hashes unchanged | **done** |
-| **M29** | Implicit thermal + thermo-elastic | BE/CN conduction on rods/tets; Dirichlet/Neumann/Robin; Fourier/erfc/steady/energy/stability/CN-order/Robin/expansion oracles; locked `thermal_hash`; Python + example; existing hashes unchanged | **this PR** |
+| **M29** | Implicit thermal + thermo-elastic | BE/CN conduction on rods/tets; Dirichlet/Neumann/Robin; Fourier/erfc/steady/energy/stability/CN-order/Robin/expansion oracles; locked `thermal_hash`; Python + example; existing hashes unchanged | **done** |
+| **M30** | Soft XPBD ↔ J2 plastic coupling | Distance-bar + tet FEM rest-update plasticity; stretch/unload/hardening/energy/tet-surface oracles; locked `plastic_hash`; Python `PlasticBar` + example; existing hashes unchanged | **this PR** |
 
 ### M1–M2 as built (summary)
 
@@ -436,9 +438,10 @@ ported early because the Python oracle already exists.
   `materials_hash` CI; PyO3 helpers + pytest.
 - PyO3 `SoftWorld` returning NumPy `(n,3)` arrays; pytest in
   `tests/test_soft_rust.py`. Criterion benches in [`BENCHMARKS.md`](BENCHMARKS.md).
-- **Deferred:** corotational FEM; full per-step FEM plastic XPBD coupling;
-  cohesive fracture; radiation / `k(T)`; more handbook species cells
-  (wood/elastomer); soft scene-schema I/O; capsule/hull soft↔rigid contacts.
+- **Deferred:** corotational FEM; cohesive fracture / crack paths; radiation /
+  `k(T)`; more handbook species cells (wood/elastomer); soft scene-schema I/O;
+  capsule/hull soft↔rigid contacts; finite-strain multiplicative `F_p` beyond
+  the small-strain `I+ε_p` tet rest update shipped in M30.
 
 ### M28 as built (summary)
 
@@ -471,6 +474,26 @@ ported early because the Python oracle already exists.
 - PyO3 `ThermalRod` + NumPy temperatures + pytest; example `soft_thermal_rod`;
   docs [`MATERIALS.md`](MATERIALS.md) / [`SOFT.md`](SOFT.md). Clean-room from
   Incropera / Carslaw & Jaeger (formulas only).
+
+### M30 as built (summary)
+
+- Soft XPBD ↔ J2 plastic **rest-update** coupling (`PlasticSoftWorld`): after
+  each XPBD step, measure total strain from the cold rest, run the existing
+  uniaxial / 3-D J2 return map, then permanently update distance `rest_length`
+  and tet `Dm_inv` / `V₀` so XPBD sees only the elastic residual `ε − ε_p`.
+- Distance bars: `ε = (L−L₀)/L₀`, `rest ← L₀(1+ε_p)`, compliance stays
+  `α = L₀/(E A)`. Tets: Green–Lagrange → J2; small-strain `F_p ≈ I+ε_p`,
+  `Dm_inv ← Dm_cold⁻¹ F_p⁻¹` (isochoric J2 ⇒ `det F_p ≈ 1`).
+- Oracles (measured → CI lock): fixed-stretch rest ≡ return map (~0, &lt;1e-12);
+  elastic springback ~0 (&lt;0.5%); plastic unload length ~0 (&lt;1%); hardening
+  slope ~0 (&lt;1%); unloaded stretch energy / scale ~0 (&lt;2%); multi-seg mean
+  `ε_p` (&lt;1%); tet dilatation no yield + shear return-to-surface (&lt;1%).
+- Determinism: cross-OS `plastic_hash` (`73d9ebdd6677ec8c`); soft /
+  materials / soft_coupling / thermal / bake / Godot / blast / cummins /
+  scene / ballistics hashes **unchanged**.
+- PyO3 `PlasticBar` + `soft_quasistatic_stretch_unload` / pytest; example
+  `soft_plastic_bar`; docs [`MATERIALS.md`](MATERIALS.md) / [`SOFT.md`](SOFT.md).
+  Clean-room Simo–Hughes + Macklin rest-update pattern (no FleX/PhysX source).
 
 **Rule.** No milestone merges without: (1) analytic or published benchmark tests,
 (2) oracle or cross-impl diff where a Python reference exists, (3) CI green.
