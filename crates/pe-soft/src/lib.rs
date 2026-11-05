@@ -15,8 +15,9 @@
 //! Materials track: J2 von Mises plasticity with linear isotropic hardening,
 //! max-principal stress/strain fracture (distance + tet) with deterministic
 //! ordering and island labels, lumped / **implicit** heat conduction +
-//! thermal expansion (M29), **XPBD ↔ J2 plastic rest coupling** (M30), and
-//! **finite-strain multiplicative F_p / Hencky bar plasticity** (M31).
+//! thermal expansion (M29), **XPBD ↔ J2 plastic rest coupling** (M30),
+//! **finite-strain multiplicative F_p / Hencky bar plasticity** (M31), and
+//! **spectral Hencky / Kirchhoff return on `b_e`** (M32, Simo 1992).
 //!
 //! # Determinism
 //!
@@ -54,6 +55,7 @@ pub mod plastic_coupling;
 pub mod plasticity;
 pub mod scenarios;
 pub mod solver;
+pub mod spectral_hencky_plastic;
 pub mod thermal;
 
 pub use builders::{
@@ -113,6 +115,14 @@ pub use scenarios::{
     THERMAL_HASH_STEPS,
 };
 pub use solver::{soft_state_hash64, SoftParams, SoftWorld};
+pub use spectral_hencky_plastic::{
+    analytic_isochoric_uniaxial_kirchhoff, analytic_isochoric_uniaxial_seq,
+    assemble_from_principal, be_bar_update_stats_from_fs, be_plastic_canonical_hash,
+    be_plastic_hash_params, be_plastic_hash_world, left_cauchy_green, make_be_plastic_bar,
+    quasistatic_be_log_stretch_unload, return_map_spectral_hencky_be, sym_spectral_decompose,
+    update_be_plastic_tets, BePlasticSoftWorld, BePlasticTet, BePlasticUpdateStats,
+    SpectralHenckyReturn, BE_PLASTIC_HASH_DT, BE_PLASTIC_HASH_STEPS,
+};
 pub use thermal::{
     apply_thermal_expansion_from_cold, apply_thermal_expansion_tets_from_cold,
     apply_thermal_expansion_volumes_from_cold, clamped_thermal_stress, expanded_rest_length,

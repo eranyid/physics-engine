@@ -47,6 +47,10 @@ path = "soft_plastic_bar.rs"
 name = "soft_fs_plastic_bar"
 path = "soft_fs_plastic_bar.rs"
 
+[[bin]]
+name = "soft_be_plastic_tet"
+path = "soft_be_plastic_tet.rs"
+
 [dependencies]
 pe-math = { workspace = true }
 pe-core = { workspace = true }

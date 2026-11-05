@@ -530,6 +530,19 @@ jobs:
             exit 1
           fi
 
+      - name: Compute canonical M32 spectral Hencky / b_e plastic hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-soft --bin be_plastic_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical be_plastic hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=8562bc39f064698e
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::Spectral Hencky be_plastic determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+
       - name: Compute canonical fluid-tank hash
         shell: bash
         run: |

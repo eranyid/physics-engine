@@ -181,8 +181,9 @@ print(rod.temperatures().shape, hex(pe.canonical_thermal_hash()))
 See [`MATERIALS.md`](MATERIALS.md): J2 plasticity (&lt;1% uniaxial), fracture
 (&lt;2% threshold), explicit thermal Fourier (&lt;2%), **M29 implicit** Fourier
 (~5e-4), erfc / Robin / clamped-stress oracles, **M30 plastic XPBD** permanent
-set (~0), **M31 finite-strain F_p / Hencky** unload (~0), locked
-`materials_hash` + `thermal_hash` + `plastic_hash` + `fs_plastic_hash`.
+set (~0), **M31 finite-strain F_p / Hencky** unload (~0), **M32 spectral
+Hencky / Kirchhoff on `b_e`**, locked `materials_hash` + `thermal_hash` +
+`plastic_hash` + `fs_plastic_hash` + `be_plastic_hash`.
 
 ### Soft XPBD ↔ J2 plastic coupling (M30)
 
@@ -238,9 +239,35 @@ print(length, eps_p, analytic, hex(pe.canonical_fs_plastic_hash()))
 bar = pe.FsPlasticBar(1e7, 0.3, 5e4, 1e5, l0=1.0, area=0.01)
 ```
 
+### Spectral Hencky / Kirchhoff on `b_e` (M32)
+
+`BePlasticSoftWorld` replaces the M31 Green-of-`F_e` tet trial with the Simo
+1992 spectral algorithm on `b_e = F_e F_eᵀ` (principal Hencky + Kirchhoff J2).
+Bars reuse the M31 Hencky path. See [`MATERIALS.md`](MATERIALS.md).
+
+| Oracle | Measured | CI lock |
+| --- | --- | --- |
+| Isochoric uniaxial `τ₁=2μ ln λ`, `σ_eq=3μ\|ln λ\|` | **~0** | **&lt; 1e-12** |
+| Plastic Kirchhoff surface | **~0** | **&lt; 1e-10** |
+| `det b_e = 1` after isochoric return | **~0** | **&lt; 1e-10** |
+| Small-shear spectral≡Green | **≪ 2%** | **&lt; 2%** |
+| Large-shear divergence | **≫ 5%** | **&gt; 5%** |
+| Tet Kirchhoff surface after shear | **≪ 1%** | **&lt; 1%** |
+
+Locked `be_plastic_hash` = `8562bc39f064698e`
+(`cargo run -p pe-soft --bin be_plastic_hash --release`). M31 `fs_plastic_hash`
+/ M30 `plastic_hash` and soft / materials / soft_coupling / thermal hashes
+unchanged.
+
+```python
+import physics_engine_rs as pe
+print(hex(pe.canonical_be_plastic_hash()))
+seq = pe.soft_analytic_isochoric_uniaxial_seq(1e7, 0.3, 1.01)
+bar = pe.BePlasticBar(1e7, 0.3, 5e4, 1e5, l0=1.0, area=0.01)
+```
+
 ## Deferred
 
-- Kirchhoff / spectral Hencky return on `b_e` (full Simo 1992)
 - Cohesive fracture / crack paths; tearing UI
 - Radiation BCs; `k(T)` / `c_p(T)`
 - Capsule/hull soft↔rigid contacts; soft scene-schema I/O
@@ -264,3 +291,6 @@ bar = pe.FsPlasticBar(1e7, 0.3, 5e4, 1e5, l0=1.0, area=0.01)
 - M31 finite-strain: Hencky strain; multiplicative `F=F_e F_p` with
   `exp(Δε_p)` map + isochoric projection (Simo & Hughes / continuum textbook;
   algorithms only — see `THIRD_PARTY.md`).
+- M32 spectral Hencky / Kirchhoff on `b_e`: Simo (1992) / Simo & Hughes
+  *Computational Inelasticity* spectral return (algorithms only — see
+  `THIRD_PARTY.md`).
