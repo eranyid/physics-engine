@@ -267,6 +267,23 @@ Soft Body / PositionBasedDynamics plastic source copied:
 
 See [`docs/MATERIALS.md`](docs/MATERIALS.md) / [`docs/SOFT.md`](docs/SOFT.md).
 
+### M31 note (`pe-soft` finite-strain multiplicative F_p)
+
+Clean-room formulas only — **no** FleX / PhysX / Soft Body / commercial FEM
+plasticity source copied:
+
+- Hencky (logarithmic) uniaxial strain `ε = ln(L/L₀)` and rest
+  `L₀ exp(ε_p)` (continuum textbook identities).
+- Multiplicative decomposition `F = F_e F_p` with elastic Green strain of
+  `F_e`, J2 return for `Δε_p`, exponential map `exp(Δε_p)` via spectral
+  decomposition of a symmetric 3×3, and isochoric projection
+  `F_p ← F_p / ∛det(F_p)` — Simo & Hughes *Computational Inelasticity*
+  structural ideas / textbook identities only.
+- Closed-form symmetric 3×3 eigenvalue formula (Kopp / standard reference;
+  same cubic used by the existing fracture max-principal helper).
+
+See [`docs/MATERIALS.md`](docs/MATERIALS.md) / [`docs/SOFT.md`](docs/SOFT.md).
+
 ### M28 note (`pe-soft` soft↔rigid two-way coupling)
 
 Clean-room algorithms only — **no** NVIDIA FleX / PhysX / Soft Body /

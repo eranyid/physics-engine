@@ -181,7 +181,8 @@ print(rod.temperatures().shape, hex(pe.canonical_thermal_hash()))
 See [`MATERIALS.md`](MATERIALS.md): J2 plasticity (&lt;1% uniaxial), fracture
 (&lt;2% threshold), explicit thermal Fourier (&lt;2%), **M29 implicit** Fourier
 (~5e-4), erfc / Robin / clamped-stress oracles, **M30 plastic XPBD** permanent
-set (~0), locked `materials_hash` + `thermal_hash` + `plastic_hash`.
+set (~0), **M31 finite-strain F_p / Hencky** unload (~0), locked
+`materials_hash` + `thermal_hash` + `plastic_hash` + `fs_plastic_hash`.
 
 ### Soft XPBD ↔ J2 plastic coupling (M30)
 
@@ -209,9 +210,37 @@ length, eps_p, analytic = pe.soft_quasistatic_stretch_unload(
 print(length, eps_p, analytic, hex(pe.canonical_plastic_hash()))
 ```
 
+### Finite-strain multiplicative F_p (M31)
+
+`FsPlasticSoftWorld` uses Hencky strain on bars and a multiplicative
+`F = F_e F_p` update on tets (`exp(Δε_p)` + isochoric projection). See
+[`MATERIALS.md`](MATERIALS.md).
+
+| Oracle | Measured | CI lock |
+| --- | --- | --- |
+| Log unload vs `L₀ exp(ε_p)` | **~0** | **&lt; 1%** |
+| Small-strain log≡eng | **≪ 0.5%** | **&lt; 0.5%** |
+| Large-strain divergence at `λ=1.2` | **≫ 5%** | **&gt; 5%** |
+| Tet `|det F_p − 1|` after shear | **~0** | **&lt; 1e-10** |
+
+Locked `fs_plastic_hash` = `7c902cd304aea5ae`
+(`cargo run -p pe-soft --bin fs_plastic_hash --release`). M30 `plastic_hash`
+and soft / materials / soft_coupling / thermal hashes unchanged.
+
+```python
+import math
+import physics_engine_rs as pe
+lam = 1.06
+length, eps_p, analytic = pe.soft_quasistatic_log_stretch_unload(
+    1e7, 0.3, 5e4, 1e5, 1.0, 0.01, lam
+)
+print(length, eps_p, analytic, hex(pe.canonical_fs_plastic_hash()))
+bar = pe.FsPlasticBar(1e7, 0.3, 5e4, 1e5, l0=1.0, area=0.01)
+```
+
 ## Deferred
 
-- Finite-strain multiplicative `F_p` beyond small-strain `I+ε_p` tet update
+- Kirchhoff / spectral Hencky return on `b_e` (full Simo 1992)
 - Cohesive fracture / crack paths; tearing UI
 - Radiation BCs; `k(T)` / `c_p(T)`
 - Capsule/hull soft↔rigid contacts; soft scene-schema I/O
@@ -232,3 +261,6 @@ print(length, eps_p, analytic, hex(pe.canonical_plastic_hash()))
 - Fourier — 1-D heat equation fundamental mode (textbook).
 - M30 plastic rest-update: Simo–Hughes + XPBD rest-from-plastic-flow pattern
   (algorithms only; see `THIRD_PARTY.md`).
+- M31 finite-strain: Hencky strain; multiplicative `F=F_e F_p` with
+  `exp(Δε_p)` map + isochoric projection (Simo & Hughes / continuum textbook;
+  algorithms only — see `THIRD_PARTY.md`).

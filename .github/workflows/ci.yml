@@ -517,6 +517,19 @@ jobs:
             exit 1
           fi
 
+      - name: Compute canonical M31 finite-strain plastic hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          HASH=$(cargo run -p pe-soft --bin fs_plastic_hash --release | tr -d '\r\n' | tail -n1)
+          echo "Canonical fs_plastic hash on ${{ matrix.os }}: $HASH"
+          EXPECTED=7c902cd304aea5ae
+          if [ "$HASH" != "$EXPECTED" ]; then
+            echo "::error::Finite-strain plastic determinism hash mismatch on ${{ matrix.os }}: got $HASH expected $EXPECTED"
+            echo "Do not loosen silently — document OS/toolchain/diff in docs/DETERMINISM.md"
+            exit 1
+          fi
+
       - name: Compute canonical fluid-tank hash
         shell: bash
         run: |

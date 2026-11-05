@@ -166,9 +166,46 @@ M30 plastic hash: `cargo run -p pe-soft --bin plastic_hash --release` →
 `plastic_canonical_hash` (`73d9ebdd6677ec8c`). Existing soft / materials /
 soft_coupling / thermal hashes **unchanged**.
 
+## Finite-strain multiplicative F_p (M31)
+
+`FsPlasticSoftWorld` upgrades the M30 rest-update path for large stretch:
+
+| Kind | Strain measure | Rest / intermediate update |
+| --- | --- | --- |
+| Distance bar | Hencky `ε = ln(L/L₀)` | `rest ← L₀ exp(ε_p)` |
+| Tet FEM | Green of `F_e = F F_p⁻¹` | `F_p ← exp(Δε_p) F_p`, then `F_p ← F_p/∛det(F_p)`; `Dm_inv ← Dm_cold⁻¹ F_p⁻¹` |
+
+At small strain (`ε ≲ 10⁻³`) Hencky recovers the M30 engineering rest update
+within the locked 0.5% oracle. At `λ = 1.2` the two permanent-strain measures
+diverge by tens of percent — the finite-strain path is required.
+
+### Oracle — measured (M31)
+
+| Check | Setup | Measured | CI lock |
+| --- | --- | --- | --- |
+| Log rest ≡ return map | hold `λ=1.04` | **~0** (same fn) | **&lt; 1e-12** rel |
+| Elastic log springback | hold `exp(0.5 ε_y)`, release | **~0** | **&lt; 0.5%** |
+| Plastic unload | hold `λ=1.06`, release | length vs `L₀ exp(ε_p)` | **&lt; 1%** |
+| Small-strain log≡eng | steel `ε_y+1e-3` | **≪ 0.5%** | **&lt; 0.5%** |
+| Large-strain divergence | soft mat `λ=1.2` | **≫ 5%** | **&gt; 5%** |
+| Hardening slope vs `E_t` | two log holds | **~0** | **&lt; 1%** |
+| Unloaded stretch energy | after plastic settle | ≪ 2% of scale | **&lt; 2%** |
+| Tet dilatation / shear | unit tet, `γ=0.15` | no yield / `|det F_p−1|~0` / surface | **&lt; 1e-10** det; **&lt; 1%** surface |
+
+API: `FsPlasticSoftWorld`, `make_fs_plastic_bar`, `update_fs_plastic_distances`,
+`update_fs_plastic_tets`, `quasistatic_log_stretch_unload`,
+`fs_plastic_canonical_hash`, `sym_exp3`, `isochoric_project`.
+Python: `FsPlasticBar`, `soft_quasistatic_log_stretch_unload`,
+`soft_analytic_log_permanent_strain`, `canonical_fs_plastic_hash()`.
+
+M31 hash: `cargo run -p pe-soft --bin fs_plastic_hash --release` →
+`fs_plastic_canonical_hash` (`7c902cd304aea5ae`). M30 `plastic_hash`
+(`73d9ebdd6677ec8c`) and soft / materials / soft_coupling / thermal hashes
+**unchanged**.
+
 ## Deferred
 
-- Finite-strain multiplicative `F_p` integration beyond small-strain `I+ε_p`
+- Kirchhoff / spectral Hencky return on `b_e = F_e F_eᵀ` (full Simo 1992)
 - Cohesive fracture / crack-path tracking
 - Radiation BCs; temperature-dependent `k(T)` / `c_p(T)`
 - Additional sourced / verified handbook rows

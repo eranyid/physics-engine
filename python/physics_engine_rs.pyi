@@ -153,6 +153,7 @@ def canonical_materials_hash() -> int: ...
 def canonical_soft_coupling_hash() -> int: ...
 def canonical_thermal_hash() -> int: ...
 def canonical_plastic_hash() -> int: ...
+def canonical_fs_plastic_hash() -> int: ...
 def soft_semi_infinite_erfc(
     x: float, t: float, t_i: float, t_s: float, diffusivity: float
 ) -> float: ...
@@ -164,6 +165,9 @@ def soft_free_expansion_delta_l(l0: float, alpha: float, d_t: float) -> float: .
 def soft_analytic_permanent_strain(
     e: float, nu: float, yield_strength: float, hardening: float, eps_peak: float
 ) -> float: ...
+def soft_analytic_log_permanent_strain(
+    e: float, nu: float, yield_strength: float, hardening: float, eps_log: float
+) -> float: ...
 def soft_quasistatic_stretch_unload(
     e: float,
     nu: float,
@@ -172,6 +176,18 @@ def soft_quasistatic_stretch_unload(
     l0: float,
     area: float,
     eps_target: float,
+    hold_steps: int = ...,
+    settle_steps: int = ...,
+    dt: float = ...,
+) -> tuple[float, float, float]: ...
+def soft_quasistatic_log_stretch_unload(
+    e: float,
+    nu: float,
+    yield_strength: float,
+    hardening: float,
+    l0: float,
+    area: float,
+    lambda: float,
     hold_steps: int = ...,
     settle_steps: int = ...,
     dt: float = ...,
@@ -310,6 +326,33 @@ class ThermalRod:
 
 class PlasticBar:
     """Pinned–free XPBD distance bar with J2 plastic rest coupling (M30)."""
+
+    def __init__(
+        self,
+        e: float,
+        nu: float,
+        yield_strength: float,
+        hardening: float,
+        l0: float = ...,
+        area: float = ...,
+        mass: float = ...,
+        substeps: int = ...,
+    ) -> None: ...
+    @property
+    def t(self) -> float: ...
+    @property
+    def n(self) -> int: ...
+    def length(self) -> float: ...
+    def rest_length(self) -> float: ...
+    def plastic_state(self) -> tuple[float, float, float]: ...
+    def set_free_end_x(self, x: float) -> None: ...
+    def set_free_end_pinned(self, pinned: bool) -> None: ...
+    def set_damping(self, damping: float) -> None: ...
+    def step(self, dt: float) -> None: ...
+    def x(self) -> NDArray[np.float64]: ...
+
+class FsPlasticBar:
+    """Pinned–free XPBD distance bar with Hencky / multiplicative J2 plasticity (M31)."""
 
     def __init__(
         self,
