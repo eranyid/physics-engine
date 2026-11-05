@@ -1,7 +1,12 @@
 name: CI
 
 on:
+  # Feature-branch pushes used to fire both `push` and `pull_request`, which
+  # double-booked scarce macOS hosted runners and left PRs UNSTABLE when one
+  # of the two macOS jobs was cancelled for capacity. Keep full CI on PRs +
+  # main; schedule / workflow_dispatch unchanged.
   push:
+    branches: [main]
   pull_request:
   schedule:
     - cron: "0 6 * * 1"
