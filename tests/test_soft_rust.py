@@ -117,6 +117,13 @@ def test_canonical_be_plastic_hash_stable():
     assert a == 0x8562BC39F064698E
 
 
+def test_canonical_cohesive_hash_stable():
+    a = pe.canonical_cohesive_hash()
+    b = pe.canonical_cohesive_hash()
+    assert a == b
+    assert a == 0x28E662BFEE66BFD0
+
+
 def test_plastic_bar_permanent_set():
     e = 2.0e11
     sy = 2.5e8
@@ -193,6 +200,35 @@ def test_be_plastic_bar_and_isochoric_seq():
     eps_p_b, alpha, stress = bar.plastic_state()
     assert eps_p_b > 0.0 and alpha > 0.0 and stress > sy
     assert bar.x().shape == (2, 3)
+
+
+def test_cohesive_bar_gc_and_failure():
+    sigma_c = 1.0e5
+    delta_c = 2.0e-3
+    delta_f = 1.0e-2
+    gc = pe.soft_analytic_gc(sigma_c, delta_c, delta_f)
+    assert abs(gc - 0.5 * sigma_c * delta_f) < 1e-15
+    peak = pe.soft_czm_virgin_traction(sigma_c, delta_c, delta_f, delta_c)
+    assert abs(peak - sigma_c) / sigma_c < 1e-12
+    d_star = 0.5 * (delta_c + delta_f)
+    dmg = pe.soft_czm_damage(sigma_c, delta_c, delta_f, d_star)
+    assert 0.0 < dmg < 1.0
+    opening, damage, traction, failed = pe.soft_quasistatic_cohesive_open(
+        sigma_c, delta_c, delta_f, 1.0, 0.01, 1.05 * delta_f
+    )
+    assert failed and damage >= 1.0 - 1e-12
+    assert opening > delta_f * 0.9
+    bar = pe.CohesiveBar(sigma_c, delta_c, delta_f, l0=1.0, area=0.01)
+    bar.set_damping(2.0)
+    bar.set_free_end_x(1.0 + 1.05 * delta_f)
+    bar.set_free_end_pinned(True)
+    for _ in range(80):
+        bar.step(1.0 / 240.0)
+    o, d, t, f = bar.cohesive_state()
+    assert f and d >= 1.0 - 1e-12
+    assert bar.crack_path() == [0]
+    assert bar.x().shape == (2, 3)
+    _ = (traction, o, t)
 
 
 def test_thermal_rod_backward_euler_numpy():

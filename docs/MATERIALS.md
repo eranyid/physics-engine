@@ -242,8 +242,52 @@ M32 hash: `cargo run -p pe-soft --bin be_plastic_hash --release` →
 (`7c902cd304aea5ae`), M30 `plastic_hash` (`73d9ebdd6677ec8c`), and soft /
 materials / soft_coupling / thermal hashes **unchanged**.
 
+## Cohesive-zone fracture (M33)
+
+`CohesiveSoftWorld` adds irreversible bilinear Mode-I cohesive bonds on XPBD
+distance constraints (complements max-principal snap in `fracture.rs`):
+
+| Quantity | Formula |
+| --- | --- |
+| Virgin elastic | `t = (σ_c/δ_c) δ` for `0 ≤ δ ≤ δ_c` |
+| Softening | `t = σ_c (δ_f − δ)/(δ_f − δ_c)` for `δ_c < δ < δ_f` |
+| Fracture energy | `G_c = ½ σ_c δ_f` |
+| Damage | `d = 1 − (δ_c/δ*)(δ_f−δ*)/(δ_f−δ_c)` from `δ* = max_history δ` |
+| Secant unload | `t = (1−d)(σ_c/δ_c) δ` |
+| XPBD compliance | `α = 1 / ((1−d)(σ_c/δ_c) A)` until `d=1` → `broken` |
+
+Crack path = ordered list of newly failed bond indices (deterministic ascending
+discovery order). Islands reuse `constraint_islands` over remaining active
+constraints.
+
+### Oracle — measured (M33)
+
+| Check | Setup | Measured | CI lock |
+| --- | --- | --- | --- |
+| `G_c` identity | closed form | **0** | exact |
+| `∫ t dδ` vs `G_c` | trapezoid n=8192 | **~1e-8** | **&lt; 1e-6** |
+| Virgin peak `t(δ_c)` | envelope | **0** | **&lt; 1e-12** rel |
+| Elastic unload | `δ&lt;δ_c` then 0 | `d=0`, `t=0` | — |
+| Irreversible secant | mid-softening unload | **~0** | **&lt; 1e-12** |
+| Path work → `G_c` | monotonic open | **~1e-7** | **&lt; 1e-5** |
+| XPBD fail + islands | hold `1.05 δ_f` | failed; 2 islands | — |
+| Elastic XPBD hold | `0.5 δ_c` | opening **&lt;1%**; traction **&lt;2%** | same |
+| Softening damage | mid envelope | **≪ 2%** | **&lt; 2%** |
+| Chain crack path | tip pull | unique events; islands ≥ 2 | — |
+
+API: `BilinearCzmParams`, `CohesiveSoftWorld`, `eval_bilinear_czm`,
+`damage_from_delta_max`, `analytic_gc`, `make_cohesive_bar` /
+`make_cohesive_chain`, `cohesive_canonical_hash`. Python: `CohesiveBar`,
+`soft_analytic_gc`, `soft_czm_virgin_traction`, `soft_czm_damage`,
+`soft_quasistatic_cohesive_open`, `canonical_cohesive_hash()`.
+
+M33 hash: `cargo run -p pe-soft --bin cohesive_hash --release` →
+`cohesive_canonical_hash` (`28e662bfee66bfd0`). M32 `be_plastic_hash`
+(`8562bc39f064698e`) and prior soft / materials / plastic / thermal hashes
+**unchanged**.
+
 ## Deferred
 
-- Cohesive fracture / crack-path tracking
+- Mixed-mode / continuum-surface CZM; tet-face cohesive interfaces
 - Radiation BCs; temperature-dependent `k(T)` / `c_p(T)`
 - Additional sourced / verified handbook rows

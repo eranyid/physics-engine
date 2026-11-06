@@ -193,11 +193,13 @@ Sizes are relative engineering scope, not calendar schedules.
   yield; frictional contact already in D2; heat capacity + **implicit conduction
   (M29)** with thermo-elastic expansion; **XPBD ↔ J2 plastic rest coupling
   (M30)**; **finite-strain multiplicative F_p / Hencky bars (M31)**;
-  **spectral Hencky / Kirchhoff return on `b_e` (M32, Simo 1992)**.
+  **spectral Hencky / Kirchhoff return on `b_e` (M32, Simo 1992)**;
+  **bilinear cohesive-zone fracture / crack paths (M33)**.
 - **Validation:** uniaxial stress–strain; elastic wave speed \(\sqrt{E/\rho}\);
   plastic limit loads on simple geometries; Stefan / 1-D heat / erfc solutions;
   large-stretch Hencky unload; isochoric `det F_p = 1`; isochoric uniaxial
-  Kirchhoff `σ_eq = 3μ|ln λ|`; spectral vs Green small/large-strain oracles.
+  Kirchhoff `σ_eq = 3μ|ln λ|`; spectral vs Green small/large-strain oracles;
+  CZM `G_c = ½ σ_c δ_f`, peak `σ_c`, irreversible secant damage.
 - **Effort:** L (start M for rigid material params only).
 
 ### D9 — Soft bodies
@@ -245,7 +247,8 @@ ported early because the Python oracle already exists.
 | **M29** | Implicit thermal + thermo-elastic | BE/CN conduction on rods/tets; Dirichlet/Neumann/Robin; Fourier/erfc/steady/energy/stability/CN-order/Robin/expansion oracles; locked `thermal_hash`; Python + example; existing hashes unchanged | **done** |
 | **M30** | Soft XPBD ↔ J2 plastic coupling | Distance-bar + tet FEM rest-update plasticity; stretch/unload/hardening/energy/tet-surface oracles; locked `plastic_hash`; Python `PlasticBar` + example; existing hashes unchanged | **done** |
 | **M31** | Finite-strain multiplicative F_p | Hencky log-strain bars + `F=F_e F_p` tets with `exp(Δε_p)` update + isochoric projection; small-strain≡M30 / large-strain divergence / unload / isochoric / surface oracles; locked `fs_plastic_hash`; Python `FsPlasticBar`; existing hashes unchanged | **done** |
-| **M32** | Spectral Hencky / Kirchhoff on `b_e` | Simo 1992 spectral return on `b_e=F_e F_eᵀ` (principal Hencky + Kirchhoff J2); isochoric uniaxial `3μ\|ln λ\|` / surface / det / small≡Green / large-divergence oracles; locked `be_plastic_hash`; Python `BePlasticBar`; existing hashes unchanged | **this PR** |
+| **M32** | Spectral Hencky / Kirchhoff on `b_e` | Simo 1992 spectral return on `b_e=F_e F_eᵀ` (principal Hencky + Kirchhoff J2); isochoric uniaxial `3μ\|ln λ\|` / surface / det / small≡Green / large-divergence oracles; locked `be_plastic_hash`; Python `BePlasticBar`; existing hashes unchanged | **done** |
+| **M33** | Cohesive fracture / crack paths | Bilinear Mode-I CZM (`σ_c`, `δ_c`, `δ_f`) with irreversible damage + XPBD compliance update; `G_c=½σ_cδ_f` / peak / secant / XPBD fail+islands / crack-path oracles; locked `cohesive_hash`; Python `CohesiveBar`; existing hashes unchanged | **this PR** |
 
 ### M1–M2 as built (summary)
 
@@ -443,9 +446,9 @@ ported early because the Python oracle already exists.
   `materials_hash` CI; PyO3 helpers + pytest.
 - PyO3 `SoftWorld` returning NumPy `(n,3)` arrays; pytest in
   `tests/test_soft_rust.py`. Criterion benches in [`BENCHMARKS.md`](BENCHMARKS.md).
-- **Deferred:** corotational FEM; cohesive fracture / crack paths; radiation /
-  `k(T)`; more handbook species cells (wood/elastomer); soft scene-schema I/O;
-  capsule/hull soft↔rigid contacts.
+- **Deferred:** corotational FEM; radiation / `k(T)`; more handbook species
+  cells (wood/elastomer); soft scene-schema I/O; capsule/hull soft↔rigid
+  contacts; mixed-mode / continuum CZM surfaces.
 
 ### M28 as built (summary)
 
@@ -542,6 +545,27 @@ ported early because the Python oracle already exists.
   example `soft_be_plastic_tet`; docs [`MATERIALS.md`](MATERIALS.md) /
   [`SOFT.md`](SOFT.md). Clean-room Simo 1992 spectral algorithm (no
   FleX/PhysX / commercial FEM source).
+
+### M33 as built (summary)
+
+- Bilinear Mode-I cohesive-zone fracture (`CohesiveSoftWorld`): bonds on
+  XPBD distance constraints with irreversible damage
+  `d = 1 − (δ_c/δ*)(δ_f−δ*)/(δ_f−δ_c)`, secant traction
+  `t = (1−d)(σ_c/δ_c)δ`, compliance rewrite `α = 1/((1−d)(σ_c/δ_c)A)`, and
+  deterministic crack-path events when `d→1` (marks `broken`).
+- Oracles (measured → CI lock): `G_c = ½ σ_c δ_f` identity + quadrature
+  (&lt;1e-6); virgin peak `t(δ_c)=σ_c` (&lt;1e-12); elastic unload `d=0`;
+  irreversible secant (&lt;1e-12); path work→`G_c` (&lt;1e-5); XPBD fail past
+  `δ_f` + 2 islands; elastic hold damage=0 (&lt;1% opening, &lt;2% traction);
+  mid-softening damage≡analytic (&lt;2%); chain crack path unique + islands≥2.
+- Determinism: **new** cross-OS `cohesive_hash` (`28e662bfee66bfd0`);
+  M32 `be_plastic_hash` (`8562bc39f064698e`) and prior soft / materials /
+  plastic / thermal / bake / Godot / blast / cummins / scene / ballistics
+  hashes **unchanged**.
+- PyO3 `CohesiveBar` + `soft_analytic_gc` / `soft_czm_*` / pytest; example
+  `soft_cohesive_bar`; docs [`MATERIALS.md`](MATERIALS.md) /
+  [`SOFT.md`](SOFT.md). Clean-room bilinear CZM / Needleman–Camacho–Ortiz
+  identities (no FleX/PhysX / commercial CZM source).
 
 **Rule.** No milestone merges without: (1) analytic or published benchmark tests,
 (2) oracle or cross-impl diff where a Python reference exists, (3) CI green.

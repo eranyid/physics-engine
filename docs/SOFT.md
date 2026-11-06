@@ -182,8 +182,9 @@ See [`MATERIALS.md`](MATERIALS.md): J2 plasticity (&lt;1% uniaxial), fracture
 (&lt;2% threshold), explicit thermal Fourier (&lt;2%), **M29 implicit** Fourier
 (~5e-4), erfc / Robin / clamped-stress oracles, **M30 plastic XPBD** permanent
 set (~0), **M31 finite-strain F_p / Hencky** unload (~0), **M32 spectral
-Hencky / Kirchhoff on `b_e`**, locked `materials_hash` + `thermal_hash` +
-`plastic_hash` + `fs_plastic_hash` + `be_plastic_hash`.
+Hencky / Kirchhoff on `b_e`**, **M33 bilinear cohesive fracture**, locked
+`materials_hash` + `thermal_hash` + `plastic_hash` + `fs_plastic_hash` +
+`be_plastic_hash` + `cohesive_hash`.
 
 ### Soft XPBD ↔ J2 plastic coupling (M30)
 
@@ -266,15 +267,46 @@ seq = pe.soft_analytic_isochoric_uniaxial_seq(1e7, 0.3, 1.01)
 bar = pe.BePlasticBar(1e7, 0.3, 5e4, 1e5, l0=1.0, area=0.01)
 ```
 
+### Cohesive-zone fracture (M33)
+
+`CohesiveSoftWorld` places irreversible bilinear Mode-I cohesive bonds on
+distance constraints (`G_c = ½ σ_c δ_f`, secant damage, crack-path events).
+See [`MATERIALS.md`](MATERIALS.md).
+
+| Oracle | Measured | CI lock |
+| --- | --- | --- |
+| `G_c = ½ σ_c δ_f` + `∫ t dδ` | **0** / ~1e-8 | exact / **&lt; 1e-6** |
+| Virgin peak `t(δ_c)=σ_c` | **0** | **&lt; 1e-12** |
+| Irreversible secant unload | **~0** | **&lt; 1e-12** |
+| XPBD fail past `δ_f` + islands | failed; 2 islands | — |
+| Mid-softening damage ≡ analytic | **≪ 2%** | **&lt; 2%** |
+
+Locked `cohesive_hash` = `28e662bfee66bfd0`
+(`cargo run -p pe-soft --bin cohesive_hash --release`). M32 `be_plastic_hash`
+and prior soft / materials / plastic / thermal hashes unchanged.
+
+```python
+import physics_engine_rs as pe
+gc = pe.soft_analytic_gc(1e5, 2e-3, 1e-2)
+print(gc, hex(pe.canonical_cohesive_hash()))
+bar = pe.CohesiveBar(1e5, 2e-3, 1e-2, l0=1.0, area=0.01)
+bar.set_free_end_x(1.0 + 1.05e-2)
+bar.set_free_end_pinned(True)
+for _ in range(80):
+    bar.step(1.0 / 240.0)
+print(bar.cohesive_state(), bar.crack_path())
+```
+
 ## Deferred
 
-- Cohesive fracture / crack paths; tearing UI
+- Mixed-mode / continuum-surface CZM; tet-face cohesive interfaces; tearing UI
 - Radiation BCs; `k(T)` / `c_p(T)`
 - Capsule/hull soft↔rigid contacts; soft scene-schema I/O
 - Anisotropic cloth (warp/weft), wet cloth, continuous collision for thin sheets
 - GPU / SIMD particle loops
 - Additional handbook rows (wood species cells, elastomer compounds) with
   primary-table citations
+- Corotational FEM
 
 ## References (formulas only — clean-room)
 
@@ -293,4 +325,7 @@ bar = pe.BePlasticBar(1e7, 0.3, 5e4, 1e5, l0=1.0, area=0.01)
   algorithms only — see `THIRD_PARTY.md`).
 - M32 spectral Hencky / Kirchhoff on `b_e`: Simo (1992) / Simo & Hughes
   *Computational Inelasticity* spectral return (algorithms only — see
+  `THIRD_PARTY.md`).
+- M33 bilinear cohesive zone: Needleman / Camacho–Ortiz traction–separation
+  identities; irreversible damage + secant unload (algorithms only — see
   `THIRD_PARTY.md`).

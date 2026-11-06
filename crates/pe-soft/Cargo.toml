@@ -47,3 +47,7 @@ path = "src/bin/fs_plastic_hash.rs"
 [[bin]]
 name = "be_plastic_hash"
 path = "src/bin/be_plastic_hash.rs"
+
+[[bin]]
+name = "cohesive_hash"
+path = "src/bin/cohesive_hash.rs"

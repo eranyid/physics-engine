@@ -63,6 +63,8 @@ Cross-check helpers:
   `physics_engine_rs.canonical_fs_plastic_hash()`
 - M32 spectral Hencky / `b_e` plastic: `cargo run -p pe-soft --bin be_plastic_hash --release` /
   `physics_engine_rs.canonical_be_plastic_hash()`
+- M33 cohesive-zone fracture: `cargo run -p pe-soft --bin cohesive_hash --release` /
+  `physics_engine_rs.canonical_cohesive_hash()`
 - M11 Morison+BEM: `cargo run -p pe-hydro --bin m11_hash --release` /
   `physics_engine_rs.canonical_m11_hash()`
 - M21 6-DOF Cummins: `cargo run -p pe-hydro --bin cummins6_hash --release` /
@@ -567,6 +569,34 @@ Existing soft (`adfc0a4c1209e5dc`), materials (`19498ab91f6febdc`), soft_couplin
 cummins, scene, and ballistics hashes are **unchanged**.
 
 Helper: `cargo run -p pe-soft --bin be_plastic_hash --release`.
+
+### Canonical M33 cohesive-zone fracture hash (locked)
+
+Scenario (`pe_soft::cohesive_canonical_hash`, `cohesive_hash` binary,
+`physics_engine_rs.canonical_cohesive_hash()`):
+
+- Bilinear CZM (`σ_c=1e5`, `δ_c=2e-3`, `δ_f=1e-2`); pinned–free cohesive bar
+  held at `0.6 δ_f` with damping 0.5; plus a 4-segment cohesive chain with tip
+  opened by `0.5 δ_f`.
+- 160 outer XPBD+CZM steps at `dt = 1/240`.
+- Hash: FNV-1a 64 over soft packed `(x‖v)`, then per-bond
+  `(opening, δ_max, damage, traction, failed)`, then crack-path length and
+  `(bond_index, constraint_index)` pairs (IEEE bits; fixed order; no
+  `HashMap`).
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `28e662bfee66bfd0` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+Existing soft (`adfc0a4c1209e5dc`), materials (`19498ab91f6febdc`), soft_coupling
+(`3dfd4cf670923310`), thermal (`becda3e8805b5b90`), plastic
+(`73d9ebdd6677ec8c`), fs_plastic (`7c902cd304aea5ae`), be_plastic
+(`8562bc39f064698e`), bake, Godot, blast, cummins, scene, and ballistics
+hashes are **unchanged**.
+
+Helper: `cargo run -p pe-soft --bin cohesive_hash --release`.
 
 ### Canonical fluid-tank hash (locked)
 

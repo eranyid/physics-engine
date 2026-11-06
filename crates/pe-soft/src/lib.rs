@@ -16,15 +16,17 @@
 //! max-principal stress/strain fracture (distance + tet) with deterministic
 //! ordering and island labels, lumped / **implicit** heat conduction +
 //! thermal expansion (M29), **XPBD ↔ J2 plastic rest coupling** (M30),
-//! **finite-strain multiplicative F_p / Hencky bar plasticity** (M31), and
-//! **spectral Hencky / Kirchhoff return on `b_e`** (M32, Simo 1992).
+//! **finite-strain multiplicative F_p / Hencky bar plasticity** (M31),
+//! **spectral Hencky / Kirchhoff return on `b_e`** (M32, Simo 1992), and
+//! **bilinear cohesive-zone fracture / crack-path tracking** (M33).
 //!
 //! # Determinism
 //!
 //! Matches [`docs/DETERMINISM.md`](../../docs/DETERMINISM.md): `f64`, portable
 //! [`pe_math::libm_ops`], no FMA, fixed iteration order, no `HashMap` on the
 //! step path, self-collision pairs sorted by `(min_id, max_id)`, fracture
-//! candidates sorted by `(kind, index)`.
+//! candidates sorted by `(kind, index)`, cohesive crack events in ascending
+//! bond-index discovery order.
 //!
 //! # Units
 //!
@@ -34,7 +36,7 @@
 //!
 //! # Deferred
 //!
-//! Corotational FEM, cohesive fracture, anisotropic cloth, GPU/SIMD — see
+//! Corotational FEM, anisotropic cloth, radiation / `k(T)`, GPU/SIMD — see
 //! [`docs/SOFT.md`](../../docs/SOFT.md).
 
 #![deny(missing_docs)]
@@ -43,6 +45,7 @@
 #![allow(clippy::too_many_arguments)]
 
 pub mod builders;
+pub mod cohesive_fracture;
 pub mod collision;
 pub mod constraint;
 pub mod coupling;
@@ -61,6 +64,14 @@ pub mod thermal;
 pub use builders::{
     add_shape_match_all, make_axial_bar_grid, make_axial_bar_springs, make_axial_bar_tets,
     make_balloon, make_cantilever, make_cloth, make_rope, make_soft_cube,
+};
+pub use cohesive_fracture::{
+    analytic_gc, cohesive_canonical_hash, cohesive_hash_params, cohesive_hash_world,
+    damage_from_delta_max, discrete_work_to_failure, eval_bilinear_czm, integrate_virgin_envelope,
+    make_cohesive_bar, make_cohesive_chain, path_work_unit_area, quasistatic_cohesive_open,
+    traction_virgin_envelope, update_cohesive_bonds, BilinearCzmParams, CohesiveBond,
+    CohesiveSoftWorld, CohesiveUpdateStats, CrackEvent, CzmEval, COHESIVE_HASH_DT,
+    COHESIVE_HASH_STEPS,
 };
 pub use collision::{
     SelfCollisionParams, SelfCollisionScratch, StaticBox, StaticColliders, StaticPlane,

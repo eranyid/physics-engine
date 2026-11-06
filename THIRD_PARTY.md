@@ -302,6 +302,23 @@ plasticity source copied:
 
 See [`docs/MATERIALS.md`](docs/MATERIALS.md) / [`docs/SOFT.md`](docs/SOFT.md).
 
+### M33 note (`pe-soft` bilinear cohesive-zone fracture)
+
+Clean-room formulas only — **no** FleX / PhysX / Soft Body / commercial CZM
+source copied:
+
+- Bilinear Mode-I traction–separation law with peak traction `σ_c`, critical
+  opening `δ_c`, failure opening `δ_f`, and fracture energy
+  `G_c = ½ σ_c δ_f` (Needleman; Camacho–Ortiz; continuum fracture textbooks —
+  identities only).
+- Irreversible damage
+  `d = 1 − (δ_c/δ*)(δ_f − δ*)/(δ_f − δ_c)` from historical max opening `δ*`,
+  with secant unload/reload `t = (1−d)(σ_c/δ_c) δ`.
+- XPBD compliance rewrite from secant stiffness + deterministic crack-path
+  event ordering (Macklin XPBD rest/compliance pattern; algorithms only).
+
+See [`docs/MATERIALS.md`](docs/MATERIALS.md) / [`docs/SOFT.md`](docs/SOFT.md).
+
 ### M28 note (`pe-soft` soft↔rigid two-way coupling)
 
 Clean-room algorithms only — **no** NVIDIA FleX / PhysX / Soft Body /
