@@ -177,6 +177,21 @@ Clean-room formulas only — **no** third-party simulation source translated:
   propeller / rudder helpers outside the KVLCC2 path marked **unverified**
   unless caller supplies cited maps.
 
+### M34 note (`pe-hydro` underwater / Fossen 6-DOF)
+
+Clean-room formulas only — **no** MSS / Fossen Toolbox / marine-systems
+toolbox source translated:
+
+- Fossen, T. I. *Handbook of Marine Craft Hydrodynamics and Motion Control*
+  — body-frame 6-DOF with diagonal added mass, relative-velocity damping,
+  Munk / Coriolis structure (equations only).
+- Imlay, F. H. (1961). The complete expressions for added mass of a rigid
+  body moving in an ideal fluid. DTMB Report 1528 — prolate-spheroid
+  `k₁`, `k₂`, `k'` coefficients.
+- Lamb, H. *Hydrodynamics*; Newman, J. N. *Marine Hydrodynamics* —
+  sphere / spheroid added-mass identities and Munk moment.
+- Dean & Dalrymple — Airy dynamic pressure head (reused from M9 path).
+
 ### Blast / ballistics note (`pe-blast`, `pe-ballistics`)
 
 Clean-room formulas only — **no** third-party simulation *code* translated:

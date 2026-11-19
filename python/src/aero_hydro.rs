@@ -21,13 +21,15 @@ use pe_hydro::{
     box_added_mass_surge, box_barge_stations, box_heave_natural_omega_earth, box_heave_retardation,
     box_righting_arm_curve, canonical_cummins6_hash as cummins6_hash_rs,
     canonical_cummins_hash as cummins_hash_rs, canonical_m11_hash as m11_hash_rs,
-    canonical_wave_body_hash as wave_body_hash_rs, check_imo_is_code, damping_from_retardation,
-    deep_water_wavelength, encounter_frequency_deep, group_speed, heave_period_earth,
-    heave_period_with_added_mass, heave_pitch_rao, integrate_morison_fixed, metacentric_height,
-    phase_speed, pierson_moskowitz_hs_approx, relative_l2, righting_arm, righting_moment,
-    roll_natural_period, roll_period_earth, solve_wave_number, try_holtrop_mennen, try_ittc57_cf,
-    Buoyancy, CumminsHeave, HoltropInput, HullDrag, MorisonMember, NomotoKT, WaveDrag,
-    NOMINAL_CD_CIRCULAR, NOMINAL_CM_CIRCULAR, NU_FRESHWATER_20C_NOMINAL,
+    canonical_underwater_hash as underwater_hash_rs, canonical_wave_body_hash as wave_body_hash_rs,
+    check_imo_is_code, damping_from_retardation, deep_water_wavelength, encounter_frequency_deep,
+    group_speed, heave_period_earth, heave_period_with_added_mass, heave_pitch_rao,
+    hydrostatic_pressure, integrate_morison_fixed, metacentric_height, phase_speed,
+    pierson_moskowitz_hs_approx, relative_l2, righting_arm, righting_moment, roll_natural_period,
+    roll_period_earth, solve_wave_number, sphere_added_mass, spheroid_added_mass6, spheroid_lamb_k,
+    try_holtrop_mennen, try_ittc57_cf, BallastTrim, Buoyancy, CumminsHeave, CurrentField,
+    HoltropInput, HullDrag, MorisonMember, NomotoKT, UnderwaterDamping, UnderwaterVehicle,
+    VolumeModel, WaveDrag, NOMINAL_CD_CIRCULAR, NOMINAL_CM_CIRCULAR, NU_FRESHWATER_20C_NOMINAL,
 };
 use pe_math::{Quat, Vec3, STANDARD_GRAVITY};
 use pyo3::exceptions::PyValueError;
@@ -40,6 +42,22 @@ fn vec3_from_seq(obj: &Bound<'_, PyAny>) -> PyResult<Vec3> {
         return Err(PyValueError::new_err("expected length-3 sequence [x,y,z]"));
     }
     Ok(Vec3::new(arr[0], arr[1], arr[2]))
+}
+
+fn arr6_from_seq(obj: &Bound<'_, PyAny>) -> PyResult<[f64; 6]> {
+    let arr: Vec<f64> = obj.extract()?;
+    if arr.len() != 6 {
+        return Err(PyValueError::new_err("expected length-6 sequence"));
+    }
+    Ok([arr[0], arr[1], arr[2], arr[3], arr[4], arr[5]])
+}
+
+fn arr3_from_seq(obj: &Bound<'_, PyAny>) -> PyResult<[f64; 3]> {
+    let arr: Vec<f64> = obj.extract()?;
+    if arr.len() != 3 {
+        return Err(PyValueError::new_err("expected length-3 sequence"));
+    }
+    Ok([arr[0], arr[1], arr[2]])
 }
 
 fn density_from_opt(atmosphere: Option<&Bound<'_, PyAny>>) -> PyResult<DensityModel> {
@@ -570,6 +588,186 @@ impl PyHullDrag {
     }
 }
 
+/// Body-frame underwater damping (no added mass) on a World body.
+#[pyclass(name = "UnderwaterDamping", module = "physics_engine_rs")]
+#[derive(Clone)]
+pub struct PyUnderwaterDamping {
+    pub(crate) inner: UnderwaterDamping,
+}
+
+#[pymethods]
+impl PyUnderwaterDamping {
+    #[new]
+    #[pyo3(signature = (body, d_lin, d_quad, current=None))]
+    fn new(
+        body: usize,
+        d_lin: &Bound<'_, PyAny>,
+        d_quad: &Bound<'_, PyAny>,
+        current: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        let current = match current {
+            Some(c) => CurrentField::Uniform(vec3_from_seq(c)?),
+            None => CurrentField::None,
+        };
+        Ok(Self {
+            inner: UnderwaterDamping::new(
+                body,
+                arr6_from_seq(d_lin)?,
+                arr6_from_seq(d_quad)?,
+                current,
+                None,
+            ),
+        })
+    }
+}
+
+/// Ballast / trim buoyancy-volume delta on a World body.
+#[pyclass(name = "BallastTrim", module = "physics_engine_rs")]
+#[derive(Clone)]
+pub struct PyBallastTrim {
+    pub(crate) inner: BallastTrim,
+}
+
+#[pymethods]
+impl PyBallastTrim {
+    #[new]
+    #[pyo3(signature = (body, delta_volume, point_body=None, rho=None, g=None))]
+    fn new(
+        body: usize,
+        delta_volume: f64,
+        point_body: Option<&Bound<'_, PyAny>>,
+        rho: Option<f64>,
+        g: Option<f64>,
+    ) -> PyResult<Self> {
+        let point = match point_body {
+            Some(p) => vec3_from_seq(p)?,
+            None => Vec3::zero(),
+        };
+        Ok(Self {
+            inner: BallastTrim::new(
+                body,
+                delta_volume,
+                point,
+                rho.unwrap_or(RHO_SEAWATER),
+                g.unwrap_or(STANDARD_GRAVITY),
+            ),
+        })
+    }
+}
+
+/// Standalone Fossen 6-DOF underwater vehicle (Submerged volume model).
+#[pyclass(name = "UnderwaterVehicle", module = "physics_engine_rs")]
+pub struct PyUnderwaterVehicle {
+    inner: UnderwaterVehicle,
+}
+
+#[pymethods]
+impl PyUnderwaterVehicle {
+    #[new]
+    #[pyo3(signature = (
+        mass, inertia, added_mass, d_lin, d_quad, volume, cob_body=None, rho=None, g=None,
+        current=None, froude_krylov=false, position=None, orientation=None, nu=None
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        mass: f64,
+        inertia: &Bound<'_, PyAny>,
+        added_mass: &Bound<'_, PyAny>,
+        d_lin: &Bound<'_, PyAny>,
+        d_quad: &Bound<'_, PyAny>,
+        volume: f64,
+        cob_body: Option<&Bound<'_, PyAny>>,
+        rho: Option<f64>,
+        g: Option<f64>,
+        current: Option<&Bound<'_, PyAny>>,
+        froude_krylov: bool,
+        position: Option<&Bound<'_, PyAny>>,
+        orientation: Option<&Bound<'_, PyAny>>,
+        nu: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<Self> {
+        let cob = match cob_body {
+            Some(c) => vec3_from_seq(c)?,
+            None => Vec3::zero(),
+        };
+        let current = match current {
+            Some(c) => CurrentField::Uniform(vec3_from_seq(c)?),
+            None => CurrentField::None,
+        };
+        let x = match position {
+            Some(p) => vec3_from_seq(p)?,
+            None => Vec3::zero(),
+        };
+        let q = match orientation {
+            Some(o) => {
+                let arr: Vec<f64> = o.extract()?;
+                if arr.len() != 4 {
+                    return Err(PyValueError::new_err(
+                        "orientation must be length-4 quaternion [w,x,y,z]",
+                    ));
+                }
+                Quat::new(arr[0], arr[1], arr[2], arr[3])
+            }
+            None => Quat::identity(),
+        };
+        let nu6 = match nu {
+            Some(n) => arr6_from_seq(n)?,
+            None => [0.0; 6],
+        };
+        let inner = UnderwaterVehicle::try_new(
+            mass,
+            arr3_from_seq(inertia)?,
+            arr6_from_seq(added_mass)?,
+            arr6_from_seq(d_lin)?,
+            arr6_from_seq(d_quad)?,
+            VolumeModel::Submerged {
+                volume,
+                cob_body: cob,
+            },
+            rho.unwrap_or(RHO_SEAWATER),
+            g.unwrap_or(STANDARD_GRAVITY),
+            current,
+            None,
+            froude_krylov,
+            x,
+            q,
+            nu6,
+        )
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(Self { inner })
+    }
+
+    fn step_rk4(&mut self, dt: f64, tau: &Bound<'_, PyAny>) -> PyResult<()> {
+        self.inner.step_rk4(dt, &arr6_from_seq(tau)?);
+        Ok(())
+    }
+
+    fn run(&mut self, t_end: f64, dt: f64, tau: &Bound<'_, PyAny>) -> PyResult<()> {
+        self.inner.run(t_end, dt, &arr6_from_seq(tau)?);
+        Ok(())
+    }
+
+    #[getter]
+    fn t(&self) -> f64 {
+        self.inner.t
+    }
+
+    fn depth(&self) -> f64 {
+        self.inner.depth()
+    }
+
+    fn pressure(&self, p0: f64) -> f64 {
+        self.inner.pressure(p0)
+    }
+
+    fn energy(&self) -> f64 {
+        self.inner.energy()
+    }
+
+    fn pack<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        PyArray1::from_slice(py, &self.inner.pack())
+    }
+}
+
 /// Try to extract a stage-3 force generator; returns `None` if not recognised.
 pub fn try_extract_generator(item: &Bound<'_, PyAny>) -> PyResult<Option<Box<dyn ForceGenerator>>> {
     if let Ok(g) = item.extract::<PyRef<PyAircraftAero>>() {
@@ -588,6 +786,12 @@ pub fn try_extract_generator(item: &Bound<'_, PyAny>) -> PyResult<Option<Box<dyn
         return Ok(Some(Box::new(g.inner.clone())));
     }
     if let Ok(g) = item.extract::<PyRef<PyHullDrag>>() {
+        return Ok(Some(Box::new(g.inner.clone())));
+    }
+    if let Ok(g) = item.extract::<PyRef<PyUnderwaterDamping>>() {
+        return Ok(Some(Box::new(g.inner.clone())));
+    }
+    if let Ok(g) = item.extract::<PyRef<PyBallastTrim>>() {
         return Ok(Some(Box::new(g.inner.clone())));
     }
     Ok(None)
@@ -880,6 +1084,40 @@ fn gas_isentropic<'py>(py: Python<'py>, mach: f64, gamma: f64) -> PyResult<Bound
 #[pyfunction]
 fn canonical_wave_body_hash() -> u64 {
     wave_body_hash_rs()
+}
+
+/// Canonical M34 underwater vehicle hash (cross-OS).
+#[pyfunction]
+fn canonical_underwater_hash() -> u64 {
+    underwater_hash_rs()
+}
+
+/// Hydrostatic pressure `p0 + ρ g max(depth, 0)` [Pa].
+#[pyfunction]
+#[pyo3(name = "hydrostatic_pressure", signature = (depth, rho, g=None, p0=0.0))]
+fn hydrostatic_pressure_py(depth: f64, rho: f64, g: Option<f64>, p0: f64) -> f64 {
+    hydrostatic_pressure(depth, rho, g.unwrap_or(STANDARD_GRAVITY), p0)
+}
+
+/// Sphere translational added mass [kg].
+#[pyfunction]
+#[pyo3(name = "sphere_added_mass")]
+fn sphere_added_mass_py(r: f64, rho: f64) -> f64 {
+    sphere_added_mass(r, rho)
+}
+
+/// Lamb / Imlay spheroid coefficients `(k1, k2, k_prime)`.
+#[pyfunction]
+#[pyo3(name = "spheroid_lamb_k")]
+fn spheroid_lamb_k_py(a: f64, b: f64) -> (f64, f64, f64) {
+    spheroid_lamb_k(a, b)
+}
+
+/// Diagonal spheroid added-mass vector `[A11, A22, A22, 0, A55, A55]`.
+#[pyfunction]
+#[pyo3(name = "spheroid_added_mass6")]
+fn spheroid_added_mass6_py(a: f64, b: f64, rho: f64) -> [f64; 6] {
+    spheroid_added_mass6(a, b, rho)
 }
 
 /// Canonical M11 Morison + BEM hash (cross-OS).
@@ -1281,6 +1519,9 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyConvexMeshHull>()?;
     m.add_class::<PyBuoyancy>()?;
     m.add_class::<PyHullDrag>()?;
+    m.add_class::<PyUnderwaterDamping>()?;
+    m.add_class::<PyBallastTrim>()?;
+    m.add_class::<PyUnderwaterVehicle>()?;
 
     m.add_function(wrap_pyfunction!(isa_temperature, m)?)?;
     m.add_function(wrap_pyfunction!(isa_pressure, m)?)?;
@@ -1302,9 +1543,14 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(check_imo_is_code_py, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_aero_hydro_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_wave_body_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(canonical_underwater_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_m11_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_cummins_hash, m)?)?;
     m.add_function(wrap_pyfunction!(canonical_cummins6_hash, m)?)?;
+    m.add_function(wrap_pyfunction!(hydrostatic_pressure_py, m)?)?;
+    m.add_function(wrap_pyfunction!(sphere_added_mass_py, m)?)?;
+    m.add_function(wrap_pyfunction!(spheroid_lamb_k_py, m)?)?;
+    m.add_function(wrap_pyfunction!(spheroid_added_mass6_py, m)?)?;
     m.add_function(wrap_pyfunction!(ittc57_friction_cf, m)?)?;
     m.add_function(wrap_pyfunction!(nomoto_r_step, m)?)?;
     m.add_function(wrap_pyfunction!(nomoto_psi_step, m)?)?;

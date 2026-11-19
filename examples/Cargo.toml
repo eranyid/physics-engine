@@ -55,12 +55,17 @@ path = "soft_be_plastic_tet.rs"
 name = "soft_cohesive_bar"
 path = "soft_cohesive_bar.rs"
 
+[[bin]]
+name = "submarine_dive"
+path = "submarine_dive.rs"
+
 [dependencies]
 pe-math = { workspace = true }
 pe-core = { workspace = true }
 pe-collision = { workspace = true }
 pe-space = { workspace = true }
 pe-aero = { workspace = true }
+pe-hydro = { workspace = true }
 pe-scene = { workspace = true }
 pe-soft = { workspace = true }
 pe-fluid = { workspace = true }

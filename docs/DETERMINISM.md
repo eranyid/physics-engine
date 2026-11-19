@@ -49,6 +49,8 @@ Cross-check helpers:
   `physics_engine_rs.canonical_dfsph_hash()`
 - M9 wave-body: `cargo run -p pe-hydro --bin wave_body_hash --release` /
   `physics_engine_rs.canonical_wave_body_hash()`
+- M34 underwater vehicle: `cargo run -p pe-hydro --bin underwater_hash --release` /
+  `physics_engine_rs.canonical_underwater_hash()`
 - M8 soft bodies: `cargo run -p pe-soft --bin soft_hash --release` /
   `physics_engine_rs.canonical_soft_hash()`
 - Materials track: `cargo run -p pe-soft --bin materials_hash --release` /
@@ -221,6 +223,28 @@ Scenario (must stay in sync in `pe_hydro::canonical_wave_body_hash`, the
 | Windows (CI) | same expected | CI asserts equality |
 
 Helper: `cargo run -p pe-hydro --bin wave_body_hash --release`.
+
+### Canonical M34 underwater hash (locked)
+
+Scenario (must stay in sync in `pe_hydro::canonical_underwater_hash`, the
+`underwater_hash` binary, and `physics_engine_rs.canonical_underwater_hash()`):
+
+- Mass 51 kg, inertia `[0.31, 14, 14]`, submerged ∇=0.0499 m³, COB `(0,0,0.02)` m.
+- Seawater ρ; spheroid added mass `a=0.9`, `b=0.11`;
+  `d_lin=[2,10,10,0.5,5,5]`, `d_quad=[½ρ·0.35·0.074,30,30,0.1,10,10]`.
+- Pose `x=(0,0,−5)`, roll 10°, pitch 5°, `ν=(0.5,0,0,0,0,0)`.
+- Current `Uniform(0.2,0.1,0)`; Airy `A=0.25`, `T=6`, `h=20`; Froude–Krylov on.
+- Control `τ=(13,0,0,0,0,0)`; RK4 `dt=0.01` × 1000 steps.
+- Hash: FNV-1a 64 over little-endian IEEE bits of `pack()` after each step.
+
+| Platform | Hash (hex) | Status |
+| --- | --- | --- |
+| Linux x86_64 (CI + local) | `ba1847a1a9bd042c` | locked |
+| macOS (CI) | same expected | CI asserts equality |
+| Windows (CI) | same expected | CI asserts equality |
+
+Helper: `cargo run -p pe-hydro --bin underwater_hash --release`.
+Existing hashes (wave-body, cummins, soft, materials, …) are **unchanged**.
 
 ### Canonical M11 Morison + BEM hash (locked)
 
