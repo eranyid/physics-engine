@@ -21,7 +21,7 @@ GDExtension (`godot/`) ship as M8. Python remains the oracle for cross-checks.
 - Combat (armor, penetration, ricochet, spall): [docs/COMBAT.md](docs/COMBAT.md)
 - Stability (long-run drift bounds): [docs/STABILITY.md](docs/STABILITY.md)
 
-**Status:** M0–M9 done (incl. M6 convex); M11 Morison / seakeeping / BEM done; soft/fluids parallel tracks.
+**Status:** M0–M9 done (incl. M6 convex); M11 Morison / seakeeping / BEM done; M34 underwater vehicle physics (pressure, ballast, current, Fossen 6-DOF); soft/fluids parallel tracks.
 - Stage 1: rigid bodies, gravity, drag, springs, integrators, diagnostics (Python + Rust)
 - Stage 2: collision shapes, broad/narrow phase, sequential-impulse contacts (Python + Rust)
 - Stage 3: ISA / aero / hydro (Python + Rust)

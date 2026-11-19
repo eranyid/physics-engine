@@ -17,6 +17,11 @@
 //! Mennen 1982 calm-water resistance ([`holtrop`]) verified against the
 //! published ISP §5 numerical example.
 //!
+//! **M34:** underwater vehicle physics ([`underwater`]): hydrostatic / Airy
+//! pressure, sphere / spheroid added mass (Imlay–Lamb), uniform current,
+//! ballast trim, body-frame damping on [`pe_core::World`], and standalone
+//! Fossen 6-DOF with diagonal added mass. See `docs/SEAKEEPING.md`.
+//!
 //! **Deferred:** MacCamy–Fuchs; tabulated Vugts sections; Holtrop 1984 high-Fn
 //! wave branch as the default path (1984 form-factor helper is exposed).
 
@@ -38,6 +43,7 @@ pub mod morison;
 pub mod resistance;
 pub mod scenarios;
 pub mod seakeeping;
+pub mod underwater;
 pub mod waves;
 
 pub use cummins::{
@@ -96,6 +102,11 @@ pub use seakeeping::{
     box_heave_natural_omega, box_heave_natural_omega_earth, free_decay_heave, heave_pitch_rao,
     roll_natural_period, sectional_a33, sectional_a33_inf, sectional_b33, HeavePitchRao,
     HeavePitchTd, StripMatrices, StripStation,
+};
+pub use underwater::{
+    airy_total_pressure, canonical_underwater_hash, hydrostatic_pressure, sphere_added_mass,
+    spheroid_added_mass6, spheroid_lamb_k, try_hydrostatic_pressure, BallastTrim, CurrentField,
+    UnderwaterDamping, UnderwaterVehicle, VolumeModel,
 };
 pub use waves::{
     deep_water_wavelength, dispersion_omega, group_speed, jonswap_spectrum, phase_speed,
