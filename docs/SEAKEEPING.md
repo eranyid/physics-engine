@@ -285,11 +285,65 @@ Propeller / rudder **helper** APIs outside the KVLCC2 path stay marked
 
 ---
 
+## Underwater vehicles (`pe_hydro::underwater`) — M34
+
+Standalone Fossen 6-DOF with diagonal added mass, plus World-path helpers that
+do **not** change `pe-core` (`v̇ = F/m`).
+
+### Equations
+
+With rigid-body mass `M_RB`, diagonal added mass `M_A`, body velocity
+`ν = [ν₁; ν₂]`, relative velocity `ν_r = ν − [Rᵀ u_f; 0]`, and fluid
+velocity / acceleration `u_f`, `a_f` at the CG (uniform current + optional wave):
+
+```text
+(M_RB + M_A) ν̇ = τ + τ_hs + τ_FK
+  − [m ν₂×ν₁; ν₂×I ν₂]
+  − [ν₂×A₁₁ ν₁r; ν₁r×A₁₁ ν₁r + ν₂×A₂₂ ν₂]
+  − D(ν_r) ν_r
+  + M_A ν̇_c
+```
+
+`ν̇_c,lin = Rᵀ a_f − ν₂×Rᵀ u_f`; optional Froude–Krylov `τ_FK,lin = ρ ∇ Rᵀ a_f`;
+hydrostatics are the body wrench of weight `(0,0,−m g)` at the CG and buoyancy
+`(0,0, ρ g ∇)` at the COB. Kinematics: `ẋ = R ν₁`, `q̇ = ½ q ⊗ (0, ν₂)`.
+Integration: classical RK4 with quaternion renormalisation (`solve6` for the
+mass solve). Sphere / spheroid added mass from Lamb–Imlay; hydrostatic and Airy
+total pressure helpers are SI.
+
+### FLU body frame
+
+[`UnderwaterVehicle`](../crates/pe-hydro/src/underwater.rs) uses **FLU**:
++x forward, +y left, +z up, CG at the origin. Existing hull docs use +y
+starboard; diagonal coefficients make the left/right choice immaterial for the
+linearised terms. World-path [`UnderwaterDamping`] /
+[`BallastTrim`] inherit the hull / World convention.
+
+### Limits
+
+- **No added mass on the World path** — `UnderwaterDamping` and `BallastTrim` are
+  force generators only; `pe-core` stays `v̇ = F/m`.
+- Current is **uniform** (`CurrentField::Uniform`) or none.
+- Ballast is a **buoyancy-volume delta** (no free-surface tank dynamics).
+- `SphereHull::submerged` jumps ~2.8 % in volume when tilt crosses ~1.15°
+  (UV-mesh fallback). Prefer `VolumeModel::Submerged` for deeply submerged
+  spheres; do not “fix” the mesh path.
+
+### Validation / determinism
+
+Oracles O1–O14 in `crates/pe-hydro/tests/m34_underwater.rs` and
+`tests/test_m34_underwater_rust.py` (Python subset). Locked
+`canonical_underwater_hash` = `ba1847a1a9bd042c` (existing hashes unchanged).
+
 ## Scene / Python wiring
 
 - **Python (`physics_engine_rs`):** `canonical_cummins6_hash`, `ittc57_friction_cf`,
   `nomoto_r_step` / `nomoto_psi_step`, `encounter_frequency_py`, plus existing
   Morison / strip / Cummins heave helpers. Tests: `tests/test_m21_seakeeping_rust.py`.
+  M34: `UnderwaterVehicle`, `UnderwaterDamping`, `BallastTrim`,
+  `hydrostatic_pressure`, `sphere_added_mass`, `spheroid_lamb_k`,
+  `spheroid_added_mass6`, `canonical_underwater_hash`
+  (`tests/test_m34_underwater_rust.py`).
 - **Scene (`pe-scene`):** ContactWorld schema still carries stage-1 forces only
   (see [`SCENE.md`](SCENE.md)). M21 ship models are constructed via the Rust /
   Python API (`Cummins6Dof`, `NomotoState`, `HullDrag::ittc57`) and can sit
@@ -303,4 +357,6 @@ Propeller / rudder **helper** APIs outside the KVLCC2 path stay marked
 Tabulated Vugts / Frank close-fit sections; 3-D panel diffraction;
 MacCamy–Fuchs; Holtrop 1984 high-Fn wave branch as the default path (1984
 form-factor helper is exposed); viscous roll damping maps; additional
-propeller open-water curves beyond the KVLCC2 \(K_T\) polynomial.
+propeller open-water curves beyond the KVLCC2 \(K_T\) polynomial;
+non-uniform current / stratified density; free-surface ballast tanks;
+coupled World added-mass inertia.

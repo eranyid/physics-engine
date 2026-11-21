@@ -39,3 +39,7 @@ path = "src/bin/cummins_hash.rs"
 [[bin]]
 name = "cummins6_hash"
 path = "src/bin/cummins6_hash.rs"
+
+[[bin]]
+name = "underwater_hash"
+path = "src/bin/underwater_hash.rs"

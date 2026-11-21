@@ -194,7 +194,8 @@ Sizes are relative engineering scope, not calendar schedules.
   (M29)** with thermo-elastic expansion; **XPBD ↔ J2 plastic rest coupling
   (M30)**; **finite-strain multiplicative F_p / Hencky bars (M31)**;
   **spectral Hencky / Kirchhoff return on `b_e` (M32, Simo 1992)**;
-  **bilinear cohesive-zone fracture / crack paths (M33)**.
+  **bilinear cohesive-zone fracture / crack paths (M33)**;
+  **underwater vehicle physics (M34)**.
 - **Validation:** uniaxial stress–strain; elastic wave speed \(\sqrt{E/\rho}\);
   plastic limit loads on simple geometries; Stefan / 1-D heat / erfc solutions;
   large-stretch Hencky unload; isochoric `det F_p = 1`; isochoric uniaxial
@@ -248,7 +249,8 @@ ported early because the Python oracle already exists.
 | **M30** | Soft XPBD ↔ J2 plastic coupling | Distance-bar + tet FEM rest-update plasticity; stretch/unload/hardening/energy/tet-surface oracles; locked `plastic_hash`; Python `PlasticBar` + example; existing hashes unchanged | **done** |
 | **M31** | Finite-strain multiplicative F_p | Hencky log-strain bars + `F=F_e F_p` tets with `exp(Δε_p)` update + isochoric projection; small-strain≡M30 / large-strain divergence / unload / isochoric / surface oracles; locked `fs_plastic_hash`; Python `FsPlasticBar`; existing hashes unchanged | **done** |
 | **M32** | Spectral Hencky / Kirchhoff on `b_e` | Simo 1992 spectral return on `b_e=F_e F_eᵀ` (principal Hencky + Kirchhoff J2); isochoric uniaxial `3μ\|ln λ\|` / surface / det / small≡Green / large-divergence oracles; locked `be_plastic_hash`; Python `BePlasticBar`; existing hashes unchanged | **done** |
-| **M33** | Cohesive fracture / crack paths | Bilinear Mode-I CZM (`σ_c`, `δ_c`, `δ_f`) with irreversible damage + XPBD compliance update; `G_c=½σ_cδ_f` / peak / secant / XPBD fail+islands / crack-path oracles; locked `cohesive_hash`; Python `CohesiveBar`; existing hashes unchanged | **this PR** |
+| **M33** | Cohesive fracture / crack paths | Bilinear Mode-I CZM (`σ_c`, `δ_c`, `δ_f`) with irreversible damage + XPBD compliance update; `G_c=½σ_cδ_f` / peak / secant / XPBD fail+islands / crack-path oracles; locked `cohesive_hash`; Python `CohesiveBar`; existing hashes unchanged | **done** |
+| **M34** | Underwater vehicle physics | Hydrostatic / Airy pressure; sphere / spheroid (Imlay–Lamb) added mass; uniform current; ballast trim; World-path damping (no added mass); standalone Fossen 6-DOF + RK4; oracles O1–O14; locked `underwater_hash`; Python bindings; existing hashes unchanged | **this PR** |
 
 ### M1–M2 as built (summary)
 
@@ -566,6 +568,25 @@ ported early because the Python oracle already exists.
   `soft_cohesive_bar`; docs [`MATERIALS.md`](MATERIALS.md) /
   [`SOFT.md`](SOFT.md). Clean-room bilinear CZM / Needleman–Camacho–Ortiz
   identities (no FleX/PhysX / commercial CZM source).
+
+### M34 as built (summary)
+
+- `pe_hydro::underwater`: hydrostatic / Airy total pressure; sphere and
+  prolate-spheroid (Imlay 1961 / Lamb) added mass; `CurrentField`;
+  World-path `UnderwaterDamping` + `BallastTrim` (no added mass on
+  `pe-core`); standalone Fossen 6-DOF `UnderwaterVehicle` (FLU, diagonal
+  `M_A`, RK4, `solve6`).
+- Oracles O1–O14 (pressure, Archimedes, drafts/settle/heave, added-mass
+  accel, quadratic drag, dispersion, Airy orbitals, current damping,
+  ballast/righting, Lamb `k`, orientation-invariant submerged force,
+  light-sphere solve, Munk moment, locked hash).
+- Determinism: **new** cross-OS `underwater_hash` (`ba1847a1a9bd042c`);
+  all prior locked hashes **unchanged**. `pe-core` / `Buoyancy` / hull /
+  waves / `cummins6` untouched.
+- PyO3 classes + free functions; pytest `test_m34_underwater_rust.py`;
+  example `submarine_dive`; docs [`SEAKEEPING.md`](SEAKEEPING.md) /
+  [`DETERMINISM.md`](DETERMINISM.md). Clean-room Fossen / Imlay / Lamb /
+  Newman (no MSS code).
 
 **Rule.** No milestone merges without: (1) analytic or published benchmark tests,
 (2) oracle or cross-impl diff where a Python reference exists, (3) CI green.
